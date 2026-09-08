@@ -1,0 +1,10 @@
+.setcpu "6502"
+
+.include "hardware.inc"
+.include "ram.inc"
+.include "header.s"
+.include "levels.s"
+.include "prg0_rest.s"
+.include "prg1_lo.s"
+.include "prg1_hi.s"
+.include "chr.s"

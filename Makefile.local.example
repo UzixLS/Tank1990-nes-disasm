@@ -1,0 +1,8 @@
+# Copy this file to Makefile.local and override commands as needed.
+# Keep machine-specific paths out of the tracked Makefile.
+
+PYTHON = python
+CA65 = ca65
+LD65 = ld65
+MKDIR_P = mkdir -p
+RM_RF = rm -rf

@@ -1,0 +1,14 @@
+# 13x13 TSA-блоков; последнее значение каждой строки — сохраняемый padding.
+D D D D D D D D D D D D D  | D
+B B D D D 4 4 4 D D D B B  | D
+8 8 D D D D 6 D D D D 8 8  | D
+D B D D D 4 B 1 D D D B D  | D
+B B B D 4 B B B 6 D B B B  | D
+D B D 4 D D B D D 4 D B D  | D
+D D 6 D D 7 D 5 D D 4 D D  | D
+D 4 D A A A 1 D A A A 4 D  | D
+6 D D D D D 4 D D D D D 6  | D
+4 4 D D D D 4 4 4 D D D 4  | D
+D D D D D D D D D D D D D  | D
+9 D D D D D D D D D D D 9  | D
+9 9 D D D D D D D D D 9 9  | D
