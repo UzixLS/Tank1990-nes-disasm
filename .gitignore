@@ -1,1 +1,4 @@
 Makefile.local
+build/
+__pycache__/
+*.pyc
