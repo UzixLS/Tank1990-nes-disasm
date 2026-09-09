@@ -27,6 +27,11 @@ ObjectState     = $A0
 ObjectAttributes= $A8
 ObjectFrame     = $B0
 
+ProjectileX     = $B8
+ProjectileY     = $C2
+ProjectileState = $CC
+ProjectileFlags = $D6
+
 AudioStatePtrLo = $F0
 AudioStatePtrHi = $F1
 AudioDataPtrLo  = $F2

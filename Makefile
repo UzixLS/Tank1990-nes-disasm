@@ -22,6 +22,15 @@ $(BUILD)/sprites.chr: assets/chr/sprites.bmp tools/chr.py | $(BUILD)
 $(BUILD)/background.chr: assets/chr/background.bmp tools/chr.py | $(BUILD)
 	$(PYTHON) tools/chr.py encode $< $@
 
+$(BUILD)/sprite-palette.bin: assets/palettes/sprites.pal tools/palettes.py | $(BUILD)
+	$(PYTHON) tools/palettes.py $< 16 $@
+
+$(BUILD)/background-palettes.bin: assets/palettes/background.pal tools/palettes.py | $(BUILD)
+	$(PYTHON) tools/palettes.py $< 144 $@
+
+$(BUILD)/background-metatiles.bin: assets/metatiles/background.tsa tools/metatiles.py | $(BUILD)
+	$(PYTHON) tools/metatiles.py $< $@
+
 $(BUILD)/tank-levels.bin: $(wildcard assets/levels/tank/*.map) tools/levels.py | $(BUILD)
 	$(PYTHON) tools/levels.py encode assets/levels/tank 100 $@
 
@@ -33,7 +42,7 @@ $(BUILD)/classic-levels.bin: $(wildcard assets/levels/classic/*.map) tools/level
 
 ASM_SOURCES := src/main.s src/hardware.inc src/ram.inc src/header.s src/levels.s src/prg0_rest.s src/prg1_lo.s src/prg1_hi.s src/chr.s
 
-$(BUILD)/tank1990.o: $(ASM_SOURCES) $(BUILD)/tank-levels.bin $(BUILD)/extra-levels.bin $(BUILD)/classic-levels.bin $(BUILD)/sprites.chr $(BUILD)/background.chr | $(BUILD)
+$(BUILD)/tank1990.o: $(ASM_SOURCES) $(BUILD)/tank-levels.bin $(BUILD)/extra-levels.bin $(BUILD)/classic-levels.bin $(BUILD)/sprites.chr $(BUILD)/background.chr $(BUILD)/sprite-palette.bin $(BUILD)/background-palettes.bin $(BUILD)/background-metatiles.bin | $(BUILD)
 	$(CA65) -g -o $@ $<
 
 $(TARGET): $(BUILD)/tank1990.o cfg/tank1990.cfg

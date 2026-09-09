@@ -15,7 +15,16 @@
 - классические карты: `assets/levels/classic/*.map`;
 - тайлы спрайтов: `assets/chr/sprites.bmp`;
 - фоновые тайлы: `assets/chr/background.bmp`;
+- палитры: `assets/palettes/*.pal`;
+- фоновые метатайлы 2×2: `assets/metatiles/background.tsa`;
 - игровой код и таблицы: `src/*.s` и `src/*.inc`.
+
+Основные таблицы диспетчеризации в `src/prg1_lo.s` используют символические
+ссылки: `TankLogicHandlers`, `TankDrawHandlers`, `ProjectileLogicHandlers`,
+`ProjectileDrawHandlers`, `PowerUpEffectHandlers` и `AudioCommandHandlers`.
+У аудиопотоков есть точки входа `AudioSequence00`–`AudioSequence27`; несколько
+потоков могут совместно использовать один и тот же хвост данных. Формат
+потоков и команды интерпретатора описаны в `docs/audio.md`.
 
 BMP используют только индексы палитры 0–3. Цвета BMP нужны для удобного
 просмотра; в NES окончательный цвет задаётся палитрами из PRG.

@@ -19,17 +19,17 @@ LC019:  lda     GameMode
         cmp     #$06
         beq     LC031
         lda     Joy1Pressed,x
-        and     #$01
+        and     #BUTTON_A
         bne     LC02B
         lda     Joy1Held,x
-        and     #$02
+        and     #BUTTON_B
         beq     LC02E
 LC02B:  jmp     LE136
 
 LC02E:  jmp     LE15D
 
 LC031:  lda     Joy1Pressed,x
-        and     #$03
+        and     #(BUTTON_A | BUTTON_B)
         beq     LC02E
         jmp     LE136
 
@@ -95,7 +95,7 @@ LC0AE:  lda     $4B
         jsr     LC9B0
         jsr     UploadNametableBuffer
         jsr     LD467
-LC0BE:  jsr     LE413
+LC0BE:  jsr     ClearTankStates
         lda     #$10
         sta     ObjectX
         lda     #$18
@@ -122,12 +122,12 @@ LC0EA:  jsr     WaitForNextFrame
         lda     FrameCounter
         and     #$10
         beq     LC0FC
-        jsr     LDEA6
+        jsr     DrawTanks
 LC0FC:  lda     Joy1Held
-        and     #$F0
+        and     #BUTTON_DIRECTIONS
         bne     LC13E
         lda     Joy1Pressed
-        and     #$01
+        and     #BUTTON_A
         beq     LC120
         lda     $81
         bne     LC111
@@ -143,7 +143,7 @@ LC111:  inc     $5C
         jmp     LC144
 
 LC120:  lda     Joy1Pressed
-        and     #$02
+        and     #BUTTON_B
         beq     LC13E
         lda     $81
         bne     LC12F
@@ -159,11 +159,11 @@ LC12F:  dec     $5C
         jmp     LC144
 
 LC13E:  lda     Joy1Held
-        and     #$03
+        and     #(BUTTON_A | BUTTON_B)
         beq     LC147
 LC144:  jsr     LC6C6
 LC147:  lda     Joy1Pressed
-        and     #$08
+        and     #BUTTON_START
         bne     LC150
         jmp     LC0EA
 
@@ -190,13 +190,13 @@ LC172:  jsr     UpdateStageNumberDisplay
         lda     $4C
         bne     LC1C5
         lda     Joy1Pressed
-        and     #$08
+        and     #BUTTON_START
         bne     LC1C5
         lda     Joy1Pressed
-        and     #$01
+        and     #BUTTON_A
         bne     LC191
         lda     Joy1Held
-        and     #$01
+        and     #BUTTON_A
         beq     LC1A4
         lda     FrameCounter
         and     #$07
@@ -212,10 +212,10 @@ LC191:  lda     #$00
         jmp     LC172
 
 LC1A4:  lda     Joy1Pressed
-        and     #$02
+        and     #BUTTON_B
         bne     LC1B6
         lda     Joy1Held
-        and     #$02
+        and     #BUTTON_B
         beq     LC172
         lda     FrameCounter
         and     #$07
@@ -254,10 +254,10 @@ LC1F9:  jsr     WaitForNextFrame
         bne     LC203
         jsr     LC2E6
 LC203:  jsr     LE23B
-        jsr     LE0D8
-        jsr     LDEA6
+        jsr     DrawProjectiles
+        jsr     DrawTanks
         lda     Joy1Pressed
-        and     #$08
+        and     #BUTTON_START
         beq     LC21B
         lda     #$01
         eor     $6D
@@ -279,8 +279,8 @@ LC238:  jsr     WaitForNextFrame
         jsr     LC2A2
         jsr     LC2E6
         jsr     LE23B
-        jsr     LDEA6
-        jsr     LE0D8
+        jsr     DrawTanks
+        jsr     DrawProjectiles
         jsr     LC31D
         lda     $0A
         cmp     #$02
@@ -364,9 +364,9 @@ LC2DD:  lda     #$01
 
 LC2E6:  jsr     LE181
         jsr     LDB75
-        jsr     LDBF1
+        jsr     UpdateTanks
         jsr     LE1FA
-        jsr     LE02E
+        jsr     UpdateProjectiles
         jsr     LE2A9
         jsr     LE27C
         jsr     LE122
@@ -395,8 +395,8 @@ LC32C:  lda     #$02
         sta     $4D
 LC330:  rts
 
-LC331:  jsr     LE409
-        jsr     LE413
+LC331:  jsr     ClearProjectileStates
+        jsr     ClearTankStates
         lda     #$F0
         sta     $0106
         lda     #$00
@@ -514,13 +514,13 @@ LC3B5:  lda     #$01
 
 LC41D:  jsr     WaitForNextFrame
         lda     Joy1Pressed
-        and     #$0C
+        and     #(BUTTON_SELECT | BUTTON_START)
         bne     LC43F
         jsr     LC642
         jsr     LC2E6
         jsr     LE23B
-        jsr     LDEA6
-        jsr     LE0D8
+        jsr     DrawTanks
+        jsr     DrawProjectiles
         jsr     LC728
         beq     LC41D
         lda     #$00
@@ -639,7 +639,7 @@ LC51C:  lda     #$D3
         sta     ScratchPtrLo
         jsr     LFD27
 LC527:  lda     Joy1Held
-        and     #$20
+        and     #BUTTON_DOWN
         beq     LC545
         jsr     LC579
         inc     $46
@@ -654,7 +654,7 @@ LC540:  sta     $46
         jmp     LC51C
 
 LC545:  lda     Joy1Held
-        and     #$10
+        and     #BUTTON_UP
         beq     LC563
         jsr     LC579
         dec     $46
@@ -669,14 +669,14 @@ LC55E:  sta     $46
         jmp     LC51C
 
 LC563:  lda     Joy1Pressed
-        and     #$04
+        and     #BUTTON_SELECT
         beq     LC572
         lda     $8E
         eor     #$01
         sta     $8E
         jsr     LFD0C
 LC572:  lda     Joy1Pressed
-        and     #$08
+        and     #BUTTON_START
         beq     LC527
         rts
 
@@ -729,6 +729,7 @@ LC5F3:  lda     $8E
 LC5FB:  lda     LC63A,y
         rts
 
+PowerUpEffect3:
 LC5FF:  cpx     #$02
         bcs     LC610
         lda     $8E
@@ -739,6 +740,7 @@ LC5FF:  cpx     #$02
         sta     $0178,x
 LC610:  jmp     LFDFB
 
+PowerUpEffect6:
 LC613:  cpx     #$02
         bcs     LC624
         lda     $8E
@@ -820,7 +822,7 @@ LC6AB:  ldx     $5A
         cmp     #$C8
         bcc     LC6BD
         lda     Joy1Pressed,x
-        and     #$F0
+        and     #BUTTON_DIRECTIONS
         sta     Joy1Pressed,x
 LC6BD:  dec     $5A
         bpl     LC646
@@ -835,7 +837,7 @@ LC6C6:  lda     $5C
         rts
 
 LC6D2:  lda     Joy1Held
-        and     #$F0
+        and     #BUTTON_DIRECTIONS
         beq     LC6E1
         inc     $7B
         lda     #$00
@@ -848,17 +850,17 @@ LC6E5:  lda     $7B
         cmp     #$14
         beq     LC6FB
         lda     Joy1Pressed
-        and     #$F0
+        and     #BUTTON_DIRECTIONS
         beq     LC71D
         lda     Joy1Pressed
-        jsr     LE451
+        jsr     DecodeDirectionButtons
         bmi     LC71D
         jmp     LC704
 
 LC6FB:  lda     #$0F
         sta     $7B
         lda     Joy1Held
-        jsr     LE451
+        jsr     DecodeDirectionButtons
 LC704:  tay
         lda     LD3D5,y
         asl     a
@@ -933,15 +935,15 @@ LC755:  lda     $0109
         lda     #$00
         sta     $60
         lda     Joy1Pressed
-        and     #$04
+        and     #BUTTON_SELECT
         beq     LC792
         inc     $0109
 LC792:  lda     Joy1Pressed
-        and     #$02
+        and     #BUTTON_B
         beq     LC79B
         dec     $0109
 LC79B:  lda     Joy1Pressed
-        and     #$01
+        and     #BUTTON_A
         beq     LC7AA
         lda     $0109
         clc
@@ -954,7 +956,7 @@ LC7AB:  lda     #$00
 LC7B1:  jsr     WaitForNextFrame
         inc     VerticalScroll
         lda     Joy1Pressed
-        and     #$0C
+        and     #(BUTTON_SELECT | BUTTON_START)
         bne     LC7C3
         lda     VerticalScroll
         cmp     #$F0
@@ -1227,7 +1229,7 @@ LC9B0:  lda     #$02
 TitleScreen:
 LC9C0:  lda     #$03
         sta     $4D
-        jsr     LE413
+        jsr     ClearTankStates
         lda     #$48
         sta     ObjectX
         jsr     UpdateTitleCursor
@@ -1250,28 +1252,28 @@ LC9E6:  jsr     WaitForNextFrame
         lda     ObjectFrame
         eor     #$04
         sta     ObjectFrame
-LC9F5:  jsr     LDEA6
+LC9F5:  jsr     DrawTanks
         lda     Joy1Pressed
-        and     #$04
+        and     #BUTTON_SELECT
         beq     LCA04
         inc     MenuSelection
         lda     #$00
         sta     $0A
 LCA04:  lda     Joy1Held
-        and     #$20
+        and     #BUTTON_DOWN
         beq     LCA17
         lda     Joy1Pressed
-        and     #$01
+        and     #BUTTON_A
         beq     LCA17
         lda     #$10
         clc
         adc     $4A
         sta     $4A
 LCA17:  lda     Joy1Held
-        and     #$80
+        and     #BUTTON_RIGHT
         beq     LCA25
         lda     Joy1Pressed
-        and     #$02
+        and     #BUTTON_B
         beq     LCA25
         dec     $4A
 LCA25:  lda     MenuSelection
@@ -1288,7 +1290,7 @@ LCA2F:  jsr     UpdateTitleCursor
         rts
 
 LCA3D:  lda     Joy1Pressed
-        and     #$08
+        and     #BUTTON_START
         beq     LC9E6
         lda     $4A
         cmp     #$2E
@@ -2390,6 +2392,7 @@ LD357:  rts
 LD3D1:  .byte   $10,$20,$30,$40
 LD3D5:  .byte   $00,$FF,$00,$01
 LD3D9:  .byte   $FF,$00,$01,$00,$FF,$FF,$FF
+PowerUpEffect0:
 LD3E0:  cpx     #$02
         bcc     LD3F8
         txa
@@ -2601,27 +2604,9 @@ LD54A:  lda     SpritePalette,x
         rts
 
 SpritePalette:
-LD555:  .byte   $0F,$18,$27,$38,$0F,$0A,$1B,$3B
-        .byte   $0F,$0C,$10,$20,$0F,$04,$16,$20
+LD555:  .incbin "../build/sprite-palette.bin"
 BackgroundPaletteSets:
-LD565:  .byte   $0F,$17,$06,$00,$0F,$3C,$10,$12
-        .byte   $0F,$29,$09,$0B,$0F,$00,$10,$20
-        .byte   $0F,$17,$06,$00,$0F,$3C,$12,$12
-        .byte   $0F,$29,$09,$0B,$0F,$00,$10,$20
-        .byte   $0F,$17,$06,$00,$0F,$12,$3C,$12
-        .byte   $0F,$29,$09,$0B,$0F,$00,$10,$20
-        .byte   $0F,$16,$16,$30,$0F,$3C,$10,$16
-        .byte   $0F,$29,$09,$27,$0F,$00,$10,$20
-        .byte   $0F,$17,$06,$00,$0F,$3C,$10,$00
-        .byte   $0F,$29,$09,$00,$0F,$00,$10,$00
-        .byte   $0F,$0F,$06,$00,$0F,$3C,$10,$00
-        .byte   $0F,$29,$09,$00,$0F,$00,$10,$00
-        .byte   $0F,$12,$06,$00,$0F,$3C,$10,$00
-        .byte   $0F,$29,$09,$00,$0F,$00,$10,$00
-        .byte   $0F,$00,$06,$00,$0F,$3C,$10,$00
-        .byte   $0F,$29,$09,$00,$0F,$00,$10,$00
-        .byte   $0F,$30,$06,$00,$0F,$3C,$10,$00
-        .byte   $0F,$29,$09,$00,$0F,$00,$10,$00
+LD565:  .incbin "../build/background-palettes.bin"
 LD5F5:  lda     PPU_STATUS
         bpl     LD5F5
         rts
@@ -2944,7 +2929,7 @@ DrawMetatile:  pha
         stx     $47
         sty     $48
         ldy     $00
-        lda     LDABB,y
+        lda     MetatilePalettes,y
         sta     $04
         ldy     $48
         jsr     LD612
@@ -2959,22 +2944,22 @@ DrawMetatile:  pha
         asl     a
         asl     a
         tax
-        lda     LDACB,x
+        lda     MetatileTiles,x
         inx
         jsr     LD784
         lda     #$01
         jsr     AddAToPointer
-        lda     LDACB,x
+        lda     MetatileTiles,x
         inx
         jsr     LD784
         lda     #$1F
         jsr     AddAToPointer
-        lda     LDACB,x
+        lda     MetatileTiles,x
         inx
         jsr     LD784
         lda     #$01
         jsr     AddAToPointer
-        lda     LDACB,x
+        lda     MetatileTiles,x
         inx
         jsr     LD784
         rts
@@ -3332,16 +3317,10 @@ LDAAF:  beq     LDABA
 LDAB8:  lda     #$01
 LDABA:  rts
 
-LDABB:  .byte   $00,$00,$00,$00,$00,$03,$03,$03
-        .byte   $03,$03,$01,$02,$03,$00,$00,$00
-LDACB:  .byte   $00,$0F,$00,$0F,$00,$00,$0F,$0F
-        .byte   $0F,$00,$0F,$00,$0F,$0F,$00,$00
-        .byte   $0F,$0F,$0F,$0F,$20,$10,$20,$10
-        .byte   $20,$20,$10,$10,$10,$20,$10,$20
-        .byte   $10,$10,$20,$20,$10,$10,$10,$10
-        .byte   $12,$12,$12,$12,$22,$22,$22,$22
-        .byte   $21,$21,$21,$21,$00,$00,$00,$00
-        .byte   $00,$00,$00,$00,$00,$00,$00,$00
+MetatilePalettes:
+LDABB:  .incbin "../build/background-metatiles.bin", 0, 16
+MetatileTiles:
+LDACB:  .incbin "../build/background-metatiles.bin", 16, 64
 LDB0B:  lda     $0311
         beq     LDB24
         ldx     #$00
@@ -3365,7 +3344,7 @@ LDB32:  lda     #$01
 LDB37:  rts
 
 LDB38:  lda     Joy1Held,x
-        and     #$F0
+        and     #BUTTON_DIRECTIONS
         beq     LDB45
         lda     ObjectState,x
         beq     LDB45
@@ -3422,11 +3401,11 @@ LDB94:  lda     $0103,x
         and     #$10
         bne     LDBA6
 LDB9D:  lda     Joy1Held,x
-        jsr     LE451
+        jsr     DecodeDirectionButtons
         sta     $00
         bpl     LDBB4
 LDBA6:  lda     #$80
-        jsr     LE420
+        jsr     SetTankStateClass
         lda     #$08
         ora     ObjectState,x
         sta     ObjectState,x
@@ -3462,8 +3441,15 @@ LDBE7:  lda     $00
         sta     ObjectState,x
 LDBED:  dex
         bpl     LDB83
+NoOpHandler:
+TankLogicState0:
+TankDrawState0:
+ProjectileLogicState0:
+ProjectileDrawState0:
 LDBF0:  rts
 
+; Обновляет восемь танков: два слота игроков и шесть слотов противников.
+UpdateTanks:
 LDBF1:  lda     #$07
         sta     $5A
         lda     $0100
@@ -3497,23 +3483,26 @@ LDC25:  lda     ObjectAttributes,x
         eor     FrameCounter
         and     #$01
         beq     LDC38
-LDC35:  jsr     LDC3D
+LDC35:  jsr     DispatchTankLogic
 LDC38:  dec     $5A
         bpl     LDC03
         rts
 
+; Старшая тетрада ObjectState выбирает обработчик логики танка.
+DispatchTankLogic:
 LDC3D:  lda     ObjectState,x
         lsr     a
         lsr     a
         lsr     a
         and     #$FE
         tay
-        lda     LE498,y
+        lda     TankLogicHandlers,y
         sta     ScratchPtrLo
-        lda     LE498+1,y
+        lda     TankLogicHandlers+1,y
         sta     ScratchPtrHi
         jmp     (ScratchPtrLo)
 
+TankLogicState8:
         cpx     #$02
         bcs     LDC6B
         lda     $0103,x
@@ -3533,9 +3522,10 @@ LDC6B:  lda     ObjectState,x
         and     #$0C
         bne     LDC7B
         lda     #$A0
-        jsr     LE420
+        jsr     SetTankStateClass
 LDC7B:  rts
 
+TankLogicStateA:
         cpx     #$02
         bcc     LDC97
         lda     ObjectX,x
@@ -3553,21 +3543,21 @@ LDC7B:  rts
 LDC97:  lda     ObjectState,x
         and     #$03
         tay
-        lda     LE470,y
+        lda     DirectionDeltaY,y
         asl     a
         asl     a
         asl     a
         sta     $59
-        lda     LE470,y
+        lda     DirectionDeltaY,y
         clc
         adc     ObjectY,x
         sta     $57
-        lda     LE46C,y
+        lda     DirectionDeltaX,y
         asl     a
         asl     a
         asl     a
         sta     $58
-        lda     LE46C,y
+        lda     DirectionDeltaX,y
         clc
         adc     ObjectX,x
         sta     $56
@@ -3626,7 +3616,7 @@ LDD11:  ldx     $5A
         and     #$03
         beq     LDD30
         lda     #$80
-        jsr     LE420
+        jsr     SetTankStateClass
         lda     #$08
         ora     ObjectState,x
         sta     ObjectState,x
@@ -3642,12 +3632,13 @@ LDD30:  lda     ObjectX,x
         and     #$07
         bne     LDD41
         lda     #$90
-        jsr     LE420
+        jsr     SetTankStateClass
 LDD41:  lda     ObjectState,x
         eor     #$02
         sta     ObjectState,x
         rts
 
+TankLogicState9:
         jsr     NextRandomByte
         and     #$01
         beq     LDD6A
@@ -3682,18 +3673,21 @@ LDD76:  cmp     $57
         sbc     #$01
 LDD7D:  rts
 
+TankLogicStateD:
         lda     ObjectX
         sta     $71
         lda     ObjectY
         sta     $72
         jmp     LDD9C
 
+TankLogicStateC:
         lda     $91
         sta     $71
         lda     $99
         sta     $72
         jmp     LDD9C
 
+TankLogicStateB:
         lda     #$78
         sta     $71
         lda     #$D8
@@ -3744,6 +3738,7 @@ LDDE4:  ldy     $64
 LDDE6:  lda     LE486,y
         rts
 
+TankLogicStates1To7:
         dec     ObjectState,x
         lda     ObjectState,x
         and     #$0F
@@ -3803,6 +3798,7 @@ LDE46:  lda     #$0D
         sta     FrameCounter
         rts
 
+TankLogicStateF:
         inc     ObjectState,x
         lda     ObjectState,x
         and     #$0F
@@ -3812,6 +3808,7 @@ LDE46:  lda     #$0D
         sta     ObjectState,x
 LDE63:  rts
 
+TankLogicStateE:
         inc     ObjectState,x
         lda     ObjectState,x
         and     #$0F
@@ -3848,31 +3845,35 @@ LDE9B:  lda     #$C0
         jmp     LDEA2
 
 LDEA0:  lda     #$D0
-LDEA2:  jsr     LE420
+LDEA2:  jsr     SetTankStateClass
         rts
 
+; Рисует восемь танков через отдельную таблицу состояний отображения.
+DrawTanks:
 LDEA6:  lda     #$00
         sta     $5A
 LDEAA:  ldx     $5A
-        jsr     LDEB8
+        jsr     DispatchTankDraw
         inc     $5A
         lda     $5A
         cmp     #$08
         bne     LDEAA
         rts
 
+DispatchTankDraw:
 LDEB8:  lda     ObjectState,x
         lsr     a
         lsr     a
         lsr     a
         and     #$FE
         tay
-        lda     LE4B8,y
+        lda     TankDrawHandlers,y
         sta     ScratchPtrLo
-        lda     LE4B8+1,y
+        lda     TankDrawHandlers+1,y
         sta     ScratchPtrHi
         jmp     (ScratchPtrLo)
 
+DrawTankStates5To7:
         lda     #$00
         sta     $6E
         lda     ObjectState,x
@@ -3905,6 +3906,7 @@ LDEF0:  clc
         jsr     LDA7B
         rts
 
+DrawTankState1:
         lda     #$00
         sta     $6E
         lda     ObjectAttributes,x
@@ -3937,6 +3939,7 @@ LDF2E:  lda     #$20
         sta     $6E
         rts
 
+DrawTankState2:
         lda     #$00
         sta     $6E
         ldy     ObjectY,x
@@ -3948,6 +3951,7 @@ LDF2E:  lda     #$20
         sta     $6E
         rts
 
+DrawTankStates3To4:
         lda     #$03
         sta     $04
         lda     #$00
@@ -4018,6 +4022,7 @@ LDF99:  ldx     $5A
         tax
         rts
 
+DrawTankStates8ToD:
         cpx     #$02
         bcc     LDFDD
         lda     ObjectAttributes,x
@@ -4067,6 +4072,7 @@ LDFE9:  sta     $04
         rts
 
 LE003:  .byte   $02,$00,$00,$01,$02,$01,$02,$02
+DrawTankStatesEToF:
 LE00B:  lda     ObjectState,x
         and     #$0F
         sec
@@ -4088,62 +4094,67 @@ LE019:  asl     a
         jsr     LDA7B
         rts
 
+; Обновляет десять снарядов, по одному слоту на танк/источник.
+UpdateProjectiles:
 LE02E:  lda     #$09
         sta     $5A
 LE032:  ldx     $5A
-        jsr     LE03C
+        jsr     DispatchProjectileLogic
         dec     $5A
         bpl     LE032
         rts
 
-LE03C:  lda     $CC,x
+DispatchProjectileLogic:
+LE03C:  lda     ProjectileState,x
         lsr     a
         lsr     a
         lsr     a
         and     #$FE
         tay
-        lda     LE4D8,y
+        lda     ProjectileLogicHandlers,y
         sta     ScratchPtrLo
-        lda     LE4D8+1,y
+        lda     ProjectileLogicHandlers+1,y
         sta     ScratchPtrHi
         jmp     (ScratchPtrLo)
 
-        lda     $CC,x
+ProjectileLogicState4:
+        lda     ProjectileState,x
         and     #$03
         tay
         jsr     LE063
-        lda     $D6,x
+        lda     ProjectileFlags,x
         and     #$01
         beq     LE062
         jsr     LE063
 LE062:  rts
 
-LE063:  lda     LE46C,y
+LE063:  lda     DirectionDeltaX,y
         asl     a
         clc
-        adc     $B8,x
-        sta     $B8,x
-        lda     LE470,y
+        adc     ProjectileX,x
+        sta     ProjectileX,x
+        lda     DirectionDeltaY,y
         asl     a
         clc
-        adc     $C2,x
-        sta     $C2,x
+        adc     ProjectileY,x
+        sta     ProjectileY,x
         rts
 
-        dec     $CC,x
-        lda     $CC,x
+ProjectileLogicStates1To3:
+        dec     ProjectileState,x
+        lda     ProjectileState,x
         and     #$0F
         bne     LE08B
-        lda     $CC,x
+        lda     ProjectileState,x
         and     #$F0
         sec
         sbc     #$10
         beq     LE089
         ora     #$03
-LE089:  sta     $CC,x
+LE089:  sta     ProjectileState,x
 LE08B:  rts
 
-LE08C:  lda     $CC,x
+LE08C:  lda     ProjectileState,x
         bne     LE0D7
         cpx     #$02
         bcs     LE099
@@ -4153,23 +4164,23 @@ LE099:  lda     ObjectState,x
         and     #$03
         tay
         ora     #$40
-        sta     $CC,x
-        lda     LE46C,y
+        sta     ProjectileState,x
+        lda     DirectionDeltaX,y
         asl     a
         asl     a
         asl     a
         clc
         adc     ObjectX,x
-        sta     $B8,x
-        lda     LE470,y
+        sta     ProjectileX,x
+        lda     DirectionDeltaY,y
         asl     a
         asl     a
         asl     a
         clc
         adc     ObjectY,x
-        sta     $C2,x
+        sta     ProjectileY,x
         lda     #$00
-        sta     $D6,x
+        sta     ProjectileFlags,x
         jmp     LFFC1
 
         .byte   $F0
@@ -4182,38 +4193,41 @@ LE0C0:
         and     #$80
         bne     LE0D7
 LE0CE:  lda     #$01
-        sta     $D6,x
+        sta     ProjectileFlags,x
         rts
 
 LE0D3:  lda     #$03
-        sta     $D6,x
+        sta     ProjectileFlags,x
 LE0D7:  rts
 
+DrawProjectiles:
 LE0D8:  lda     #$09
         sta     $5A
 LE0DC:  ldx     $5A
-        jsr     LE0E6
+        jsr     DispatchProjectileDraw
         dec     $5A
         bpl     LE0DC
         rts
 
-LE0E6:  lda     $CC,x
+DispatchProjectileDraw:
+LE0E6:  lda     ProjectileState,x
         lsr     a
         lsr     a
         lsr     a
         and     #$FE
         tay
-        lda     LE4E2,y
+        lda     ProjectileDrawHandlers,y
         sta     ScratchPtrLo
-        lda     LE4E2+1,y
+        lda     ProjectileDrawHandlers+1,y
         sta     ScratchPtrHi
         jmp     (ScratchPtrLo)
 
-        lda     $CC,x
+ProjectileDrawState4:
+        lda     ProjectileState,x
         and     #$03
         pha
-        ldy     $C2,x
-        lda     $B8,x
+        ldy     ProjectileY,x
+        lda     ProjectileX,x
         tax
         lda     #$02
         sta     $04
@@ -4223,10 +4237,11 @@ LE0E6:  lda     $CC,x
         jsr     LDA64
         rts
 
-        lda     $CC,x
+ProjectileDrawStates1To3:
+        lda     ProjectileState,x
         pha
-        ldy     $C2,x
-        lda     $B8,x
+        ldy     ProjectileY,x
+        lda     ProjectileX,x
         tax
         pla
         clc
@@ -4248,20 +4263,20 @@ LE136:  lda     ObjectAttributes,x
         and     #$C0
         cmp     #$40
         bne     LE15A
-        lda     $CC,x
+        lda     ProjectileState,x
         beq     LE15A
         lda     $D4,x
         bne     LE15D
-        lda     $CC,x
+        lda     ProjectileState,x
         sta     $D4,x
-        lda     $B8,x
+        lda     ProjectileX,x
         sta     $C0,x
-        lda     $C2,x
+        lda     ProjectileY,x
         sta     $CA,x
-        lda     $D6,x
+        lda     ProjectileFlags,x
         sta     $DE,x
         lda     #$00
-        sta     $CC,x
+        sta     ProjectileState,x
 LE15A:  jsr     LE08C
 LE15D:  dec     $5A
         bpl     LE126
@@ -4491,7 +4506,8 @@ LE2F6:  asl     a
 
 LE305:  rts
 
-LE306:  .word   LDBF0, LE312, LE317, LE31C, LE32E, LE336
+BaseExplosionFrameHandlers:
+LE306:  .word   NoOpHandler, LE312, LE317, LE31C, LE32E, LE336
 
 LE312:  lda     #$F1
         jmp     LE31E
@@ -4582,6 +4598,7 @@ LE3A3:  sta     ObjectAttributes,x
         jsr     DrawMetatile
         rts
 
+PowerUpEffect1:
 LE3B8:  cpx     #$02
         bcs     LE3C2
         lda     #$0A
@@ -4630,13 +4647,15 @@ LE402:  sta     ObjectAttributes,x
         lda     #$00
         sta     ObjectFrame,x
         rts
+ClearProjectileStates:
 LE409:  ldx     #$09
         lda     #$00
-LE40D:  sta     $CC,x
+LE40D:  sta     ProjectileState,x
         dex
         bpl     LE40D
         rts
 
+ClearTankStates:
 LE413:  lda     #$00
         ldx     #$07
 LE417:  sta     ObjectState,x
@@ -4645,6 +4664,8 @@ LE417:  sta     ObjectState,x
         bpl     LE417
         rts
 
+; Заменяет старшую тетраду ObjectState, сохраняя направление в младшей.
+SetTankStateClass:
 LE420:  sta     $00
         lda     ObjectState,x
         and     #$0F
@@ -4652,9 +4673,24 @@ LE420:  sta     $00
         sta     ObjectState,x
         rts
 
-LE42B:  .byte   $30,$F0,$0C,$74,$F4,$0C,$B8,$F8
-        .byte   $0C,$30,$F0,$0C,$74,$F4,$0C,$B8
-        .byte   $F8,$0C,$30,$F0,$24,$8B
+; Для режимов 0-5 доступны группы по 12 классических карт; режим 6
+; использует все 36. Последний $8B не входит в семь описателей.
+ClassicLevelSetDescriptors:
+LE42B:  .word   ClassicLevels
+        .byte   12
+        .word   ClassicLevels + 12 * 91
+        .byte   12
+        .word   ClassicLevels + 24 * 91
+        .byte   12
+        .word   ClassicLevels
+        .byte   12
+        .word   ClassicLevels + 12 * 91
+        .byte   12
+        .word   ClassicLevels + 24 * 91
+        .byte   12
+        .word   ClassicLevels
+        .byte   36
+        .byte   $8B
 LE441:  lda     $E579,y
         sta     $8C
         lda     $E57A,y
@@ -4662,31 +4698,35 @@ LE441:  lda     $E579,y
         lda     $E57B,y
         sta     $8E
         rts
+; Преобразует первый установленный бит Right/Left/Down/Up в направление 3/1/2/0.
+DecodeDirectionButtons:
 LE451:  asl     a
         bcc     LE457
-        lda     #$03
+        lda     #DIRECTION_RIGHT
         rts
 
 LE457:  asl     a
         bcc     LE45D
-        lda     #$01
+        lda     #DIRECTION_LEFT
         rts
 
 LE45D:  asl     a
         bcc     LE463
-        lda     #$02
+        lda     #DIRECTION_DOWN
         rts
 
 LE463:  asl     a
         bcc     LE469
-        lda     #$00
+        lda     #DIRECTION_UP
         rts
 
 LE469:  lda     #$FF
         rts
 
-LE46C:  .byte   $00,$FF,$00,$01
-LE470:  .byte   $FF,$00,$01,$00
+DirectionDeltaX:
+LE46C:  .byte   0,$FF,0,1
+DirectionDeltaY:
+LE470:  .byte   $FF,0,1,0
 LE474:  .byte   $18,$78,$D8
 LE477:  .byte   $18,$18,$18
 LE47A:  .byte   $58,$98
@@ -4698,12 +4738,28 @@ LE486:  .byte   $A0,$A0,$A0,$A1,$A0,$A3,$A2,$A2
 
 ; Таблицы адресов обработчиков состояний объекта. Индекс задаётся младшими
 ; битами ObjectState; таблица выбирается фазой игрового автомата.
-LE498:  .word   $DBF0,$DDEA,$DDEA,$DDEA,$DDEA,$DDEA,$DDEA,$DDEA,$DC52
-        .word   $DD48,$DC7C,$DD94,$DD89,$DD7E,$DE64,$DE55
-LE4B8:  .word   $DBF0,$DEFD,$DF33,$DF46,$DF46,$DECD,$DECD,$DECD
-        .word   $DFB6,$DFB6,$DFB6,$DFB6,$DFB6,$DFB6,$E00B,$E00B
-LE4D8:  .word   $DBF0,$E076,$E076,$E076,$E051
-LE4E2:  .word   $DBF0,$E112,$E112,$E112,$E0FB
+; Таблицы индексируются удвоенной старшей тетрадой байта состояния.
+TankLogicHandlers:
+LE498:  .word   TankLogicState0
+        .word   TankLogicStates1To7,TankLogicStates1To7,TankLogicStates1To7
+        .word   TankLogicStates1To7,TankLogicStates1To7,TankLogicStates1To7,TankLogicStates1To7
+        .word   TankLogicState8,TankLogicState9,TankLogicStateA,TankLogicStateB
+        .word   TankLogicStateC,TankLogicStateD,TankLogicStateE,TankLogicStateF
+TankDrawHandlers:
+LE4B8:  .word   TankDrawState0,DrawTankState1,DrawTankState2
+        .word   DrawTankStates3To4,DrawTankStates3To4
+        .word   DrawTankStates5To7,DrawTankStates5To7,DrawTankStates5To7
+        .word   DrawTankStates8ToD,DrawTankStates8ToD,DrawTankStates8ToD
+        .word   DrawTankStates8ToD,DrawTankStates8ToD,DrawTankStates8ToD
+        .word   DrawTankStatesEToF,DrawTankStatesEToF
+ProjectileLogicHandlers:
+LE4D8:  .word   ProjectileLogicState0
+        .word   ProjectileLogicStates1To3,ProjectileLogicStates1To3,ProjectileLogicStates1To3
+        .word   ProjectileLogicState4
+ProjectileDrawHandlers:
+LE4E2:  .word   ProjectileDrawState0
+        .word   ProjectileDrawStates1To3,ProjectileDrawStates1To3,ProjectileDrawStates1To3
+        .word   ProjectileDrawState4
 
 ; Заполняет начальное состояние объекта. Для врагов дополнительные свойства
 ; (тип, бонусный флаг и скорость) выбираются псевдослучайно.
@@ -4799,17 +4855,17 @@ LE56F:  rts
 LE604:  lda     #$09
         sta     $5A
 LE608:  ldx     $5A
-        lda     $CC,x
+        lda     ProjectileState,x
         and     #$F0
         cmp     #$40
         bne     LE68B
-        lda     $D6,x
+        lda     ProjectileFlags,x
         bne     LE61D
         txa
         eor     FrameCounter
         and     #$01
         beq     LE68B
-LE61D:  lda     $CC,x
+LE61D:  lda     ProjectileState,x
         and     #$03
         tay
         lda     LEA49,y
@@ -4830,40 +4886,40 @@ LE63C:  sta     $55
         asl     a
         asl     a
         sta     $65
-        ldy     $C2,x
-        lda     $B8,x
+        ldy     ProjectileY,x
+        lda     ProjectileX,x
         tax
         jsr     LE693
         beq     LE65F
         ldx     $5A
-        lda     $C2,x
+        lda     ProjectileY,x
         clc
         adc     $64
         sta     $48
-        lda     $B8,x
+        lda     ProjectileX,x
         clc
         adc     $65
         sta     $47
         jsr     LE69A
 LE65F:  ldx     $5A
-        lda     $C2,x
+        lda     ProjectileY,x
         sec
         sbc     $54
         tay
-        lda     $B8,x
+        lda     ProjectileX,x
         sec
         sbc     $55
         tax
         jsr     LE693
         beq     LE68B
         ldx     $5A
-        lda     $C2,x
+        lda     ProjectileY,x
         sec
         sbc     $64
         sec
         sbc     $54
         sta     $48
-        lda     $B8,x
+        lda     ProjectileX,x
         sec
         sbc     $65
         sec
@@ -4896,7 +4952,7 @@ LE69A:  jsr     LD725
         jsr     LCC08
         ldx     $5A
         lda     #$33
-        sta     $CC,x
+        sta     ProjectileState,x
         jmp     LE709
 
 LE6C6:  lda     (ScratchPtrLo),y
@@ -4905,11 +4961,11 @@ LE6C6:  lda     (ScratchPtrLo),y
         .byte   $EA
 LE6CC:  ldx     $5A
         lda     #$33
-        sta     $CC,x
+        sta     ProjectileState,x
         lda     (ScratchPtrLo),y
         cmp     #$11
         beq     LE700
-        lda     $D6,x
+        lda     ProjectileFlags,x
         and     #$02
         beq     LE6EB
 LE6DE:  lda     #$00
@@ -4949,11 +5005,11 @@ LE71A:  jmp     LE77A
 LE71D:  lda     #$07
         sta     $5B
 LE721:  ldy     $5B
-        lda     $CC,y
+        lda     ProjectileState,y
         and     #$F0
         cmp     #$40
         bne     LE772
-        lda     $B8,y
+        lda     ProjectileX,y
         sec
         sbc     ObjectX,x
         bpl     LE739
@@ -4962,7 +5018,7 @@ LE721:  ldy     $5B
         adc     #$01
 LE739:  cmp     #$0A
         bcs     LE772
-        lda     $C2,y
+        lda     ProjectileY,y
         sec
         sbc     ObjectY,x
         bpl     LE74A
@@ -4972,11 +5028,11 @@ LE739:  cmp     #$0A
 LE74A:  cmp     #$0A
         bcs     LE772
         lda     #$33
-        sta     $CC,y
+        sta     ProjectileState,y
         lda     $89,x
         beq     LE75F
         lda     #$00
-        sta     $CC,y
+        sta     ProjectileState,y
         jmp     LE772
 
 LE75F:  jmp     LFF66
@@ -5013,13 +5069,13 @@ LE793:  lda     $5B
         jmp     LE82D
 
 LE79C:  ldy     $5B
-        lda     $CC,y
+        lda     ProjectileState,y
         and     #$F0
         cmp     #$40
         beq     LE7AA
         jmp     LE82D
 
-LE7AA:  lda     $B8,y
+LE7AA:  lda     ProjectileX,y
         sec
         sbc     ObjectX,x
         bpl     LE7B7
@@ -5028,7 +5084,7 @@ LE7AA:  lda     $B8,y
         adc     #$01
 LE7B7:  cmp     #$0A
         bcs     LE82D
-        lda     $C2,y
+        lda     ProjectileY,y
         sec
         sbc     ObjectY,x
         bpl     LE7C8
@@ -5038,7 +5094,7 @@ LE7B7:  cmp     #$0A
 LE7C8:  cmp     #$0A
         bcs     LE82D
         lda     #$33
-        sta     $CC,y
+        sta     ProjectileState,y
         lda     ObjectAttributes,x
         and     #$04
         beq     LE7E2
@@ -5163,7 +5219,7 @@ LE914:  lda     $5A
         and     #$06
         bne     LE96D
         ldx     $5A
-        lda     $CC,x
+        lda     ProjectileState,x
         and     #$F0
         cmp     #$40
         bne     LE96D
@@ -5177,22 +5233,22 @@ LE928:  lda     $5B
         and     #$07
         cmp     $00
         beq     LE969
-        lda     $CC,y
+        lda     ProjectileState,y
         and     #$F0
         cmp     #$40
         bne     LE969
-        lda     $B8,y
+        lda     ProjectileX,y
         sec
-        sbc     $B8,x
+        sbc     ProjectileX,x
         bpl     LE94D
         eor     #$FF
         clc
         adc     #$01
 LE94D:  cmp     #$06
         bcs     LE969
-        lda     $C2,y
+        lda     ProjectileY,y
         sec
-        sbc     $C2,x
+        sbc     ProjectileY,x
         bpl     LE95E
         eor     #$FF
         clc
@@ -5200,8 +5256,8 @@ LE94D:  cmp     #$06
 LE95E:  cmp     #$06
         bcs     LE969
         lda     #$00
-        sta     $CC,x
-        sta     $CC,y
+        sta     ProjectileState,x
+        sta     ProjectileState,y
 LE969:  dec     $5B
         bpl     LE928
 LE96D:  dec     $5A
@@ -5256,9 +5312,9 @@ LE9A4:  cmp     #$0C
 LE9CA:  lda     $88
         asl     a
         tay
-        lda     LE9E2,y
+        lda     PowerUpEffectHandlers,y
         sta     ScratchPtrLo
-        lda     LE9E2+1,y
+        lda     PowerUpEffectHandlers+1,y
         sta     ScratchPtrHi
         pla
         pla
@@ -5268,7 +5324,9 @@ LE9DD:  dec     $49
         bpl     LE97E
 LE9E1:  rts
 
-LE9E2:  .word   LD3E0,LE3B8,LFDBB,LC5FF,LFE22,LFE78,LC613,LFEA7
+PowerUpEffectHandlers:
+LE9E2:  .word   PowerUpEffect0,PowerUpEffect1,PowerUpEffect2,PowerUpEffect3
+        .word   PowerUpEffect4,PowerUpEffect5,PowerUpEffect6,PowerUpEffect7
 
 ; Увеличивает номер этапа; в специальном режиме выполняет переход $76 -> $01.
 AdvanceStageNumber:
@@ -5471,29 +5529,29 @@ LEB42:  ldy     #$07
 LEB4F:  lda     #$00
         ldy     #$05
         sta     (AudioStatePtrLo),y
-        jsr     LECAF
-        jsr     LECBE
+        jsr     LoadAudioSequencePointer
+        jsr     ReadAudioArgument
         ldy     #$00
         sta     (AudioStatePtrLo),y
-        jsr     LECBE
+        jsr     ReadAudioArgument
         ldy     #$01
         sta     (AudioStatePtrLo),y
-        jsr     LECBE
+        jsr     ReadAudioArgument
         ldy     #$02
         sta     (AudioStatePtrLo),y
-        jsr     LECBE
+        jsr     ReadAudioArgument
         ldy     #$04
         sta     (AudioStatePtrLo),y
         ldy     #$00
         lda     (AudioStatePtrLo),y
         cmp     #$04
         bne     LEB88
-        jsr     LECBE
+        jsr     ReadAudioArgument
         ldy     #$03
         sta     (AudioStatePtrLo),y
         bpl     LEB88
-LEB85:  jsr     LECAF
-LEB88:  jsr     LECBE
+LEB85:  jsr     LoadAudioSequencePointer
+LEB88:  jsr     ReadAudioArgument
         cmp     #$E8
         bcs     LEBE1
         cmp     #$60
@@ -5543,14 +5601,19 @@ LEBD7:  ldy     #$06
         jmp     LEB2E
 
 LEBE1:  sbc     #$E8
-        jsr     LECD0
+        jsr     DispatchAudioCommand
 
-; LECD0 использует адрес возврата как базу этой inline-таблицы и передаёт
-; управление обработчику команды $E8-$F8.
+; DispatchAudioCommand использует адрес возврата как базу этой inline-таблицы и передаёт
+; управление обработчику команды $E8-$F9.
 AudioCommandHandlers:
-        .word   LEC0A,LEC21,LEC33,LEC45,LEC57,LEC61,LEC6B,LEC75
-        .word   LEC81,LEC85,LEC88,LEC99,LEC99,LEC99,LEC99,LEC99,LEC99,LECA5
+        .word   AudioCommandE8,AudioCommandE9,AudioCommandEA,AudioCommandEB
+        .word   AudioCommandEC,AudioCommandED,AudioCommandEE,AudioCommandEF
+        .word   AudioCommandF0,AudioCommandF1,AudioCommandF2
+        .word   AudioCommandF3ToF8,AudioCommandF3ToF8,AudioCommandF3ToF8
+        .word   AudioCommandF3ToF8,AudioCommandF3ToF8,AudioCommandF3ToF8
+        .word   AudioCommandF9
 
+AudioCommandE8:
 LEC0A:  ldx     AudioChannel
 LEC0C:  lda     #$00
         sta     $0300,x
@@ -5563,7 +5626,8 @@ LEC0C:  lda     #$00
         sta     (AudioStatePtrLo),y
         jmp     LEB2E
 
-LEC21:  jsr     LECBE
+AudioCommandE9:
+LEC21:  jsr     ReadAudioArgument
         sta     AudioWorkLo
         ldy     #$01
         lda     (AudioStatePtrLo),y
@@ -5572,7 +5636,8 @@ LEC21:  jsr     LECBE
         sta     (AudioStatePtrLo),y
         jmp     LEB88
 
-LEC33:  jsr     LECBE
+AudioCommandEA:
+LEC33:  jsr     ReadAudioArgument
         sta     AudioWorkLo
         ldy     #$01
         lda     (AudioStatePtrLo),y
@@ -5581,7 +5646,8 @@ LEC33:  jsr     LECBE
         sta     (AudioStatePtrLo),y
         jmp     LEB88
 
-LEC45:  jsr     LECBE
+AudioCommandEB:
+LEC45:  jsr     ReadAudioArgument
         sta     AudioWorkLo
         ldy     #$01
         lda     (AudioStatePtrLo),y
@@ -5590,21 +5656,25 @@ LEC45:  jsr     LECBE
         sta     (AudioStatePtrLo),y
         jmp     LEB88
 
-LEC57:  jsr     LECBE
+AudioCommandEC:
+LEC57:  jsr     ReadAudioArgument
         ldy     #$02
         sta     (AudioStatePtrLo),y
         jmp     LEB88
 
-LEC61:  jsr     LECBE
+AudioCommandED:
+LEC61:  jsr     ReadAudioArgument
         ldy     #$04
         sta     (AudioStatePtrLo),y
         jmp     LEB88
 
-LEC6B:  jsr     LECBE
+AudioCommandEE:
+LEC6B:  jsr     ReadAudioArgument
         ldy     #$01
         sta     (AudioStatePtrLo),y
         jmp     LEB88
 
+AudioCommandEF:
 LEC75:  lda     #$00
         ldx     #$02
 LEC79:  sta     AudioLoopCounters,x
@@ -5612,12 +5682,15 @@ LEC79:  sta     AudioLoopCounters,x
         bpl     LEC79
         jmp     LEB88
 
+AudioCommandF0:
 LEC81:  ldx     #$00
         beq     LEC8A
+AudioCommandF1:
 LEC85:  ldx     #$01
         .byte   $2C                    ; BIT abs поглощает следующий LDX #$02.
+AudioCommandF2:
 LEC88:  ldx     #$02
-LEC8A:  jsr     LECBE
+LEC8A:  jsr     ReadAudioArgument
         inc     AudioLoopCounters,x
         cmp     AudioLoopCounters,x
         bne     LECA5
@@ -5625,6 +5698,7 @@ LEC8A:  jsr     LECBE
         sta     AudioLoopCounters,x
         beq     LEC99
 
+AudioCommandF3ToF8:
 LEC99:  ldy     #$05
         lda     (AudioStatePtrLo),y
         clc
@@ -5632,10 +5706,12 @@ LEC99:  ldy     #$05
         sta     (AudioStatePtrLo),y
         jmp     LEB88
 
-LECA5:  jsr     LECBE
+AudioCommandF9:
+LECA5:  jsr     ReadAudioArgument
         ldy     #$05
         sta     (AudioStatePtrLo),y
         jmp     LEB88
+LoadAudioSequencePointer:
 LECAF:  lda     AudioChannel
         asl     a
         tax
@@ -5645,6 +5721,7 @@ LECAF:  lda     AudioChannel
         sta     AudioDataPtrHi
         rts
 
+ReadAudioArgument:
 LECBE:  lda     AudioChannel
         ldy     #$05
         lda     (AudioStatePtrLo),y
@@ -5658,6 +5735,7 @@ LECBE:  lda     AudioChannel
         pla
         rts
 
+DispatchAudioCommand:
 LECD0:  asl     a
         tay
         iny
@@ -5678,87 +5756,139 @@ LECE7:  .byte   $F2,$07,$80,$07,$14,$06,$AE,$06
         .byte   $43,$05,$F4,$05,$9E,$05,$4E,$05
         .byte   $02,$04,$BA,$04,$76,$04,$36
 AudioSequencePointers:
-LECFE:  .word   $EE2C,$ED36,$ED5D,$ED88
-        .word   $EE9F,$EEAE,$EE19,$EDB3
-        .word   $EDD5,$EE48,$EE03,$EDF4
-        .word   $EE5E,$EE56,$EE67,$EE12
-        .word   $EE95,$EE8C,$EE82,$EE73
-        .word   $EE7A,$EEC1,$EEDF,$EF0A
-        .word   $EF3C,$EF4F,$EF62,$EE3A
+LECFE:  .word   AudioSequence00,AudioSequence01,AudioSequence02,AudioSequence03
+        .word   AudioSequence04,AudioSequence05,AudioSequence06,AudioSequence07
+        .word   AudioSequence08,AudioSequence09,AudioSequence10,AudioSequence11
+        .word   AudioSequence12,AudioSequence13,AudioSequence14,AudioSequence15
+        .word   AudioSequence16,AudioSequence17,AudioSequence18,AudioSequence19
+        .word   AudioSequence20,AudioSequence21,AudioSequence22,AudioSequence23
+        .word   AudioSequence24,AudioSequence25,AudioSequence26,AudioSequence27
 
-; Потоки байткода музыки и звуковых эффектов. Команды $E8-$F8
-; обрабатываются таблицей AudioCommandHandlers.
+; Потоки байткода музыки и звуковых эффектов. Команды $E8-$F9
+; обрабатываются таблицей AudioCommandHandlers. Некоторые потоки используют
+; общие хвосты, поэтому метка означает точку входа, а не отдельный блок данных.
 AudioSequences:
+AudioSequence01:
         .byte   $01,$81,$7F,$40,$EF,$68,$1B,$2B,$33
         .byte   $F0,$02,$06,$33,$43,$53,$F0,$02
         .byte   $0C,$43,$53,$04,$F0,$02,$12,$5B
         .byte   $0C,$1C,$F0,$02,$18,$78,$1C,$68
-        .byte   $1C,$1C,$1C,$78,$1C,$E8,$03,$10
+        .byte   $1C,$1C,$1C,$78,$1C,$E8
+AudioSequence02:
+        .byte   $03,$10
         .byte   $7F,$08,$78,$1A,$68,$1A,$F1,$03
         .byte   $07,$78,$32,$68,$32,$F1,$03,$0E
         .byte   $78,$42,$68,$42,$F1,$03,$15,$5A
         .byte   $F1,$03,$19,$0B,$F1,$03,$1D,$78
         .byte   $52,$68,$52,$F1,$03,$24,$78,$52
-        .byte   $E8,$02,$81,$7F,$40,$78,$51,$68
+        .byte   $E8
+AudioSequence03:
+        .byte   $02,$81,$7F,$40,$78,$51,$68
         .byte   $51,$F2,$03,$07,$78,$0A,$68,$0A
         .byte   $F2,$03,$0E,$78,$1A,$68,$1A,$F2
         .byte   $03,$15,$32,$F2,$03,$19,$42,$F2
         .byte   $03,$1D,$78,$3A,$68,$3A,$F2,$03
-        .byte   $24,$78,$3A,$E8,$04,$1F,$7F,$30
+        .byte   $24,$78,$3A,$E8
+AudioSequence07:
+        .byte   $04,$1F,$7F,$30
         .byte   $0A,$62,$49,$49,$EA,$1E,$49,$49
         .byte   $EA,$1D,$49,$49,$EA,$1C,$49,$49
         .byte   $EA,$1B,$49,$49,$EA,$1A,$49,$EA
-        .byte   $19,$49,$EA,$18,$49,$E8,$02,$1F
+        .byte   $19,$49,$EA,$18,$49,$E8
+AudioSequence08:
+        .byte   $02,$1F
         .byte   $7F,$30,$62,$00,$01,$00,$EA,$1E
         .byte   $01,$00,$EA,$1D,$01,$00,$01,$00
         .byte   $EA,$1C,$01,$EA,$1B,$00,$EA,$1A
-        .byte   $01,$EA,$19,$00,$E8,$02,$20,$7F
+        .byte   $01,$EA,$19,$00,$E8
+AudioSequence11:
+        .byte   $02,$20,$7F
         .byte   $30,$63,$1A,$12,$51,$31,$19,$11
-        .byte   $50,$30,$18,$E8,$04,$1F,$7F,$40
+        .byte   $50,$30,$18,$E8
+AudioSequence10:
+        .byte   $04,$1F,$7F,$40
         .byte   $0A,$62,$51,$EA,$1E,$51,$EA,$08
-        .byte   $6A,$51,$E8,$01,$8F,$82,$10,$6F
-        .byte   $2C,$E8,$02,$80,$7F,$40,$63,$52
+        .byte   $6A,$51,$E8
+AudioSequence15:
+        .byte   $01,$8F,$82,$10,$6F
+        .byte   $2C,$E8
+AudioSequence06:
+        .byte   $02,$80,$7F,$40,$63,$52
         .byte   $1B,$3B,$53,$4A,$13,$33,$4B,$1B
-        .byte   $3B,$53,$1C,$3C,$E8,$02,$82,$7F
+        .byte   $3B,$53,$1C,$3C,$E8
+AudioSequence00:
+        .byte   $02,$82,$7F
         .byte   $40,$64,$1B,$2B,$3B,$1C,$2C,$3C
-        .byte   $6C,$53,$E8,$02,$82,$7F,$40,$63
+        .byte   $6C,$53,$E8
+AudioSequence27:
+        .byte   $02,$82,$7F,$40,$63
         .byte   $53,$1B,$1C,$3B,$3C,$53,$6A,$54
-        .byte   $E8,$02,$60,$7F,$40,$64,$52,$3A
-        .byte   $52,$03,$52,$03,$13,$1B,$E8,$02
-        .byte   $D5,$7F,$00,$62,$1C,$1D,$E8,$03
+        .byte   $E8
+AudioSequence09:
+        .byte   $02,$60,$7F,$40,$64,$52,$3A
+        .byte   $52,$03,$52,$03,$13,$1B,$E8
+AudioSequence13:
+        .byte   $02
+        .byte   $D5,$7F,$00,$62,$1C,$1D,$E8
+AudioSequence12:
+        .byte   $03
         .byte   $07,$7F,$08,$61,$3A,$13,$22,$E8
+AudioSequence14:
         .byte   $02,$40,$7F,$00,$61,$3D,$62,$45
-        .byte   $EA,$10,$28,$E8,$02,$80,$7F,$18
-        .byte   $61,$39,$E8,$04,$00,$7F,$28,$0A
-        .byte   $61,$28,$E8,$02,$8C,$94,$40,$61
-        .byte   $10,$64,$18,$F9,$05,$02,$80,$94
-        .byte   $48,$62,$40,$48,$F9,$05,$01,$1F
+        .byte   $EA,$10,$28,$E8
+AudioSequence19:
+        .byte   $02,$80,$7F,$18
+        .byte   $61,$39,$E8
+AudioSequence20:
+        .byte   $04,$00,$7F,$28,$0A
+        .byte   $61,$28,$E8
+AudioSequence18:
+        .byte   $02,$8C,$94,$40,$61
+        .byte   $10,$64,$18,$F9,$05
+AudioSequence17:
+        .byte   $02,$80,$94
+        .byte   $48,$62,$40,$48,$F9,$05
+AudioSequence16:
+        .byte   $01,$1F
         .byte   $7F,$28,$61,$22,$42,$5A,$1B,$E8
+AudioSequence04:
         .byte   $01,$A0,$7F,$40,$66,$1C,$3C,$1C
-        .byte   $53,$1C,$3C,$05,$72,$54,$E8,$02
+        .byte   $53,$1C,$3C,$05,$72,$54,$E8
+AudioSequence05:
+        .byte   $02
         .byte   $90,$7F,$40,$62,$38,$66,$EA,$20
         .byte   $3B,$53,$3B,$1B,$3B,$53,$1C,$6A
-        .byte   $14,$E8,$01,$B8,$7F,$40,$EF,$65
+        .byte   $14,$E8
+AudioSequence21:
+        .byte   $01,$B8,$7F,$40,$EF,$65
         .byte   $0C,$53,$F0,$0C,$05,$0C,$53,$F0
         .byte   $0C,$0B,$34,$24,$F0,$08,$10,$EA
         .byte   $30,$B0,$50,$EA,$20,$9C,$54,$E8
+AudioSequence22:
         .byte   $02,$B8,$7F,$40,$65,$43,$33,$F1
         .byte   $0C,$04,$43,$33,$F1,$0C,$0A,$14
         .byte   $4B,$F1,$08,$0F,$EA,$3A,$30,$50
         .byte   $09,$29,$31,$51,$0A,$2A,$32,$52
         .byte   $0B,$2B,$33,$53,$0C,$2C,$9C,$EA
-        .byte   $20,$2C,$E8,$03,$00,$7F,$08,$A1
+        .byte   $20,$2C,$E8
+AudioSequence23:
+        .byte   $03,$00,$7F,$08,$A1
         .byte   $01,$01,$EE,$15,$6A,$0B,$0B,$0B
         .byte   $EE,$22,$6F,$33,$65,$43,$7E,$EE
         .byte   $33,$53,$6A,$EE,$15,$43,$33,$53
         .byte   $6F,$EE,$22,$13,$65,$23,$7E,$EE
         .byte   $33,$33,$6A,$EE,$15,$23,$13,$4A
-        .byte   $9C,$EE,$FF,$32,$E8,$01,$42,$7F
+        .byte   $9C,$EE,$FF,$32,$E8
+AudioSequence24:
+        .byte   $01,$42,$7F
         .byte   $40,$66,$1B,$0B,$78,$1B,$68,$52
         .byte   $42,$32,$1A,$1A,$1A,$78,$1A,$E8
+AudioSequence25:
         .byte   $02,$82,$7F,$40,$66,$52,$52,$78
         .byte   $52,$68,$32,$2A,$12,$1A,$1A,$1A
-        .byte   $78,$1A,$E8,$03,$10,$7F,$08,$66
+        .byte   $78,$1A,$E8
+AudioSequence26:
+        .byte   $03,$10,$7F,$08,$66
         .byte   $3B,$33,$78,$3B,$68,$1B,$0B,$52
         .byte   $52,$52,$52,$78,$52,$E8,$FF
 LEF76:  cmp     #$FF
@@ -5774,13 +5904,13 @@ LEF86:  sta     $8F
         clc
         adc     $8F
         tax
-        lda     LE42B,x
+        lda     ClassicLevelSetDescriptors,x
         sta     ScratchPtrLo
         inx
-        lda     LE42B,x
+        lda     ClassicLevelSetDescriptors,x
         sta     ScratchPtrHi
         inx
-        lda     LE42B,x
+        lda     ClassicLevelSetDescriptors,x
         sta     $8F
         lda     #$00
         sta     $00
@@ -5856,4 +5986,3 @@ LEFFC:  ldx     $56
 
 ; End of "PRG1_LO" segment
 .code
-

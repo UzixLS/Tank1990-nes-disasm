@@ -38,13 +38,13 @@ LFD46:  lda     $4A
         rts
 
 LFD4F:  lda     Joy1Held
-        and     #$20
+        and     #BUTTON_DOWN
         beq     LFD58
         lda     #$08
         rts
 
 LFD58:  lda     Joy1Held
-        and     #$10
+        and     #BUTTON_UP
         beq     LFD61
         lda     #$0B
         rts
@@ -53,13 +53,13 @@ LFD61:  lda     #$03
         rts
 
 LFD64:  lda     Joy1Held
-        and     #$01
+        and     #BUTTON_A
         beq     LFD91
         lda     Joy2Held
-        and     #$02
+        and     #BUTTON_B
         beq     LFD91
         lda     Joy2Held
-        and     #$01
+        and     #BUTTON_A
         beq     LFD91
         lda     Player1Lives
         bne     LFD81
@@ -100,6 +100,7 @@ LFDB1:  cpx     #$02
         sta     $0100
         rts
 
+PowerUpEffect2:
 LFDBB:  cpx     #$02
         bcc     LFDEF
         lda     #$D3
@@ -157,6 +158,7 @@ LFE12:  lda     $0101,x
         sta     ObjectAttributes,x
 LFE21:  rts
 
+PowerUpEffect4:
 LFE22:  cpx     #$02
         bcc     LFE51
         lda     #$01
@@ -198,6 +200,7 @@ LFE6F:  dec     $5A
         bne     LFE5A
         rts
 
+PowerUpEffect5:
 LFE78:  cpx     #$02
         bcs     LFE87
         inc     Player1Lives,x
@@ -227,6 +230,7 @@ LFE9B:  lda     #$63
 LFEA4:  sta     ObjectAttributes,x
         rts
 
+PowerUpEffect7:
 LFEA7:  lda     #$FF
         sta     $0170,x
         rts
@@ -258,7 +262,7 @@ LFEC9:  dec     $5A
         lda     Player1Lives
         bne     LFF04
         lda     Joy1Held
-        and     #$01
+        and     #BUTTON_A
         beq     LFF04
         inc     Player1Lives
         dec     Player2Lives
@@ -269,7 +273,7 @@ LFEEF:  lda     Player1Lives
         cmp     #$02
         bcc     LFF04
         lda     Joy2Held
-        and     #$01
+        and     #BUTTON_A
         beq     LFF04
         inc     Player2Lives
         dec     Player1Lives

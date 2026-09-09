@@ -31,3 +31,19 @@ OAM_DMA         = $4014
 APU_STATUS      = $4015
 JOY1            = $4016
 JOY2_FRAME      = $4017
+
+; Формат байтов Joy*Held/Joy*Pressed после последовательного чтения контроллера.
+BUTTON_A         = $01
+BUTTON_B         = $02
+BUTTON_SELECT    = $04
+BUTTON_START     = $08
+BUTTON_UP        = $10
+BUTTON_DOWN      = $20
+BUTTON_LEFT      = $40
+BUTTON_RIGHT     = $80
+BUTTON_DIRECTIONS= $F0
+
+DIRECTION_UP     = 0
+DIRECTION_LEFT   = 1
+DIRECTION_DOWN   = 2
+DIRECTION_RIGHT  = 3
