@@ -1031,6 +1031,8 @@ LDA73:  asl     a
         clc
         adc     $53
         sta     $53
+; Альтернативный вход: $53 уже содержит tile-base, X/Y -- позицию пары.
+EmitTwoTileOamPair:
 LDA7B:  stx     $54
         sty     $55
         txa
