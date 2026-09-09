@@ -40,7 +40,9 @@ $(BUILD)/extra-levels.bin: $(wildcard assets/levels/extra/*.map) tools/levels.py
 $(BUILD)/classic-levels.bin: $(wildcard assets/levels/classic/*.map) tools/levels.py | $(BUILD)
 	$(PYTHON) tools/levels.py encode assets/levels/classic 36 $@
 
-ASM_SOURCES := src/main.s src/hardware.inc src/ram.inc src/header.s src/levels.s src/prg0_rest.s src/prg1_lo.s src/ppu.s src/audio.s src/stage_loader.s src/prg1_hi.s src/chr.s
+ASM_SOURCES := src/main.s src/hardware.inc src/ram.inc src/header.s src/levels.s src/prg0_rest.s \
+	src/prg1_lo.s src/game_flow.s src/screens.s src/ppu.s src/tanks.s src/projectiles.s \
+	src/audio.s src/stage_loader.s src/prg1_hi.s src/chr.s
 
 $(BUILD)/tank1990.o: $(ASM_SOURCES) $(BUILD)/tank-levels.bin $(BUILD)/extra-levels.bin $(BUILD)/classic-levels.bin $(BUILD)/sprites.chr $(BUILD)/background.chr $(BUILD)/sprite-palette.bin $(BUILD)/background-palettes.bin $(BUILD)/background-metatiles.bin | $(BUILD)
 	$(CA65) -g -o $@ $<
