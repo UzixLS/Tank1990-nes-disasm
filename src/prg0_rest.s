@@ -6,7 +6,12 @@ ExtraLevels:
         .incbin "../build/extra-levels.bin"
 
 ; Расширения Tank 1990 в свободных областях первого PRG-банка.
-; При двух игроках позволяет передавать жизнь партнёру по кнопке A.
+
+; Передаёт жизнь выбывшему партнёру в режиме двух игроков.
+; Вход: текущие MenuSelection, Player*Lives и Joy*Held.
+; Побочные эффекты: меняет оба счётчика жизней; при успехе X — номер
+; возрождаемого игрока (0/1), а управление передаётся в общий код возрождения.
+ShareLifeWithDefeatedPartner:
 LA553:  jsr     LC31D
         lda     MenuSelection
         beq     LA58A
@@ -17,7 +22,7 @@ LA553:  jsr     LC31D
         lda     Player1Lives
         bne     LA58A
         lda     Joy1Held
-        and     #$01
+        and     #BUTTON_A
         beq     LA58A
         inc     Player1Lives
         dec     Player2Lives
@@ -28,7 +33,7 @@ LA575:  lda     Player1Lives
         cmp     #$02
         bcc     LA58A
         lda     Joy2Held
-        and     #$01
+        and     #BUTTON_A
         beq     LA58A
         inc     Player2Lives
         dec     Player1Lives
@@ -36,15 +41,22 @@ LA575:  lda     Player1Lives
         jmp     LA58B
 LA58A:  rts
 
-LA58B:  jsr     LA728
+; Пропускает передачу в код возрождения через периодическую проверку ROM.
+; Вход: X — слот игрока. Не возвращается: переходит в LE363 или NMI при ошибке.
+RespawnAfterSharedLife:
+LA58B:  jsr     ShouldRunIntegrityCheck
         bcc     LA596
         jmp     LA607
 
+; Неиспользуемый статически одношаговый hook: продолжает возрождение только при C=0.
 LA593:  bcc     LA596
         rts
 LA596:  jmp     LE363
 
-; Проверяет XOR-контрольную сумму девяти байт с $D343.
+; Проверяет XOR-контрольную сумму девяти байт $D343..$D34B.
+; Выход: C=0 при совпадении, C=1 при ошибке; A — фактический XOR, Y=$FF.
+; Портит ScratchPtrLo/Hi, A, Y; проверяемые байты не меняет.
+VerifyD343Checksum:
 LA599:  lda     #$43
         sta     ScratchPtrLo
         lda     #$D3
@@ -62,16 +74,21 @@ LA5A5:  eor     (ScratchPtrLo),y
 LA5B0:  sec
         rts
 
-LA5B2:  jsr     LA728
+; Hook чтения $0101,X. На выбранных фазах кадра сначала проверяет ROM;
+; при ошибке намеренно зависает. Выход: A=$0101,X; портит флаги, а при проверке ещё Y и ScratchPtr.
+GuardedLoadObjectExtensionByte:
+LA5B2:  jsr     ShouldRunIntegrityCheck
         bcc     LA5BF
-        jsr     LA5C3
+        jsr     VerifyEfc0Checksum
         bcc     LA5BF
 LA5BC:  jmp     LA5BC
 
 LA5BF:  lda     $0101,x
         rts
 
-; Вторая контрольная сумма охватывает 13 байт с $EFC0.
+; Вторая XOR-контрольная сумма: $EFC0..$EFCC (13 байт).
+; Выход: C=0 при совпадении, C=1 при ошибке; портит ScratchPtrLo/Hi, A, Y.
+VerifyEfc0Checksum:
 LA5C3:  lda     #$C0
         sta     ScratchPtrLo
         lda     #$EF
@@ -88,9 +105,12 @@ LA5CF:  eor     (ScratchPtrLo),y
 LA5DA:  sec
         rts
 
-LA5DC:  jsr     LA728
+; Hook инициализации $89,X значением $0A. На выбранных фазах проверяет ROM;
+; при ошибке намеренно зависает. Портит A; при проверке также Y и ScratchPtr.
+GuardedInitializeObjectTimer:
+LA5DC:  jsr     ShouldRunIntegrityCheck
         bcc     LA5E9
-        jsr     LA5EE
+        jsr     Verify8D12Checksum
         bcc     LA5E9
 LA5E6:  jmp     LA5E6
 
@@ -98,7 +118,9 @@ LA5E9:  lda     #$0A
         sta     $89,x
         rts
 
-; Контрольная сумма семи байт с $8D12 (область таблиц уровней).
+; XOR-контрольная сумма $8D12..$8D18 (область данных уровней).
+; Выход: C=0 при совпадении, C=1 при ошибке; портит ScratchPtrLo/Hi, A, Y.
+Verify8D12Checksum:
 LA5EE:  lda     #$12
         sta     ScratchPtrLo
         lda     #$8D
@@ -114,12 +136,17 @@ LA5FA:  eor     (ScratchPtrLo),y
         rts
 LA605:  sec
         rts
-LA607:  jsr     LA599
+; Проверка перед возрождением: при ошибке передаёт управление NMI, иначе — LE363.
+VerifyRespawnCodeAndContinue:
+LA607:  jsr     VerifyD343Checksum
         bcc     LA60F
         jmp     NmiHandler
 
 LA60F:  jmp     LE363
 
+; Записывает $20 в $0101,X при $46 >= 3, иначе 0.
+; Вход: X — индекс; выход: A — записанное значение; портит флаги.
+SetIndexedModeExtensionByte:
 LA612:  lda     $46
         cmp     #$03
         bcc     LA61C
@@ -129,6 +156,8 @@ LA61C:  lda     #$00
 LA61E:  sta     $0101,x
         rts
 
+; Неиндексированный вариант SetIndexedModeExtensionByte для $0101.
+SetPlayerOneModeExtensionByte:
 LA622:  lda     $46
         cmp     #$03
         bcc     LA62C
@@ -147,6 +176,9 @@ LA62E:  sta     $0101
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF
+; Для слотов игроков (X=0/1) вызывает два UI-обработчика; для остальных ничего не делает.
+; Побочные эффекты LD9BE/LD138 зависят от их контрактов; регистры не сохраняются.
+UpdatePlayerSlotUi:
 LA680:  cpx     #$02
         bcs     LA68A
         jsr     LD9BE
@@ -154,10 +186,13 @@ LA680:  cpx     #$02
 LA68A:  rts
 
         .byte   $FF,$FF,$FF,$FF,$FF
+; Ждёт кадр; при удержании A+B первым игроком снимает адрес возврата,
+; записывает маркер $AB в $46 и перезапускает игру. Без комбинации обычно возвращается.
+HandleResetChord:
 LA690:  jsr     WaitForNextFrame
         lda     Joy1Held
-        and     #$03
-        cmp     #$03
+        and     #(BUTTON_A | BUTTON_B)
+        cmp     #(BUTTON_A | BUTTON_B)
         beq     LA69C
         rts
 LA69C:  pla
@@ -183,6 +218,10 @@ LA69C:  pla
         .byte   $06,$04,$04,$06,$07,$03,$04,$06
         .byte   $08,$02,$04,$06,$09,$01,$04,$06
         .byte   $01,$09,$04,$06,$06,$04
+; Периодический gate для проверок целостности.
+; Вход: счётчики $17 и $1F. Выход: C=1, если их сумма равна 3, 6 или 9; иначе C=0.
+; Портит A и флаги; X/Y и RAM не меняет.
+ShouldRunIntegrityCheck:
 LA728:  clc
         lda     $17
         adc     $1F
@@ -198,8 +237,11 @@ LA728:  clc
 LA73B:  sec
         rts
 
-; Таблицы метатайлов/экранов и незанятое заполнение банка. Они оставлены
-; данными: автоматический дизассемблер ошибочно видел здесь инструкции.
+; $A73D..$BF7F: неидентифицированный payload и заполнение банка.
+; Подтверждённых статических ссылок на эту область нет. Не-$FF блоки выровнены по страницам:
+; $A780..$A7A7, $A800..$A85A, $A900..$A9EF, $AA00..$AF8B и $B000..$B58B. Их формат и доступность
+; через косвенные указатели не доказаны, поэтому байты не названы графикой или картами.
+UnidentifiedPrg0Payload:
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
@@ -1032,11 +1074,20 @@ LA73B:  sec
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+; Единственный статически достижимый entry point этого хвоста банка.
+; Запускает отложенную проверку контрольной суммы из второго PRG-банка.
+; В обычном случае возвращается; при несовпадении проверка может сменить поток управления.
+RunDeferredIntegrityGuard:
 LBF80:
-        jsr     LFD94
+        jsr     MaybeEnforceRuntimeChecksum
         rts
 
-; Набор коротких обработчиков расширения, размещённый в конце банка.
+; Ниже лежат короткие версии/заготовки обработчиков расширения. Статических вызовов нет;
+; схожие, но завершённые варианты есть по адресам $FF81..$FFBB.
+
+; Вход: A сохраняется в $00, X — объект. Инициализирует три поля объекта значением $40,
+; затем переходит в общий обработчик LE77A. Портит A и флаги; X сохраняет до перехода.
+InitializeObjectExtensionPrototype:
 LBF84:  sta     $00
         lda     #$40
         sta     $0101,x
@@ -1044,6 +1095,8 @@ LBF84:  sta     $00
         sta     ObjectAttributes,x
         jmp     LE77A
 
+; Возвращает A=$20, если $46 отрицателен, иначе A=0; всегда поднимает флаг $0307.
+GetModeExtensionBitsPrototype:
 LBF93:  lda     #$01
         sta     $0307
         lda     $46
@@ -1054,9 +1107,14 @@ LBF9F:  lda     #$20
         rts
 
         .byte   $01
+; Записывает A в ObjectAttributes,X и переходит к LE77A.
+StoreObjectAttributesPrototype:
 LBFA3:  sta     ObjectAttributes,x
         jmp     LE77A
 
+; Очищает поле $0170,X для состояния $73, затем продолжает обход по $5A.
+; Выход: $5A уменьшен; портит A и флаги, X не меняет до перехода.
+AdvanceExtensionObjectLoopPrototype:
 LBFA8:  lda     ObjectState,x
         cmp     #$73
         bne     LBFB3
@@ -1067,6 +1125,8 @@ LBFB3:  dec     $5A
         rts
 LBFB6:  jmp     LE710
 
+; Незавершённая заготовка: очищает $0170,X, после чего идут байты $FF, а не RTS.
+ClearObjectExtensionPrototype:
 LBFB9:  lda     #$00
         sta     $0170,x
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
