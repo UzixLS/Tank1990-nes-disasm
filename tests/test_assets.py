@@ -26,6 +26,10 @@ class AssetRoundTripTest(unittest.TestCase):
         data = b"".join(read_level(ROOT / f"assets/levels/extra/{index:03}.map") for index in range(1, 6))
         self.assertEqual(data, ROM[0x239C:0x2563])
 
+    def test_unused_level_matches_rom(self):
+        data = read_level(ROOT / "assets/levels/unused/001.map")
+        self.assertEqual(data, ROM[0x2810:0x286B])
+
     def test_classic_levels_match_rom(self):
         data = b"".join(read_level(ROOT / f"assets/levels/classic/{index:03}.map") for index in range(1, 37))
         self.assertEqual(data, ROM[0x7040:0x7D0C])

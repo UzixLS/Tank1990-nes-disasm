@@ -102,9 +102,11 @@ LE099:  lda     ObjectState,x
         sta     ProjectileFlags,x
         jmp     InitializeProjectileFlagsForVariant
 
-; Одиночный байт $F0 по $E0BF; прямых ссылок нет.
-UnidentifiedE0bfByte:
-        .byte   $F0
+; Сохранённый байт в недостижимом промежутке: предыдущий путь заканчивается
+; безусловным JMP, а $E0C0 используется как отдельный вход. Ссылок на $E0BF нет;
+; как самостоятельная инструкция байт не интерпретируется.
+UnreferencedE0bfByte:
+LE0BF:  .byte   $F0
 ; Базовая декодировка мощности снаряда из старшей тетрады ObjectAttributes.
 ; Вход: A=attributes&$F0, X — слот. $60 даёт flags=3; $C0 и ненулевые классы без bit7 — flags=1.
 ; Ноль и остальные классы с bit7 оставляют предварительно очищенный ProjectileFlags,X без изменения.
@@ -121,6 +123,7 @@ LE0CE:  lda     #$01
         sta     ProjectileFlags,x
         rts
 
+SetStrongProjectileFlags:
 LE0D3:  lda     #$03
         sta     ProjectileFlags,x
 LE0D7:  rts
@@ -193,9 +196,10 @@ LE126:  ldx     $5A
         bcs     LE15D
         jmp     DispatchPlayerFireInput
 
-; Три байта $03,$F0,$27 между ветвями; прямых ссылок нет.
-UnidentifiedE133Data:
-        .byte   $03,$F0,$27
+; Недостижимые сохранённые байты после хвостового JMP в dispatch ввода.
+; Dispatch возвращает управление только в $E136/$E15D; ссылок на $E133 нет.
+UnreferencedE133Bytes:
+LE133:  .byte   $03,$F0,$27
 ; Ветвь стрельбы игрока X. Для класса attributes $40 и занятого первого снаряда пытается использовать второй:
 ; если его state $D4,X свободен, копирует туда state/position/flags первого, очищает первый и создаёт новый.
 ; Иначе просто пытается инициализировать первый слот. Портит A/Y и projectile RAM; X сохраняет индекс игрока до хвоста цикла.
@@ -579,9 +583,10 @@ LE393:  lda     #$F0
         jsr     DrawMetatile
         rts
 
-; Одиночный байт $04 по $E3A2; прямых ссылок нет.
-UnidentifiedE3a2Byte:
-        .byte   $04
+; Сохранённый байт между RTS и отдельным альтернативным spawn-entry.
+; Статических ссылок на $E3A2 нет; назначение исходного заполнения неизвестно.
+UnreferencedE3a2Byte:
+LE3A2:  .byte   $04
 ; Альтернативный spawn entry: вход A записывает в ObjectAttributes,X, обнуляет $86, ставит state=$F0 и рисует spawn-метатайл.
 ; Статических ссылок нет; портит A/X/Y, ScratchPtr, $00-$04, $47/$48,
 ; nametable/attribute shadow и PPU-очередь.
@@ -649,9 +654,9 @@ LE3EF:  lda     #$73
         sta     $0170,x
         rts
 
-; Одиночный байт $03 по $E3F9; прямых ссылок нет.
-UnidentifiedE3f9Byte:
-        .byte   $03
+; Сохранённый байт между RTS и следующим entry point; статических ссылок нет.
+UnreferencedE3f9Byte:
+LE3F9:  .byte   $03
 ; Объединяет входные биты A с ObjectAttributes,X. Единственная специальная комбинация $E7 заменяется на $E4.
 ; Записывает результат, обнуляет ObjectFrame,X; выход A=0, X/Y сохраняются.
 MergeTankAttributeBits:
@@ -852,9 +857,10 @@ LE540:  tay
         sta     ObjectFrame,x
         rts
 
-; Два байта $E0,$A0 по $E54D; статических ссылок нет.
-UnidentifiedE54dData:
-        .byte   $E0,$A0
+; Два сохранённых байта после RTS и перед отдельным entry point $E54F.
+; Статических ссылок на $E54D нет; исполняемым блоком не классифицируются.
+UnreferencedE54dBytes:
+LE54D:  .byte   $E0,$A0
 ; Статически неиспользуемый вход: объединяет байт TankLevels+$56+Y с ObjectAttributes,X и обнуляет ObjectFrame,X.
 ; Вход: X — слот, Y — смещение; выход: A — новые attributes. Формат исходного байта не установлен.
 ApplyLevelByteToTankAttributesStub:
@@ -903,11 +909,14 @@ TankVariantLabels:
         .byte   $54,$41,$4E,$4B,$20,$4E,$FF,$FF
 EditionYearText:
         .byte   $31,$39,$39,$30,$FF
-; Неидентифицированный $FF-завершённый 10-байтный поток.
-UnidentifiedE5e5Data:
-        .byte   $01,$0F,$02,$00,$00,$C8,$CA,$00,$00,$FF
-; 20 байтов $5C и терминатор $FF; прямой ссылки и точный формат не установлены.
-UnidentifiedE5efData:
-        .byte   $5C,$5C,$5C,$5C,$5C,$5C,$5C,$5C
+; Девять значений и терминатор $FF непосредственно в пуле тайловых строк.
+; Последовательность совместима с их форматом, но статических указателей на
+; $E5E5 нет; назначение и предполагаемое изображение не устанавливаются.
+UnreferencedTileSequenceE5e5:
+LE5E5:  .byte   $01,$0F,$02,$00,$00,$C8,$CA,$00,$00,$FF
+; Горизонтальный разделитель variant-меню: два вызова из RunVariantSelectionMenu
+; выводят эту строку на строках 1 и 4. Формат — 20 тайлов $5C и терминатор $FF.
+VariantMenuDividerText:
+LE5EF:  .byte   $5C,$5C,$5C,$5C,$5C,$5C,$5C,$5C
         .byte   $5C,$5C,$5C,$5C,$5C,$5C,$5C,$5C
         .byte   $5C,$5C,$5C,$5C,$FF

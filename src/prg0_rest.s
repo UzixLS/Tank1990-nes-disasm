@@ -12,7 +12,7 @@ ExtraLevels:
 ; Побочные эффекты: меняет оба счётчика жизней; при успехе X — номер
 ; возрождаемого игрока (0/1), а управление передаётся в общий код возрождения.
 ShareLifeWithDefeatedPartner:
-LA553:  jsr     LC31D
+LA553:  jsr     UpdateHalfSecondPhaseFlag
         lda     MenuSelection
         beq     LA58A
         lda     Player2Lives
@@ -27,7 +27,7 @@ LA553:  jsr     LC31D
         inc     Player1Lives
         dec     Player2Lives
         ldx     #$00
-        jmp     LA58B
+        jmp     RespawnAfterSharedLife
 
 LA575:  lda     Player1Lives
         cmp     #$02
@@ -38,7 +38,7 @@ LA575:  lda     Player1Lives
         inc     Player2Lives
         dec     Player1Lives
         ldx     #$01
-        jmp     LA58B
+        jmp     RespawnAfterSharedLife
 LA58A:  rts
 
 ; Пропускает передачу в код возрождения через периодическую проверку ROM.
@@ -46,12 +46,12 @@ LA58A:  rts
 RespawnAfterSharedLife:
 LA58B:  jsr     ShouldRunIntegrityCheck
         bcc     LA596
-        jmp     LA607
+        jmp     VerifyRespawnCodeAndContinue
 
 ; Неиспользуемый статически одношаговый hook: продолжает возрождение только при C=0.
 LA593:  bcc     LA596
         rts
-LA596:  jmp     LE363
+LA596:  jmp     SpawnTank
 
 ; Проверяет XOR-контрольную сумму девяти байт $D343..$D34B.
 ; Выход: C=0 при совпадении, C=1 при ошибке; A — фактический XOR, Y=$FF.
@@ -142,7 +142,7 @@ LA607:  jsr     VerifyD343Checksum
         bcc     LA60F
         jmp     NmiHandler
 
-LA60F:  jmp     LE363
+LA60F:  jmp     SpawnTank
 
 ; Записывает $20 в $0101,X при $46 >= 3, иначе 0.
 ; Вход: X — индекс; выход: A — записанное значение; портит флаги.
@@ -181,8 +181,8 @@ LA62E:  sta     $0101
 UpdatePlayerSlotUi:
 LA680:  cpx     #$02
         bcs     LA68A
-        jsr     LD9BE
-        jsr     LD138
+        jsr     AddScoreDigitsToRecord
+        jsr     AwardScoreThresholdLives
 LA68A:  rts
 
         .byte   $FF,$FF,$FF,$FF,$FF
@@ -237,11 +237,12 @@ LA728:  clc
 LA73B:  sec
         rts
 
-; $A73D..$BF7F: неидентифицированный payload и заполнение банка.
-; Подтверждённых статических ссылок на эту область нет. Не-$FF блоки выровнены по страницам:
-; $A780..$A7A7, $A800..$A85A, $A900..$A9EF, $AA00..$AF8B и $B000..$B58B. Их формат и доступность
-; через косвенные указатели не доказаны, поэтому байты не названы графикой или картами.
-UnidentifiedPrg0Payload:
+; $A73D..$BF7F не содержит подтверждённых точек входа или статических ссылок.
+; Не-$FF участки ниже имеют регулярные размеры и алфавиты, несовместимые с обычным
+; потоком 6502-кода; они разделены как данные. Возможный доступ через вычисляемые
+; указатели не доказан, поэтому назначение таблиц намеренно не закреплено.
+UnreferencedPrg0Data:
+UnusedPaddingA73d:
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
@@ -250,12 +251,21 @@ UnidentifiedPrg0Payload:
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
-        .byte   $FF,$FF,$FF,$06,$04,$06,$04,$03
+        .byte   $FF,$FF,$FF
+
+; 40 байт $02..$08. Первые 32 байта совпадают с $AE6C..$AE8B, последние восемь —
+; с $AD40..$AD47/$AF40..$AF47. Это составная копия фрагментов таблиц ниже;
+; потребитель и исходная размерность не найдены.
+UnreferencedSmallValuesA780:
+        .byte   $06,$04,$06,$04,$03
         .byte   $06,$05,$06,$05,$05,$04,$06,$06
         .byte   $03,$05,$06,$04,$05,$05,$06,$07
         .byte   $04,$03,$06,$05,$03,$06,$06,$05
         .byte   $06,$03,$06,$05,$02,$07,$06,$06
-        .byte   $08,$02,$04,$FF,$FF,$FF,$FF,$FF
+        .byte   $08,$02,$04
+
+UnusedPaddingA7a8:
+        .byte   $FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
@@ -266,33 +276,15 @@ UnidentifiedPrg0Payload:
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
-        .byte   $FF,$FF,$FF,$DD,$DD,$DD,$DD,$DD
-        .byte   $DD,$DD
-        .byte   $AD,$DD,$DD
-        .byte   $9D,$DD,$DD
-        .byte   $AD,$EE,$EE
-        .byte   $EE,$EE,$EE
-        .byte   $EE,$EE
-        .byte   $EE,$EE,$EE
-        .byte   $EE,$EE,$EE
-        .byte   $EE,$EE,$EE
-        .byte   $EE,$EE,$EE
-        .byte   $EE,$EE,$EE
-        .byte   $EE,$EE,$EE
-        .byte   $EE,$EE,$EE
-        .byte   $EE,$EE,$EE
-        .byte   $EE,$EE,$EE
-        .byte   $EE,$EE,$EE
-        .byte   $EE,$EE,$EE
-        .byte   $EE,$EE,$EE
-        .byte   $EE,$EE,$EE
-        .byte   $EE,$EE,$EE
-        .byte   $BD,$DD,$DD
-        .byte   $DD,$DD,$DD
-        .byte   $BD,$BB,$DD
-        .byte   $DD,$DD,$DD
-        .byte   $DB,$BD,$9B,$BD,$DD,$DD,$DD,$BB
-        .byte   $9D,$99,$BB,$DD,$DD,$DB,$B9,$9D
+        .byte   $FF,$FF,$FF
+
+; 91 байт, то есть ровно один используемый проектом формат упакованной карты:
+; 13 строк по 14 нибблов, включая padding-ниббл каждой строки. Значения образуют
+; регулярное поле из TSA $9,$A,$B,$D,$E, но игровая ссылка на эту карту не найдена.
+UnreferencedPackedMapA800:
+        .incbin "../build/unused-level-a800.bin"
+
+UnusedPaddingA85b:
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
@@ -314,6 +306,10 @@ UnidentifiedPrg0Payload:
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF
+
+; 240 байт можно без остатка разделить на 12 записей по 20 байт. Старшие биты
+; похожи на кодирование ObjectAttributes врагов, однако потребитель не найден.
+UnreferencedA900Table:
         .byte   $A0,$C0
         .byte   $E0,$A0
         .byte   $A0,$C0
@@ -380,9 +376,19 @@ UnidentifiedPrg0Payload:
         .byte   $E0,$A3,$C3,$A0,$A3,$C3,$A3,$C3
         .byte   $A0,$C3,$A0,$C3,$C3,$A3,$A7,$C5
         .byte   $C7,$E0,$A0,$A3,$C3,$60,$A0,$60
-        .byte   $A3,$C3,$C3,$60,$A0,$A3,$FF,$FF
+        .byte   $A3,$C3,$C3,$60,$A0,$A3
+
+UnusedPaddingA9f0:
+        .byte   $FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
-        .byte   $FF,$FF,$FF,$FF,$FF,$FF,$12,$02
+        .byte   $FF,$FF,$FF,$FF,$FF,$FF
+
+; Шесть выровненных по страницам блоков по 140 байт. Значения лежат в диапазоне
+; $00..$12. $AD00 и $AF00 совпадают полностью; $AC00/$AE00 — близкие варианты
+; с одинаковыми вставками/удалениями. Это данные либо сохранённые копии таблиц,
+; но их размерность и назначение не доказаны.
+UnreferencedSmallValueTableAa00:
+        .byte   $12,$02
         .byte   $00,$00,$02,$04,$00,$0E,$0E,$04
         .byte   $00
         .byte   $02,$0A,$05,$02,$03,$05,$02,$08
@@ -401,7 +407,10 @@ UnidentifiedPrg0Payload:
         .byte   $06,$04,$08,$04,$04,$03,$08,$06
         .byte   $03,$08,$06,$02,$04,$04,$08,$04
         .byte   $04,$04,$0A,$00,$06,$04,$06,$00
-        .byte   $0A,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+        .byte   $0A
+
+UnusedPaddingAa8c:
+        .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
@@ -415,7 +424,10 @@ UnidentifiedPrg0Payload:
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
-        .byte   $FF,$FF,$FF,$FF,$FF,$08,$02,$08
+        .byte   $FF,$FF,$FF,$FF,$FF
+
+UnreferencedSmallValueTableAb00:
+        .byte   $08,$02,$08
         .byte   $02,$06,$04,$04,$06,$08,$04,$06
         .byte   $02,$02,$07,$08,$03,$06,$04,$05
         .byte   $05,$06,$05,$07,$02,$05,$05,$05
@@ -433,7 +445,10 @@ UnidentifiedPrg0Payload:
         .byte   $06,$04,$0A,$02,$04,$08,$08,$02
         .byte   $02,$04,$02,$0A,$04,$04,$08,$04
         .byte   $04,$00,$0A,$04,$06,$00,$08,$02
-        .byte   $0A,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+        .byte   $0A
+
+UnusedPaddingAb8c:
+        .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
@@ -447,7 +462,10 @@ UnidentifiedPrg0Payload:
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
-        .byte   $FF,$FF,$FF,$FF,$FF,$04,$04,$0A
+        .byte   $FF,$FF,$FF,$FF,$FF
+
+UnreferencedSmallValueTableAc00:
+        .byte   $04,$04,$0A
         .byte   $02,$03,$08,$04,$05,$06,$06,$04
         .byte   $04,$06,$05,$04,$05,$03,$06,$05
         .byte   $06,$06,$08,$04,$02,$06,$04,$05
@@ -465,7 +483,10 @@ UnidentifiedPrg0Payload:
         .byte   $04,$06,$04,$06,$04,$03,$06,$05
         .byte   $06,$05,$05,$04,$06,$06,$03,$05
         .byte   $06,$04,$05,$05,$06,$07,$04,$03
-        .byte   $06,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+        .byte   $06
+
+UnusedPaddingAc8c:
+        .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
@@ -479,7 +500,10 @@ UnidentifiedPrg0Payload:
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
-        .byte   $FF,$FF,$FF,$FF,$FF,$03,$03,$03
+        .byte   $FF,$FF,$FF,$FF,$FF
+
+UnreferencedSmallValueTableAd00:
+        .byte   $03,$03,$03
         .byte   $0B,$05,$06,$06,$03,$05,$04,$07
         .byte   $04,$03,$07,$04,$06,$03,$07,$02
         .byte   $08,$07,$03,$08,$02,$03,$08,$01
@@ -497,7 +521,10 @@ UnidentifiedPrg0Payload:
         .byte   $05,$04,$06,$01,$09,$06,$05,$06
         .byte   $03,$04,$06,$04,$06,$04,$07,$03
         .byte   $06,$06,$05,$07,$02,$04,$06,$03
-        .byte   $07,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+        .byte   $07
+
+UnusedPaddingAd8c:
+        .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
@@ -511,7 +538,10 @@ UnidentifiedPrg0Payload:
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
-        .byte   $FF,$FF,$FF,$FF,$FF,$04,$04,$0A
+        .byte   $FF,$FF,$FF,$FF,$FF
+
+UnreferencedSmallValueTableAe00:
+        .byte   $04,$04,$0A
         .byte   $02,$03,$08,$04,$05,$06,$06,$04
         .byte   $04,$06,$05,$04,$05,$03,$06,$05
         .byte   $06,$06,$08,$04,$02,$06,$04,$05
@@ -529,7 +559,10 @@ UnidentifiedPrg0Payload:
         .byte   $06,$05,$05,$04,$06,$06,$03,$05
         .byte   $06,$04,$05,$05,$06,$07,$04,$03
         .byte   $06,$05,$03,$06,$06,$05,$06,$03
-        .byte   $06,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+        .byte   $06
+
+UnusedPaddingAe8c:
+        .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
@@ -543,7 +576,11 @@ UnidentifiedPrg0Payload:
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
-        .byte   $FF,$FF,$FF,$FF,$FF,$03,$03,$03
+        .byte   $FF,$FF,$FF,$FF,$FF
+
+; Побайтовая копия UnreferencedSmallValueTableAd00.
+UnreferencedSmallValueTableAf00:
+        .byte   $03,$03,$03
         .byte   $0B,$05,$06,$06,$03,$05,$04,$07
         .byte   $04,$03,$07,$04,$06,$03,$07,$02
         .byte   $08,$07,$03,$08,$02,$03,$08,$01
@@ -561,7 +598,10 @@ UnidentifiedPrg0Payload:
         .byte   $05,$04,$06,$01,$09,$06,$05,$06
         .byte   $03,$04,$06,$04,$06,$04,$07,$03
         .byte   $06,$06,$05,$07,$02,$04,$06,$03
-        .byte   $07,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+        .byte   $07
+
+UnusedPaddingAf8c:
+        .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
@@ -575,7 +615,14 @@ UnidentifiedPrg0Payload:
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
-        .byte   $FF,$FF,$FF,$FF,$FF,$80,$A0
+        .byte   $FF,$FF,$FF,$FF,$FF
+
+; Ещё шесть page-aligned блоков по 140 байт. Диапазон значений совпадает с
+; наблюдаемым кодированием ObjectAttributes ($80/$A0/$C0/$E0 и младшие флаги),
+; но без ссылки это остаётся только характеристикой формата. $B300=$B500;
+; изменения $B200/$B400 структурно совпадают с изменениями $AC00/$AE00.
+UnreferencedAttributeLikeTableB000:
+        .byte   $80,$A0
         .byte   $C0,$E0
         .byte   $E0,$A0
         .byte   $C0,$80
@@ -595,7 +642,10 @@ UnidentifiedPrg0Payload:
         .byte   $C0,$A0,$80,$E0,$80,$A0,$C0,$E0
         .byte   $C0,$A0,$E0,$C0,$E0,$80,$C0,$A0
         .byte   $A0,$E0,$C0,$A0,$C0,$A0,$80,$E0
-        .byte   $C0,$A0,$E0,$E0,$FF,$FF,$FF,$FF
+        .byte   $C0,$A0,$E0,$E0
+
+UnusedPaddingB08c:
+        .byte   $FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
@@ -610,6 +660,8 @@ UnidentifiedPrg0Payload:
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+
+UnreferencedAttributeLikeTableB100:
         .byte   $C0,$A0,$80,$E0,$C0,$A0,$E0,$80
         .byte   $C0,$A0,$80,$E0,$80,$A0,$C0,$E0
         .byte   $80,$E0,$C0,$A0,$80,$A0,$C0,$E0
@@ -627,7 +679,10 @@ UnidentifiedPrg0Payload:
         .byte   $80,$A0,$C0,$E0,$C0,$A0,$80,$E0
         .byte   $E0,$A0,$C0,$C0,$C0,$80,$E0,$A0
         .byte   $C0,$E0,$A0,$A0,$80,$A0,$C0,$E0
-        .byte   $80,$A0,$C0,$E0,$FF,$FF,$FF,$FF
+        .byte   $80,$A0,$C0,$E0
+
+UnusedPaddingB18c:
+        .byte   $FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
@@ -642,6 +697,8 @@ UnidentifiedPrg0Payload:
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+
+UnreferencedAttributeLikeTableB200:
         .byte   $80,$A1,$E0,$C1,$C1,$A0,$A1,$E0
         .byte   $C1,$E0,$C0,$A1,$E0,$A1,$A0,$C1
         .byte   $C2,$C1,$A1,$80,$A1,$C0,$C1,$C2
@@ -659,7 +716,10 @@ UnidentifiedPrg0Payload:
         .byte   $A1,$A0,$C3,$C2,$A0,$C2,$C3,$A2
         .byte   $C2,$C0,$A2,$E0,$A2,$C0,$C2,$C3
         .byte   $C3,$C2,$A0,$A2,$C0,$C2,$A2,$E0
-        .byte   $E0,$C2,$C0,$A2,$FF,$FF,$FF,$FF
+        .byte   $E0,$C2,$C0,$A2
+
+UnusedPaddingB28c:
+        .byte   $FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
@@ -674,6 +734,8 @@ UnidentifiedPrg0Payload:
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+
+UnreferencedAttributeLikeTableB300:
         .byte   $C2,$C1,$C0,$A2,$C3,$A0,$A1,$C2
         .byte   $C3,$C0,$A1,$E0,$C0,$A1,$C2,$C3
         .byte   $E0,$C3,$A0,$A1,$C3,$C2,$A1,$C0
@@ -691,7 +753,10 @@ UnidentifiedPrg0Payload:
         .byte   $C3,$A3,$A0,$C2,$E0,$C2,$A0,$A3
         .byte   $C3,$C1,$A3,$E0,$A0,$C3,$C3,$A3
         .byte   $A0,$A3,$C3,$C3,$C3,$A0,$A3,$C3
-        .byte   $A0,$C3,$C3,$A3,$FF,$FF,$FF,$FF
+        .byte   $A0,$C3,$C3,$A3
+
+UnusedPaddingB38c:
+        .byte   $FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
@@ -706,6 +771,8 @@ UnidentifiedPrg0Payload:
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+
+UnreferencedAttributeLikeTableB400:
         .byte   $80,$A1,$E0,$C1,$C1,$A0,$A1,$E0
         .byte   $C1,$E0,$C0,$A1,$E0,$A1,$A0,$C1
         .byte   $C2,$C1,$A1,$80,$A1,$C0,$C1,$C2
@@ -723,7 +790,10 @@ UnidentifiedPrg0Payload:
         .byte   $C2,$C0,$A2,$E0,$A2,$C0,$C2,$C3
         .byte   $C3,$C2,$A0,$A2,$C0,$C2,$A2,$E0
         .byte   $E0,$C2,$C0,$A2,$C2,$A0,$A2,$C3
-        .byte   $A0,$A2,$C3,$C2,$FF,$FF,$FF,$FF
+        .byte   $A0,$A2,$C3,$C2
+
+UnusedPaddingB48c:
+        .byte   $FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
@@ -738,6 +808,9 @@ UnidentifiedPrg0Payload:
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
+
+; Побайтовая копия UnreferencedAttributeLikeTableB300.
+UnreferencedAttributeLikeTableB500:
         .byte   $C2,$C1,$C0,$A2,$C3,$A0,$A1,$C2
         .byte   $C3,$C0,$A1,$E0,$C0,$A1,$C2,$C3
         .byte   $E0,$C3,$A0,$A1,$C3,$C2,$A1,$C0
@@ -755,7 +828,12 @@ UnidentifiedPrg0Payload:
         .byte   $C3,$A3,$A0,$C2,$E0,$C2,$A0,$A3
         .byte   $C3,$C1,$A3,$E0,$A0,$C3,$C3,$A3
         .byte   $A0,$A3,$C3,$C3,$C3,$A0,$A3,$C3
-        .byte   $A0,$C3,$C3,$A3,$FF,$FF,$FF,$FF
+        .byte   $A0,$C3,$C3,$A3
+
+; Остаток $B58C..$BF7F заполнен $FF. После него по $BF80 начинается
+; статически достижимый RunDeferredIntegrityGuard.
+UnusedPaddingB58c:
+        .byte   $FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
@@ -1082,8 +1160,9 @@ LBF80:
         jsr     MaybeEnforceRuntimeChecksum
         rts
 
-; Ниже лежат короткие версии/заготовки обработчиков расширения. Статических вызовов нет;
-; схожие, но завершённые варианты есть по адресам $FF81..$FFBB.
+; Ниже лежат неиспользуемые копии/заготовки обработчиков расширения. Статических
+; вызовов нет. $BF93..$BFBA побайтно совпадает с активным кодом $FF93..$FFBA;
+; $BF86..$BF92 — с $FF86..$FF92, но перед копией добавлено STA $00.
 
 ; Вход: A сохраняется в $00, X — объект. Инициализирует три поля объекта значением $40,
 ; затем переходит в общий обработчик LE77A. Портит A и флаги; X сохраняет до перехода.
@@ -1093,7 +1172,7 @@ LBF84:  sta     $00
         sta     $0101,x
         sta     $0178,x
         sta     ObjectAttributes,x
-        jmp     LE77A
+        jmp     AdvancePlayerCollisionPassOrBeginEnemyPass
 
 ; Возвращает A=$20, если $46 отрицателен, иначе A=0; всегда поднимает флаг $0307.
 GetModeExtensionBitsPrototype:
@@ -1107,10 +1186,10 @@ LBF9F:  lda     #$20
         rts
 
         .byte   $01
-; Записывает A в ObjectAttributes,X и переходит к LE77A.
+; Записывает A в ObjectAttributes,X и переходит к общему хвосту столкновений.
 StoreObjectAttributesPrototype:
 LBFA3:  sta     ObjectAttributes,x
-        jmp     LE77A
+        jmp     AdvancePlayerCollisionPassOrBeginEnemyPass
 
 ; Очищает поле $0170,X для состояния $73, затем продолжает обход по $5A.
 ; Выход: $5A уменьшен; портит A и флаги, X не меняет до перехода.
@@ -1121,13 +1200,14 @@ LBFA8:  lda     ObjectState,x
         lda     #$00
         sta     $0170,x
 LBFB3:  dec     $5A
-        bpl     LBFB6
+        bpl     LBFB8
         rts
-LBFB6:  jmp     LE710
+LBFB8:  jmp     CheckNextPlayerTank
 
-; Незавершённая заготовка: очищает $0170,X, после чего идут байты $FF, а не RTS.
+; Первые пять байт совпадают с ClearObjectExtensionState по $FFBB, но вместо
+; завершающего RTS по $BFC0 начинается заполнение $FF.
 ClearObjectExtensionPrototype:
-LBFB9:  lda     #$00
+LBFBB:  lda     #$00
         sta     $0170,x
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF

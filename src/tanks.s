@@ -318,6 +318,7 @@ LDC97:  lda     ObjectState,x
         jmp     RouteFirstTerrainProbe
 
         .byte   $EA
+ProbeSecondTankCorner:
 LDCDF:  lda     $56
         clc
         adc     $58
@@ -339,6 +340,7 @@ LDCDF:  lda     $56
         jmp     RouteSecondTerrainProbe
 
         .byte   $EA
+CommitProposedTankMovement:
 LDD04:  ldx     $5A
         lda     $56
         sta     ObjectX,x
@@ -346,6 +348,7 @@ LDD04:  ldx     $5A
         sta     ObjectY,x
         jmp     LDD29
 
+HandleBlockedTankMovement:
 LDD11:  ldx     $5A
         cpx     #$02
         bcc     LDD29

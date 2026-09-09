@@ -44,8 +44,8 @@ LFD32:  adc     #$09
         jsr     QueueTileAtCoordinates
         rts
 
-; Неидентифицированные данные $FD39..$FD45; прямых ссылок нет.
-UnidentifiedFd39Data:
+; Данные $FD39..$FD45 без статических ссылок; назначение не установлено.
+UnreferencedFd39Data:
         .byte   $9D,$DD,$DD,$DD,$86,$DD,$DD,$9D
         .byte   $DD,$DD,$D9,$99,$DD
 
@@ -104,7 +104,8 @@ LFD89:  lda     #$01
 LFD91:  jmp     SelectStage
 
 ; Отложенная проверка runtime-контрольной суммы.
-; При StageNumber<26 и в большинстве кадров только вызывает LC31D. Начиная с 26-го этапа с вероятностью 1/8
+; При StageNumber<26 и в большинстве кадров только вызывает
+; UpdateHalfSecondPhaseFlag. Начиная с 26-го этапа с вероятностью 1/8
 ; сравнивает вычисленный XOR в $8D с эталоном $8C. При несовпадении переходит по ScratchPtr.
 ; Важно: этот путь не возвращается к вызывающему коду. Возвращающийся путь
 ; сохраняет X, но портит A и при StageNumber>=26 может изменить состояние RNG.
@@ -123,7 +124,7 @@ LFD94:
         beq     LFDAD
         jmp     (ScratchPtrLo)
 
-LFDAD:  jsr     LC31D
+LFDAD:  jsr     UpdateHalfSecondPhaseFlag
         rts
 
 ; Адаптер для слотов игроков: при X<2 записывает $0A в $0100 и возвращается;
@@ -137,7 +138,8 @@ LFDB1:  cpx     #$02
 
 PowerUpEffect2:
 ; Вход: X — слот подобравшего усиление. Для X>=2 заменяет три блока вокруг базы и
-; обнуляет атрибуты через LCB31. Для X<2 при активном $68 обновляет ограждение и ставит $45=$14.
+; обнуляет атрибуты через QueueBrickBaseAttributes. Для X<2 при активном $68
+; обновляет ограждение и ставит $45=$14.
 ; Портит ScratchPtr, A, X, Y; меняет nametable shadow/PPU-очередь через вызываемые процедуры.
 LFDBB:  cpx     #$02
         bcc     LFDEF
@@ -162,11 +164,11 @@ LFDBB:  cpx     #$02
         ldx     #$0C
         ldy     #$1B
         jsr     QueueTileAtCoordinates
-        jmp     LCB31
+        jmp     QueueBrickBaseAttributes
 
 LFDEF:  lda     $68
         bpl     LFDFA
-        jsr     LCB9E
+        jsr     DrawSteelBaseEnclosure
         lda     #$14
         sta     $45
 LFDFA:  rts
@@ -288,7 +290,8 @@ LFEA7:  lda     #$FF
         rts
 
 ; Послекадровый проход расширения Tank 1990.
-; Для каждого слота 7..0 с ненулевым $0170,X вызывает LDA7B с координатами объекта и кодом $63,
+; Для каждого слота 7..0 с ненулевым $0170,X рисует двухспрайтовый объект
+; с координатами танка и кодом $63,
 ; затем запускает integrity guard и обрабатывает передачу жизни между игроками.
 ; Портит A, X, Y, $04, $53, $5A и рабочие поля вызываемых процедур; может изменить Player*Lives.
 UpdateTank1990Extensions:
@@ -306,7 +309,7 @@ LFEB1:  ldx     $5A
         tax
         lda     #$63
         sta     $53
-        jsr     LDA7B
+        jsr     EmitTwoTileOamPair
 LFEC9:  dec     $5A
         bpl     LFEB1
         jsr     RunDeferredIntegrityGuard
@@ -324,7 +327,7 @@ LFEC9:  dec     $5A
         inc     Player1Lives
         dec     Player2Lives
         ldx     #$00
-        jmp     LE363
+        jmp     SpawnTank
 
 LFEEF:  lda     Player1Lives
         cmp     #$02
@@ -335,13 +338,14 @@ LFEEF:  lda     Player1Lives
         inc     Player2Lives
         dec     Player1Lives
         ldx     #$01
-        jmp     LE363
+        jmp     SpawnTank
 
 LFF04:  rts
 
 ; Маршрутизация первой проверки TSA при движении.
-; Вход: A — код TSA, $5A — слот объекта. При $0170,X!=0 код $12 направляется в проходимую ветвь LDCDF;
-; иначе TSA<$20 идёт в ветвь столкновения LDD11, TSA>=$20 — в LDCDF. Не возвращается.
+; Вход: A — код TSA, $5A — слот объекта. При $0170,X!=0 код $12 направляется
+; к ProbeSecondTankCorner; иначе TSA<$20 идёт в HandleBlockedTankMovement,
+; TSA>=$20 — к ProbeSecondTankCorner. Не возвращается.
 RouteFirstTerrainProbe:
 LFF05:  pha
         nop
@@ -358,15 +362,16 @@ LFF05:  pha
         pla
         cmp     #$12
         bne     LFF1E
-LFF1A:  jmp     LDCDF
+LFF1A:  jmp     ProbeSecondTankCorner
 
 LFF1D:  pla
 LFF1E:  cmp     #$20
         bcs     LFF1A
-        jmp     LDD11
+        jmp     HandleBlockedTankMovement
 
 ; Парный RouteFirstTerrainProbe маршрутизатор второй проверки TSA.
-; При разрешённом проходе переходит в LDD04, при столкновении — в LDD11. Не возвращается.
+; При разрешённом проходе переходит в CommitProposedTankMovement, при
+; столкновении — в HandleBlockedTankMovement. Не возвращается.
 RouteSecondTerrainProbe:
 LFF25:  pha
         nop
@@ -383,15 +388,15 @@ LFF25:  pha
         pla
         cmp     #$12
         bne     LFF3E
-LFF3A:  jmp     LDD04
+LFF3A:  jmp     CommitProposedTankMovement
 
 LFF3D:  pla
 LFF3E:  cmp     #$20
         bcs     LFF3A
-        jmp     LDD11
+        jmp     HandleBlockedTankMovement
 
-; Сбрасывает 16 байт состояния расширения $0170..$017F, затем вызывает LD491.
-; После полной инициализации через LD491 возвращает A=$FC, X=$1C, Y=0;
+; Сбрасывает 16 байт состояния расширения $0170..$017F, затем вызывает
+; InitializeCoreRuntime. После полной инициализации возвращает A=$FC, X=$1C, Y=0;
 ; почти вся рабочая RAM и состояние PPU/APU могут измениться.
 ResetExtensionState:
 LFF45:  lda     #$00
@@ -399,18 +404,18 @@ LFF45:  lda     #$00
 LFF49:  sta     $0170,x
         dex
         bpl     LFF49
-        jsr     LD491
+        jsr     InitializeCoreRuntime
         rts
 
-; Заполняет пять байт $0174..$0178 значением A, затем вызывает LD491.
-; A и X/Y перед LD491 сохраняются, но сам LD491 может их изменить.
+; Заполняет пять байт $0174..$0178 значением A, затем вызывает
+; InitializeCoreRuntime. Входные A/X/Y этой процедурой не сохраняются.
 FillExtensionSlots4Through8:
 LFF53:  sta     $0174
         sta     $0175
         sta     $0176
         sta     $0177
         sta     $0178
-        jsr     LD491
+        jsr     InitializeCoreRuntime
         rts
 ; Обрабатывает попадание снаряда в объект X с нулевым $89,X.
 ; Ненулевой $0170,X поглощается/очищается. Без него объект переводится в state=$73, кроме случая $0101,X=$63:
@@ -420,14 +425,14 @@ LFF66:  lda     $0170,x
         beq     LFF73
         lda     #$00
         sta     $0170,x
-        jmp     LE77A
+        jmp     AdvancePlayerCollisionPassOrBeginEnemyPass
 
 LFF73:  lda     $0101,x
         cmp     #$63
         beq     LFF81
         lda     #$73
         sta     ObjectState,x
-        jmp     LE763
+        jmp     ApplyPlayerHitVariantState
 
 LFF81:  lda     #$01
         sta     $030E
@@ -435,7 +440,7 @@ LFF81:  lda     #$01
         sta     $0101,x
         sta     $0178,x
         sta     ObjectAttributes,x
-        jmp     LE77A
+        jmp     AdvancePlayerCollisionPassOrBeginEnemyPass
 
 ; Поднимает $0307 и возвращает в A модификатор $20 при отрицательном $46, иначе 0.
 ; X/Y не меняет; портит флаги.
@@ -451,14 +456,15 @@ LFF9F:  lda     #$20
         rts
 
 ; Одиночный байт $01 по $FFA2; статических ссылок нет.
-UnidentifiedFfa2Byte:
+UnreferencedFfa2Byte:
         .byte   $01
-; Записывает A в ObjectAttributes,X и переходит в общий хвост LE77A.
+; Записывает A в ObjectAttributes,X и переходит в общий хвост прохода столкновений.
 StoreAttributesAndContinueCollisionPass:
 LFFA3:  sta     ObjectAttributes,x
-        jmp     LE77A
+        jmp     AdvancePlayerCollisionPassOrBeginEnemyPass
 ; Хвост итерации по объектам: очищает $0170,X для ObjectState=$73, затем уменьшает $5A.
-; При $5A>=0 переходит к LE710, иначе возвращается. Портит A, $5A и флаги.
+; При $5A>=0 переходит к CheckNextPlayerTank, иначе возвращается. Портит A,
+; $5A и флаги.
 AdvanceTankCollisionPass:
 LFFA8:  lda     ObjectState,x
         cmp     #$73
@@ -469,7 +475,7 @@ LFFB3:  dec     $5A
         bpl     LFFB8
         rts
 
-LFFB8:  jmp     LE710
+LFFB8:  jmp     CheckNextPlayerTank
 
 ; Очищает дополнительное состояние $0170,X. Выход: A=0; X/Y сохраняются.
 ClearObjectExtensionState:
@@ -477,19 +483,20 @@ LFFBB:  lda     #$00
         sta     $0170,x
         rts
 ; Настраивает ProjectileFlags,X по режиму $46 и ObjectAttributes,X.
-; В базовом режиме передаёт старшую тетраду атрибутов в LE0C0. В расширенном режиме ($46<0)
+; В базовом режиме передаёт старшую тетраду атрибутов в
+; DecodeProjectileFlagsFromAttributes. В расширенном режиме ($46<0)
 ; бит $08 или класс $60 дают flags=3, часть прочих ненулевых классов — flags=1. Портит A и флаги.
 InitializeProjectileFlagsForVariant:
 LFFC1:  lda     $46
         bmi     LFFCC
         lda     ObjectAttributes,x
         and     #$F0
-        jmp     LE0C0
+        jmp     DecodeProjectileFlagsFromAttributes
 
 LFFCC:  lda     ObjectAttributes,x
         and     #$08
         beq     LFFD5
-        jmp     LE0D3
+        jmp     SetStrongProjectileFlags
 
 LFFD5:  lda     ObjectAttributes,x
         and     #$F0

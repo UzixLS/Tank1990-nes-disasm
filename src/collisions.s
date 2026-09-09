@@ -391,7 +391,9 @@ LE8B0:  .byte   $5D,$FF
 ; Строка с пробелом используется при стирании курсора variant-меню.
 VariantMenuBlankCursorText:
 LE8B2:  .byte   $20,$FF
-UnclassifiedE8b4Padding:
+; Шесть байтов заполнения между строкой стирания курсора и таблицей очков.
+; Все равны $FF; статических ссылок внутрь диапазона $E8B4-$E8B9 нет.
+UnreferencedE8b4Fill:
 LE8B4:  .byte   $FF,$FF,$FF,$FF,$FF,$FF
 
 ; Упакованные десятичные награды за типы врагов; фактически 100..400 очков.
@@ -626,8 +628,9 @@ LEA09:  pla
         pla
         jmp     StageSelectionInputLoop
 
-; Статических ссылок на этот байт и следующий trampoline не найдено.
-UnclassifiedEa0eByte:
+; Сохранённый недостижимый байт после безусловного перехода StageSelectionInputLoop.
+; Статических ссылок на него и следующий trampoline не найдено.
+UnreferencedEa0eByte:
 LEA0E:  .byte   $01
 UnreferencedMaximumUpgradeTrampoline:
 LEA0F:
@@ -672,7 +675,9 @@ LEA39:  lda     #$00
         lda     $0101,x
         jmp     MergeTankAttributeBits
 
-UnclassifiedEa44Byte:
+; Сохранённый недостижимый байт после хвостового JMP MergeTankAttributeBits;
+; следующий адрес $EA45 является самостоятельным entry point. Ссылок нет.
+UnreferencedEa44Byte:
 LEA44:  .byte   $03
 ; Небольшой адаптер без статических ссылок: пишет A в audio/event flag $0305.
 ; RAM кроме $0305 и регистры X/Y не меняет.

@@ -788,17 +788,27 @@ EnemyTypeAttributeBits:
 LC5A9:  .byte   $80,$A0,$C0,$E0
 EnemyLowAttributeBits:
 LC5AD:  .byte   $02,$00,$01,$00,$01,$00,$01,$00
-; Байты $C5B5..$C5BE лежат сразу после восьмиэлементной таблицы, но её индексы их не достигают.
-UnidentifiedC5b5Data:
+; Байты $C5B5..$C5BE лежат между двумя восьмиэлементными таблицами.
+; Индекс EnemyLowAttributeBits ограничен 0..7; других статических ссылок на этот нулевой промежуток нет.
+UnreferencedC5b5Zeros:
         .byte   $00,$00,$00,$00,$00,$00,$00,$00
         .byte   $00,$00
 EnemyBonusAttributeBits:
 LC5BF:  .byte   $04,$04,$00,$00,$00,$00,$00,$00
-; Оставшиеся байты $C5C7..$C5D8 не индексируются как часть таблицы; их формат не установлен.
-UnidentifiedC5c7Data:
-        .byte   $00,$00,$40,$20,$59,$69,$53,$20
-        .byte   $31,$39,$39,$30,$69,$32,$FF,$FF
-        .byte   $FF,$FF
+; Два нулевых байта без статических ссылок отделяют таблицу от checksum-блока.
+UnreferencedC5c7Prefix:
+LC5C7:  .byte   $00,$00
+; Семь байт входят в runtime XOR и остаются в ScratchPtr как цель аварийного
+; JMP при несовпадении $8D/$8C. Первый байт $40 есть RTI: такой переход не возвращается
+; по обычной цепочке JSR. Смысл остальных шести байт отдельно не подтверждён.
+RuntimeChecksumFailureTarget:
+LC5C9:  .byte   $40,$20,$59,$69,$53,$20,$31
+; Хвост после checksum-блока не входит в семибайтный XOR и не имеет подтверждённых ссылок.
+UnreferencedC5d0Tail:
+LC5D0:  .byte   $39,$39,$30,$69,$32
+; Четыре $FF заполняют остаток до следующей процедуры $C5D9.
+PaddingBeforeClearScreenAndAudio:
+LC5D5:  .byte   $FF,$FF,$FF,$FF
 ; Гасит рендеринг, очищает nametable shadow/PPU, снова включает NMI и сбрасывает audio engine.
 ; Портит A/X/Y, PPU/APU и звуковую RAM.
 ClearScreenAndAudio:
@@ -863,9 +873,10 @@ LC633:  lda     #$76
 LC635:  sta     StageNumber
         rts
 
-; Два байта без прямых ссылок; не интерпретируются как код.
-UnidentifiedC638Data:
-        .byte   $20,$B4
+; Два байта без статических ссылок между RTS и восьмибайтной таблицей.
+; Как код они не классифицируются: $20 потребовал бы ещё один байт из RestrictedPowerUpTypeTable.
+UnreferencedC638Bytes:
+LC638:  .byte   $20,$B4
 RestrictedPowerUpTypeTable:
 LC63A:  .byte   $00,$01,$02,$03,$03,$04,$05,$06
 ; Генерирует Joy1/Joy2 для attract mode. Для каждого игрока выбирает цель:
@@ -1106,9 +1117,9 @@ LC7C8:  lda     #$01
         sta     $6B
         lda     #$6E
         sta     $60
-        lda     #$D3
+        lda     #>LivesHudIconText
         sta     ScratchPtrHi
-        lda     #$41
+        lda     #<LivesHudIconText
         sta     ScratchPtrLo
         ldx     #$1D
         ldy     #$12
@@ -1122,9 +1133,9 @@ LC7C8:  lda     #$01
         sta     $5A
         jmp     LC801
 
-LC7F2:  lda     #$D3
+LC7F2:  lda     #>LivesHudIconText
         sta     ScratchPtrHi
-        lda     #$41
+        lda     #<LivesHudIconText
         sta     ScratchPtrLo
         ldx     #$1D
         ldy     #$15
@@ -1182,16 +1193,16 @@ LC858:  rts
 ; портит A/X/Y и кадровые счётчики WaitForNextFrame.
 DrawStageNumberHud:
 LC859:  jsr     WaitForNextFrame
-        lda     #$D3
+        lda     #>StageHudUpperTiles
         sta     ScratchPtrHi
-        lda     #$65
+        lda     #<StageHudUpperTiles
         sta     ScratchPtrLo
         ldx     #$1D
         ldy     #$17
         jsr     QueueTileAtCoordinates
-        lda     #$D3
+        lda     #>StageHudLowerTiles
         sta     ScratchPtrHi
-        lda     #$68
+        lda     #<StageHudLowerTiles
         sta     ScratchPtrLo
         ldx     #$1D
         ldy     #$18
@@ -1224,12 +1235,12 @@ LC894:  pha
         tay
         rts
 
-; Рисует маркер $D362 для индекса A в правой HUD-сетке. Портит A/X/Y, ScratchPtr и PPU-очередь.
+; Рисует RemainingEnemyMarkerTiles для индекса A в правой HUD-сетке. Портит A/X/Y, ScratchPtr и PPU-очередь.
 DrawRemainingEnemyMarker:
 LC8A2:  jsr     EnemyMarkerIndexToHudCoordinates
-        lda     #$D3
+        lda     #>RemainingEnemyMarkerTiles
         sta     ScratchPtrHi
-        lda     #$62
+        lda     #<RemainingEnemyMarkerTiles
         sta     ScratchPtrLo
         jsr     QueueTileAtCoordinates
         rts

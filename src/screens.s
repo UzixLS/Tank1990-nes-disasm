@@ -677,9 +677,9 @@ LCE32:  lda     $7E
         ldx     #$03
         ldy     #$19
         jsr     QueueTileAtCoordinates
-        lda     #$D3
+        lda     #>PointsText
         sta     ScratchPtrHi
-        lda     #$5E
+        lda     #<PointsText
         sta     ScratchPtrLo
         ldx     #$08
         ldy     #$1A
@@ -718,9 +718,9 @@ LCE8D:  lda     $7D
         ldx     #$16
         ldy     #$19
         jsr     QueueTileAtCoordinates
-        lda     #$D3
+        lda     #>PointsText
         sta     ScratchPtrHi
-        lda     #$5E
+        lda     #<PointsText
         sta     ScratchPtrLo
         ldx     #$1B
         ldy     #$1A
@@ -881,30 +881,30 @@ QueueStatisticsCountFields:
 ; Размещает одинаковую строку PTS и четыре пустых числовых поля в колонке P1;
 ; при двух игроках повторяет поля в колонке P2.
 LD014:  jsr     WaitForNextFrame
-        lda     #$D3
+        lda     #>PointsText
         sta     ScratchPtrHi
-        lda     #$5E
+        lda     #<PointsText
         sta     ScratchPtrLo
         ldx     #$08
         ldy     #$0C
         jsr     QueueTileAtCoordinates
-        lda     #$D3
+        lda     #>PointsText
         sta     ScratchPtrHi
-        lda     #$5E
+        lda     #<PointsText
         sta     ScratchPtrLo
         ldx     #$08
         ldy     #$0F
         jsr     QueueTileAtCoordinates
-        lda     #$D3
+        lda     #>PointsText
         sta     ScratchPtrHi
-        lda     #$5E
+        lda     #<PointsText
         sta     ScratchPtrLo
         ldx     #$08
         ldy     #$12
         jsr     QueueTileAtCoordinates
-        lda     #$D3
+        lda     #>PointsText
         sta     ScratchPtrHi
-        lda     #$5E
+        lda     #<PointsText
         sta     ScratchPtrLo
         ldx     #$08
         ldy     #$15
@@ -912,30 +912,30 @@ LD014:  jsr     WaitForNextFrame
         lda     MenuSelection
         beq     LD096
         jsr     WaitForNextFrame
-        lda     #$D3
+        lda     #>PointsText
         sta     ScratchPtrHi
-        lda     #$5E
+        lda     #<PointsText
         sta     ScratchPtrLo
         ldx     #$1A
         ldy     #$0C
         jsr     QueueTileAtCoordinates
-        lda     #$D3
+        lda     #>PointsText
         sta     ScratchPtrHi
-        lda     #$5E
+        lda     #<PointsText
         sta     ScratchPtrLo
         ldx     #$1A
         ldy     #$0F
         jsr     QueueTileAtCoordinates
-        lda     #$D3
+        lda     #>PointsText
         sta     ScratchPtrHi
-        lda     #$5E
+        lda     #<PointsText
         sta     ScratchPtrLo
         ldx     #$1A
         ldy     #$12
         jsr     QueueTileAtCoordinates
-        lda     #$D3
+        lda     #>PointsText
         sta     ScratchPtrHi
-        lda     #$5E
+        lda     #<PointsText
         sta     ScratchPtrLo
         ldx     #$1A
         ldy     #$15
@@ -1179,11 +1179,12 @@ LD20E:  lda     #$00
         jsr     QueueTileAtCoordinates
         rts
 
-; Неиспользуемый напрямую в текущем графе вызовов адаптер двух строк.
+; Адаптер двух строк без статических ссылок в текущем графе вызовов.
 ; Вход: A становится старшим байтом указателя A:$F8 для строки в ($04,$19);
 ; затем всегда трактует поток байтов с $D320 как строку для ($06,$1B).
-; $D320 находится внутри кода проверки контрольной суммы, поэтому корректность такого
-; пути без неизвестного вызывающего контекста не подтверждена. Между потоками ждёт кадр.
+; $D320 есть операнд STA $8C в InitializeRuntimeChecksumGuard. Строковый чтец проходил бы дальше по байтам
+; опкодов до $FF в $D331. При A=$D2 первая строка аналогично началась бы с кода проверки $D2F8.
+; Без вызывающего контекста назначение этого пути не подтверждено. Между потоками ждёт кадр.
 ; Назначение вызывающего сценария не подтверждено. Меняет A/X/Y, ScratchPtr
 ; и PPU-очередь.
 QueueTwoLegacyScreenLines:
@@ -1253,10 +1254,10 @@ LD2E2:  .byte   $5F,$6B,$50,$4C,$41,$59,$45,$52,$FF
 ConstructionMenuText:
 LD2EB:  .byte   $43,$4F,$4E,$53,$54,$52,$55,$43,$54,$49,$4F,$4E,$FF
 ; Инициализирует проверку целостности во время игры: XOR-ит по семь байтов из
-; $F677, $F7B9 и $C5C9 в $8D, затем кладёт ожидаемое значение $CD в $8C.
-; ScratchPtr остаётся равным $C5C9; при позднем несовпадении $8D/$8C код
+; $F677, $F7B9 и RuntimeChecksumFailureTarget в $8D, затем кладёт ожидаемое значение $CD в $8C.
+; ScratchPtr остаётся равным RuntimeChecksumFailureTarget; при позднем несовпадении $8D/$8C код
 ; использует именно его как адрес косвенного перехода.
-; Выход: A=$CD, $8C=$CD, $8D=вычисленный XOR, ScratchPtr=$C5C9, Y=$FF.
+; Выход: A=$CD, $8C=$CD, $8D=вычисленный XOR, ScratchPtr=RuntimeChecksumFailureTarget, Y=$FF.
 ; X не меняется. Назначение проверяемых семибайтных областей отдельно не доказано.
 InitializeRuntimeChecksumGuard:
 LD2F8:  lda     #$00
@@ -1271,9 +1272,9 @@ LD2F8:  lda     #$00
         lda     #$F7
         sta     ScratchPtrHi
         jsr     XorSevenByteBlock
-        lda     #$C9
+        lda     #<RuntimeChecksumFailureTarget
         sta     ScratchPtrLo
-        lda     #$C5
+        lda     #>RuntimeChecksumFailureTarget
         sta     ScratchPtrHi
         jsr     XorSevenByteBlock
         lda     #$CD
@@ -1299,17 +1300,23 @@ LD328:  lda     (ScratchPtrLo),y
         bpl     LD328
         rts
 
-; Короткие $FF-терминированные строки/фрагменты. Часть начинается специальным
-; тайлом; их вызывающий экран в текущем графе ссылок не подтверждён.
-LegacyScreenTextFragments:
-LD330:  .byte   $20,$FF
-LD332:  .byte   $4F,$50,$45,$4E,$6B,$52,$45,$41,$43,$48,$FF
-LD33D:  .byte   $69,$FF
-LD33F:  .byte   $14,$FF
+; $D332 завершает описанный выше поток с $D320; отдельной статической ссылки на него нет.
+LegacyChecksumCodeStreamEnd:
+LD332:  .byte   $20,$FF
+; Три самостоятельных $FF-терминированных фрагмента без статических ссылок.
+; Байты $4F..$48 во втором попадают в буквенный диапазон экранного шрифта, но смысл строки не утверждается.
+UnreferencedScreenTextFragments:
+LD334:  .byte   $4F,$50,$45,$4E,$6B,$52,$45,$41,$43,$48,$FF
+LD33F:  .byte   $69,$FF
+; Двухбайтная строка значка жизней используется UpdateLivesHud в двух позициях.
+LivesHudIconText:
+LD341:  .byte   $14,$FF
+; Литеральная строка GAME; статических ссылок нет.
 GameText:
-LD341:  .byte   $47,$41,$4D,$45,$FF
+LD343:  .byte   $47,$41,$4D,$45,$FF
+; Литеральная строка OVER; статических ссылок нет.
 OverText:
-LD346:  .byte   $4F,$56,$45,$52,$FF
+LD348:  .byte   $4F,$56,$45,$52,$FF
 ; Возвращает в A остаток от деления scratch-байта $00 на 6.
 ; Входное $00 не меняет; X/Y сохраняет. C=0 на выходе, кроме теоретического
 ; случая переполнения промежуточного вычитания, недостижимого для байта.
@@ -1320,13 +1327,19 @@ LD34F:  cmp     #$06
         bcs     LD34F
 LD357:  rts
 
+; Литеральная строка ORIKO; статических ссылок нет.
 OrikoText:
 LD358:  .byte   $4F,$52,$49,$4B,$4F,$FF
+; Подпись PTS для восьми полей счётчиков на экране статистики.
 PointsText:
 LD35E:  .byte   $50,$54,$53,$FF
-UnknownUiGlyphPairs:
+; Два одинаковых тайла маркера оставшихся противников в HUD.
+RemainingEnemyMarkerTiles:
 LD362:  .byte   $6A,$6A,$FF
+; Верхняя и нижняя двухтайловые строки значка StageNumber в HUD.
+StageHudUpperTiles:
 LD365:  .byte   $6C,$FC,$FF
+StageHudLowerTiles:
 LD368:  .byte   $6D,$FD,$FF
 BlankTileText:
 LD36B:  .byte   $11,$FF
@@ -1385,7 +1398,8 @@ DirectionStepX:
 LD3D5:  .byte   $00,$FF,$00,$01
 DirectionStepY:
 LD3D9:  .byte   $FF,$00,$01,$00
-UnclassifiedDirectionTableTail:
+; Оба известных потребителя индексируют таблицы направлением 0..3; эти три $FF лежат за их границей.
+PaddingBeforePowerUpEffect0:
 LD3DD:  .byte   $FF,$FF,$FF
 PowerUpEffect0:
 ; Эффект усиления 0 зависит от типа подобравшего слота.
@@ -1412,5 +1426,6 @@ LD3F8:  lda     #$0A
         sta     $89,x
         rts
 
-UnclassifiedScreenModulePadding:
+; Заполнение конца экранного модуля до следующей процедуры $D400; ссылок на эти байты нет.
+ScreenModuleEndPadding:
 LD3FD:  .byte   $FF,$FF,$FF

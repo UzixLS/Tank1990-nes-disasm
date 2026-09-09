@@ -13,6 +13,7 @@
 - карты Tank 1990: `assets/levels/tank/*.map`;
 - пять дополнительных карт: `assets/levels/extra/*.map`;
 - классические карты: `assets/levels/classic/*.map`;
+- неиспользуемая карта из `$A800`: `assets/levels/unused/001.map`;
 - тайлы спрайтов: `assets/chr/sprites.bmp`;
 - фоновые тайлы: `assets/chr/background.bmp`;
 - палитры: `assets/palettes/*.pal`;
