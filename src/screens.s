@@ -80,7 +80,7 @@ LCA3D:  lda     Joy1Pressed
         lda     $4A
         cmp     #$2E
         bne     LCA52
-        jsr     LC4A1
+        jsr     RunVariantSelectionMenu
         pla
         pla
         jmp     LC092
@@ -1085,7 +1085,7 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         stx     $56
         ldy     #$2E
         sty     $57
-        jsr     LE3D8
+        jsr     DrawVariantTitleData
         nop
         nop
         nop
@@ -1363,6 +1363,7 @@ LD3AE:  .byte   $CD,$CF,$FF
 PlayerOneStatisticsMarker:
 LD3B1:  .byte   $5B,$FF
 PlayerTwoStatisticsMarker:
+VariantMenuSelectionCursor:
 LD3B3:  .byte   $5D,$FF
 StatisticsTotalText:
 LD3B5:  .byte   $54,$4F,$54,$41,$4C,$FF

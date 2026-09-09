@@ -1,4 +1,8 @@
+; Снаряды, эффекты поля, создание танков и общие таблицы ($E02E-$E603).
+
 UpdateProjectiles:
+; Обновляет все 10 слотов снарядов от 9 до 0 через DispatchProjectileLogic.
+; Выход: $5A=$FF; портит A/X/Y, ScratchPtr и поля снарядов по контракту обработчика.
 LE02E:  lda     #$09
         sta     $5A
 LE032:  ldx     $5A
@@ -8,6 +12,8 @@ LE032:  ldx     $5A
         rts
 
 DispatchProjectileLogic:
+; Вход: X — слот. Выбирает пять обработчиков по старшей тетраде ProjectileState,X.
+; Хвостовой JMP; портит A/Y/ScratchPtr, X сохраняется до входа в обработчик.
 LE03C:  lda     ProjectileState,x
         lsr     a
         lsr     a
@@ -21,16 +27,20 @@ LE03C:  lda     ProjectileState,x
         jmp     (ScratchPtrLo)
 
 ProjectileLogicState4:
+; Активный снаряд: двигает на 2 px в направлении из младших двух битов state; при ProjectileFlags bit0 повторяет шаг,
+; то есть двигает на 4 px. Меняет ProjectileX/Y,X; портит A/Y и флаги.
         lda     ProjectileState,x
         and     #$03
         tay
-        jsr     LE063
+        jsr     MoveProjectileTwoPixels
         lda     ProjectileFlags,x
         and     #$01
         beq     LE062
-        jsr     LE063
+        jsr     MoveProjectileTwoPixels
 LE062:  rts
 
+; Один шаг снаряда X на 2 px. Вход: Y — direction 0..3; меняет ProjectileX/Y,X, портит A и флаги.
+MoveProjectileTwoPixels:
 LE063:  lda     DirectionDeltaX,y
         asl     a
         clc
@@ -44,6 +54,8 @@ LE063:  lda     DirectionDeltaX,y
         rts
 
 ProjectileLogicStates1To3:
+; Обратный отсчёт фаз взрыва 1..3. Когда младшая тетрада доходит до 0, уменьшает фазу на $10;
+; ненулевые промежуточные фазы получают таймер 3, последняя переходит в state=0. Меняет ProjectileState,X; портит A/флаги.
         dec     ProjectileState,x
         lda     ProjectileState,x
         and     #$0F
@@ -57,6 +69,10 @@ ProjectileLogicStates1To3:
 LE089:  sta     ProjectileState,x
 LE08B:  rts
 
+; Создаёт снаряд в слоте X, только если ProjectileState,X=0.
+; Начальное state=$40|direction; координаты смещены на 8 px от ObjectX/Y,X, flags затем вычисляются по attributes/варианту.
+; Для игрока X<2 ставит request $030F=1. Хвостовой JMP в InitializeProjectileFlagsForVariant; портит A/Y и флаги.
+InitializeProjectileForTank:
 LE08C:  lda     ProjectileState,x
         bne     LE0D7
         cpx     #$02
@@ -84,9 +100,15 @@ LE099:  lda     ObjectState,x
         sta     ProjectileY,x
         lda     #$00
         sta     ProjectileFlags,x
-        jmp     LFFC1
+        jmp     InitializeProjectileFlagsForVariant
 
+; Одиночный байт $F0 по $E0BF; прямых ссылок нет.
+UnidentifiedE0bfByte:
         .byte   $F0
+; Базовая декодировка мощности снаряда из старшей тетрады ObjectAttributes.
+; Вход: A=attributes&$F0, X — слот. $60 даёт flags=3; $C0 и ненулевые классы без bit7 — flags=1.
+; Ноль и остальные классы с bit7 оставляют предварительно очищенный ProjectileFlags,X без изменения.
+DecodeProjectileFlagsFromAttributes:
 LE0C0:
         beq     LE0D7
         cmp     #$C0
@@ -104,6 +126,8 @@ LE0D3:  lda     #$03
 LE0D7:  rts
 
 DrawProjectiles:
+; Отрисовывает все 10 слотов снарядов от 9 до 0. Выход: $5A=$FF; портит
+; A/X/Y, ScratchPtr, $00, $04/$53, $0D, $47/$48 и OAM shadow.
 LE0D8:  lda     #$09
         sta     $5A
 LE0DC:  ldx     $5A
@@ -113,6 +137,7 @@ LE0DC:  ldx     $5A
         rts
 
 DispatchProjectileDraw:
+; Вход: X — слот. Диспетчер по старшей тетраде ProjectileState,X; хвостовой JMP, портит A/Y/ScratchPtr.
 LE0E6:  lda     ProjectileState,x
         lsr     a
         lsr     a
@@ -126,6 +151,8 @@ LE0E6:  lda     ProjectileState,x
         jmp     (ScratchPtrLo)
 
 ProjectileDrawState4:
+; Рисует активный снаряд в его ProjectileX/Y с кадром по direction. Портит
+; A/X/Y, ScratchPtr, $00, $04/$53, $0D, $47/$48 и OAM shadow.
         lda     ProjectileState,x
         and     #$03
         pha
@@ -137,10 +164,12 @@ ProjectileDrawState4:
         lda     #$B1
         sta     $53
         pla
-        jsr     LDA64
+        jsr     EmitDirectionalOamSprite
         rts
 
 ProjectileDrawStates1To3:
+; Рисует фазу взрыва снаряда по ProjectileState+$40 в ProjectileX/Y. Портит
+; A/X/Y, ScratchPtr, $00, $04/$53, $0D, $47/$48, $54/$55 и OAM shadow.
         lda     ProjectileState,x
         pha
         ldy     ProjectileY,x
@@ -149,9 +178,12 @@ ProjectileDrawStates1To3:
         pla
         clc
         adc     #$40
-        jsr     LDEE2
+        jsr     ComputeAndDrawTankTransitionFrame
         rts
 
+; Обходит игроков X=1..0, и для активных танков передаёт ввод в DispatchPlayerFireInput.
+; Может создать или переложить снаряд; выход: $5A=$FF. Портит A/X/Y и projectile RAM.
+UpdatePlayerFiring:
 LE122:  lda     #$01
         sta     $5A
 LE126:  ldx     $5A
@@ -159,9 +191,15 @@ LE126:  ldx     $5A
         bpl     LE15D
         cmp     #$E0
         bcs     LE15D
-        jmp     LC019
+        jmp     DispatchPlayerFireInput
 
+; Три байта $03,$F0,$27 между ветвями; прямых ссылок нет.
+UnidentifiedE133Data:
         .byte   $03,$F0,$27
+; Ветвь стрельбы игрока X. Для класса attributes $40 и занятого первого снаряда пытается использовать второй:
+; если его state $D4,X свободен, копирует туда state/position/flags первого, очищает первый и создаёт новый.
+; Иначе просто пытается инициализировать первый слот. Портит A/Y и projectile RAM; X сохраняет индекс игрока до хвоста цикла.
+FirePlayerProjectile:
 LE136:  lda     ObjectAttributes,x
         and     #$C0
         cmp     #$40
@@ -180,11 +218,14 @@ LE136:  lda     ObjectAttributes,x
         sta     $DE,x
         lda     #$00
         sta     ProjectileState,x
-LE15A:  jsr     LE08C
+LE15A:  jsr     InitializeProjectileForTank
 LE15D:  dec     $5A
         bpl     LE126
         rts
 
+; При $0100=0 обходит врагов X=7..2. Каждый активный танк с вероятностью 1/32 пытается выстрелить.
+; Портит A/X/Y, RNG и projectile RAM; при ненулевом $0100 ничего не меняет.
+UpdateEnemyFiring:
 LE162:  lda     $0100
         bne     LE180
         ldx     #$07
@@ -195,12 +236,18 @@ LE169:  lda     ObjectState,x
         jsr     NextRandomByte
         and     #$1F
         bne     LE17B
-        jsr     LE08C
+        jsr     InitializeProjectileForTank
 LE17B:  dex
         cpx     #$01
         bne     LE169
 LE180:  rts
 
+; Перед движением помечает в nametable shadow клетки, занятые активными танками 7..0.
+; PixelCoordinatesToShadowPointer возвращает указатель для точки (ObjectX-8,ObjectY-8);
+; адрес и признаки дополнительных клеток кэшируются в $E0,X/$E8,X.
+; Бит 7 тайла служит occupancy-маркером. Для игрока также обновляет bit7
+; $0103,X по тайлу $21. Портит A/X/Y/ScratchPtr/$00/$5A.
+MarkTankOccupiedTiles:
 LE181:  lda     #$07
         sta     $5A
 LE185:  ldx     $5A
@@ -216,7 +263,7 @@ LE185:  ldx     $5A
         sec
         sbc     #$08
         tax
-        jsr     LD706
+        jsr     PixelCoordinatesToShadowPointer
         ldx     $5A
         lda     ScratchPtrLo
         sta     $E0,x
@@ -237,7 +284,7 @@ LE185:  ldx     $5A
 LE1C1:  lda     $0103,x
         and     #$7F
         sta     $0103,x
-LE1C9:  jsr     LE1F3
+LE1C9:  jsr     SetTileOccupiedFlag
         lda     ObjectX,x
         and     #$07
         bne     LE1DD
@@ -245,7 +292,7 @@ LE1C9:  jsr     LE1F3
         ora     #$80
         sta     $E8,x
         ldy     #$20
-        jsr     LE1F3
+        jsr     SetTileOccupiedFlag
 LE1DD:  lda     ObjectY,x
         and     #$07
         bne     LE1EE
@@ -253,16 +300,21 @@ LE1DD:  lda     ObjectY,x
         ora     #$40
         sta     $E8,x
         ldy     #$01
-        jsr     LE1F3
+        jsr     SetTileOccupiedFlag
 LE1EE:  dec     $5A
         bpl     LE185
         rts
 
+; Вход: ScratchPtr+Y — байт nametable shadow. Ставит в нём bit7; портит A и флаги.
+SetTileOccupiedFlag:
 LE1F3:  lda     (ScratchPtrLo),y
         ora     #$80
         sta     (ScratchPtrLo),y
         rts
 
+; После движения снимает occupancy-bit7 с тех же клеток по кэшу $E0,X/$E8,X. Обходит активные танки 7..0.
+; Портит A/X/Y/ScratchPtr/$5A и меняет nametable shadow.
+ClearTankOccupiedTiles:
 LE1FA:  lda     #$07
         sta     $5A
 LE1FE:  ldx     $5A
@@ -277,26 +329,33 @@ LE1FE:  ldx     $5A
         ora     #$04
         sta     ScratchPtrHi
         ldy     #$21
-        jsr     LE234
+        jsr     ClearTileOccupiedFlag
         lda     $E8,x
         and     #$80
         beq     LE224
         ldy     #$20
-        jsr     LE234
+        jsr     ClearTileOccupiedFlag
 LE224:  lda     $E8,x
         and     #$40
         beq     LE22F
         ldy     #$01
-        jsr     LE234
+        jsr     ClearTileOccupiedFlag
 LE22F:  dec     $5A
         bpl     LE1FE
         rts
 
+; Вход: ScratchPtr+Y — байт nametable shadow. Снимает bit7; портит A и флаги.
+ClearTileOccupiedFlag:
 LE234:  lda     (ScratchPtrLo),y
         and     #$7F
         sta     (ScratchPtrLo),y
         rts
 
+; Рисует объект усиления в $86/$87. При $62=0 он мигает по FrameCounter&8, а код спрайта равен $81+4*$88.
+; При $62!=0 обратно отсчитывает его и рисует код $3B; по достижении 0 скрывает объект, обнуляя $86.
+; Меняет $62/$86/$6E, ScratchPtr, $00, $04/$53, $0D, $47/$48, $54/$55 и
+; OAM shadow; портит A/X/Y, восстанавливает $6E=$20 после отрисовки.
+DrawAndExpirePowerUp:
 LE23B:  lda     $86
         beq     LE27B
         lda     $62
@@ -328,11 +387,15 @@ LE26C:  ldx     $86
         ldy     $87
         lda     #$00
         sta     $6E
-        jsr     LDA7B
+        jsr     EmitTwoTileOamPair
         lda     #$20
         sta     $6E
 LE27B:  rts
 
+; Обходит игроков 1..0 и рисует мигающую защитную анимацию пока $89,X!=0; раз в 64 кадра уменьшает таймер.
+; Код кадра $29/$2D выбирается FrameCounter bit1. Выход: $5A=$FF; портит
+; A/X/Y, ScratchPtr, $00, $04/$53, $0D, $47/$48, $54/$55, $89..$8A и OAM shadow.
+UpdatePlayerShieldEffects:
 LE27C:  lda     #$01
         sta     $5A
 LE280:  ldx     $5A
@@ -353,11 +416,17 @@ LE28E:  lda     #$02
         clc
         adc     #$29
         sta     $53
-        jsr     LDA7B
+        jsr     EmitTwoTileOamPair
 LE2A4:  dec     $5A
         bpl     LE280
         rts
 
+; Обновляет таймер укрепления базы $45 и фазу взрыва/поражения базы $68.
+; $45 уменьшается раз в 64 кадра; на последних трёх шагах ограждение мигает между сталью и кирпичом.
+; Положительный $68 уменьшается каждый вызов и диспетчеризует кадр BaseExplosionFrameHandlers.
+; Портит A/X/Y/ScratchPtr, $00-$04, $0D, $47/$48, $54/$55, $69,
+; shadow/PPU-очередь и OAM shadow.
+UpdateBaseEffects:
 LE2A9:  lda     $45
         beq     LE2D2
         lda     FrameCounter
@@ -374,10 +443,10 @@ LE2BD:  lda     $45
         lda     FrameCounter
         and     #$10
         beq     LE2CF
-        jsr     LCB9E
+        jsr     DrawSteelBaseEnclosure
         jmp     LE2D2
 
-LE2CF:  jsr     LCAF5
+LE2CF:  jsr     DrawBrickBaseEnclosure
 LE2D2:  lda     $68
         beq     LE305
         bmi     LE305
@@ -401,68 +470,90 @@ LE2EC:  sec
         adc     #$01
 LE2F6:  asl     a
         tay
-        lda     LE306,y
+        lda     BaseExplosionFrameHandlers,y
         sta     ScratchPtrLo
-        lda     LE306+1,y
+        lda     BaseExplosionFrameHandlers+1,y
         sta     ScratchPtrHi
         jmp     (ScratchPtrLo)
 
 LE305:  rts
 
 BaseExplosionFrameHandlers:
-LE306:  .word   NoOpHandler, LE312, LE317, LE31C, LE32E, LE336
+; Шесть обработчиков: no-op, три кадра взрыва, целая и разрушенная композиции базы.
+LE306:  .word   NoOpHandler
+        .word   DrawBaseExplosionFrame1,DrawBaseExplosionFrame2,DrawBaseExplosionFrame3
+        .word   DrawIntactBaseFrame,DrawDestroyedBaseFrame
 
+DrawBaseExplosionFrame1:
 LE312:  lda     #$F1
         jmp     LE31E
 
+DrawBaseExplosionFrame2:
 LE317:  lda     #$F5
         jmp     LE31E
 
+DrawBaseExplosionFrame3:
 LE31C:  lda     #$F9
 LE31E:  ldx     #$78
         ldy     #$D8
 LE322:  sta     $53
-        jsr     LDA7B
+        jsr     EmitTwoTileOamPair
         rts
 
+; Прибавляет к номеру кадра A смещение $69 и рисует двухспрайтовую пару в X/Y.
+DrawBaseSpriteWithOffset:
 LE328:  clc
         adc     $69
         jmp     LE322
 
+; Обнуляет $69 и рисует четыре пары — восемь OAM-спрайтов базы.
+; Портит A/X/Y, ScratchPtr, $00, $04/$53/$69, $0D, $47/$48, $54/$55 и OAM shadow.
+DrawIntactBaseFrame:
 LE32E:  lda     #$00
         sta     $69
-        jsr     LE33E
+        jsr     DrawBaseSpriteGrid
         rts
 
+; Ставит $69=$10 и рисует альтернативные четыре пары — восемь OAM-спрайтов базы.
+DrawDestroyedBaseFrame:
 LE336:  lda     #$10
         sta     $69
-        jsr     LE33E
+        jsr     DrawBaseSpriteGrid
         rts
 
+; Рисует сетку 2x2 двухспрайтовых пар в ($70,$D0)..($80,$E0); $69
+; прибавляется к кодам $D1/$D5/$D9/$DD. Портит A/X/Y, ScratchPtr, $00,
+; $04/$53, $0D, $47/$48, $54/$55 и OAM shadow; $69 не меняет.
+DrawBaseSpriteGrid:
 LE33E:  ldx     #$70
         ldy     #$D0
         lda     #$D1
-        jsr     LE328
+        jsr     DrawBaseSpriteWithOffset
         ldx     #$80
         ldy     #$D0
         lda     #$D5
-        jsr     LE328
+        jsr     DrawBaseSpriteWithOffset
         ldx     #$70
         ldy     #$E0
         lda     #$D9
-        jsr     LE328
+        jsr     DrawBaseSpriteWithOffset
         ldx     #$80
         ldy     #$E0
         lda     #$DD
-        jsr     LE328
+        jsr     DrawBaseSpriteWithOffset
         rts
+; Создаёт танк в слоте X в spawn-state $F0. Игроки 0/1 ставятся в PlayerSpawnX/Y; враги циклически используют три EnemySpawnX/Y.
+; Обнуляет attributes, для игроков также $6F,X; рисует spawn-метатайл $0F.
+; Портит A/X/Y, ScratchPtr, $00-$04, $47/$48, $6A для врагов,
+; nametable/attribute shadow и PPU-очередь.
+SpawnTank:
 LE363:  lda     #$00
         sta     ObjectAttributes,x
         cpx     #$02
         bcs     LE37C
-        lda     LE47A,x
+        lda     PlayerSpawnX,x
         sta     ObjectX,x
-        lda     LE47C,x
+        lda     PlayerSpawnY,x
         sta     ObjectY,x
         lda     #$00
         sta     $6F,x
@@ -475,9 +566,9 @@ LE37C:  inc     $6A
         lda     #$00
         sta     $6A
         tay
-LE389:  lda     LE474,y
+LE389:  lda     EnemySpawnX,y
         sta     ObjectX,x
-        lda     LE477,y
+        lda     EnemySpawnY,y
         sta     ObjectY,x
 LE393:  lda     #$F0
         sta     ObjectState,x
@@ -488,7 +579,13 @@ LE393:  lda     #$F0
         jsr     DrawMetatile
         rts
 
+; Одиночный байт $04 по $E3A2; прямых ссылок нет.
+UnidentifiedE3a2Byte:
         .byte   $04
+; Альтернативный spawn entry: вход A записывает в ObjectAttributes,X, обнуляет $86, ставит state=$F0 и рисует spawn-метатайл.
+; Статических ссылок нет; портит A/X/Y, ScratchPtr, $00-$04, $47/$48,
+; nametable/attribute shadow и PPU-очередь.
+SpawnTankWithAttributes:
 LE3A3:  sta     ObjectAttributes,x
         lda     #$00
         sta     $86
@@ -502,6 +599,8 @@ LE3A3:  sta     ObjectAttributes,x
         rts
 
 PowerUpEffect1:
+; Вход: X — слот подобравшего. Для игрока X<2 ставит общий таймер $0100=$0A; для X>=2 — таймеры игроков $6F/$70=$C8.
+; Портит A и флаги; X/Y не меняет.
 LE3B8:  cpx     #$02
         bcs     LE3C2
         lda     #$0A
@@ -512,6 +611,10 @@ LE3C2:  lda     #$C8
         sta     $6F
         sta     $70
         rts
+; Инициализирует $0101/$0102 значением $20, если $46 отрицателен либо в его
+; неотрицательном значении установлен bit5; иначе записывает 0.
+; Выход: A — записанное значение; X/Y и остальная RAM не меняются.
+InitializePlayerVariantAttributes:
 LE3C9:  lda     $46
         bpl     LE3CF
         lda     #$20
@@ -520,6 +623,9 @@ LE3CF:  and     #$20
         sta     $0102
         rts
 
+; Выбирает одну из строк TankVariantLabels по $46, записывает её адрес в AuxPtr и растрирует по $56/$57.
+; Значения 0..6 выбирают TANK A..G, $80..$86 — TANK H..N. Портит A/X/Y/AuxPtr, $56/$5F и nametable shadow.
+DrawVariantTitleData:
 LE3D8:  lda     #$E5
         sta     AuxPtrHi
         lda     $46
@@ -532,16 +638,23 @@ LE3E4:  asl     a
         clc
         adc     #$70
         sta     AuxPtrLo
-        jsr     LD8D2
+        jsr     RasterizeTileStringToShadow
         rts
 
+; Переводит танк X в state=$73 и очищает его extension $0170,X. Выход: A=0; X/Y не меняются.
+DestroyTankAndClearExtension:
 LE3EF:  lda     #$73
         sta     ObjectState,x
         lda     #$00
         sta     $0170,x
         rts
 
+; Одиночный байт $03 по $E3F9; прямых ссылок нет.
+UnidentifiedE3f9Byte:
         .byte   $03
+; Объединяет входные биты A с ObjectAttributes,X. Единственная специальная комбинация $E7 заменяется на $E4.
+; Записывает результат, обнуляет ObjectFrame,X; выход A=0, X/Y сохраняются.
+MergeTankAttributeBits:
 LE3FA:  ora     ObjectAttributes,x
         cmp     #$E7
         bne     LE402
@@ -551,6 +664,7 @@ LE402:  sta     ObjectAttributes,x
         sta     ObjectFrame,x
         rts
 ClearProjectileStates:
+; Обнуляет ProjectileState всех 10 слотов. Выход: A=0, X=$FF; Y и остальные поля снарядов не меняются.
 LE409:  ldx     #$09
         lda     #$00
 LE40D:  sta     ProjectileState,x
@@ -559,6 +673,7 @@ LE40D:  sta     ProjectileState,x
         rts
 
 ClearTankStates:
+; Обнуляет ObjectState и $0103 всех 8 танковых слотов. Выход: A=0, X=$FF; Y и остальные поля не меняются.
 LE413:  lda     #$00
         ldx     #$07
 LE417:  sta     ObjectState,x
@@ -569,6 +684,8 @@ LE417:  sta     ObjectState,x
 
 ; Заменяет старшую тетраду ObjectState, сохраняя направление в младшей.
 SetTankStateClass:
+; Вход: A — новые биты класса (обычно старшая тетрада), X — слот. Выход: A — новый ObjectState;
+; портит $00 и флаги, X/Y не меняет. Вход A здесь не маскируется.
 LE420:  sta     $00
         lda     ObjectState,x
         and     #$0F
@@ -576,8 +693,9 @@ LE420:  sta     $00
         sta     ObjectState,x
         rts
 
-; Для режимов 0-5 доступны группы по 12 классических карт; режим 6
-; использует все 36. Последний $8B не входит в семь описателей.
+; Семь записей по 3 байта: word-указатель на первую карту и число карт.
+; Для режимов 0..5 доступны группы по 12 классических карт; режим 6 использует все 36.
+; Последний $8B не входит в семь описателей; его смысл не установлен.
 ClassicLevelSetDescriptors:
 LE42B:  .word   ClassicLevels
         .byte   12
@@ -594,15 +712,20 @@ LE42B:  .word   ClassicLevels
         .word   ClassicLevels
         .byte   36
         .byte   $8B
-LE441:  lda     $E579,y
+; Статически неиспользуемый копировщик: переносит три байта из TankVariantLabels+9+Y в $8C..$8E.
+; Вход: Y — offset; выход: A — третий байт. X/Y не меняет; флаги по последнему LDA.
+CopyThreeVariantLabelBytes:
+LE441:  lda     TankVariantLabels+9,y
         sta     $8C
-        lda     $E57A,y
+        lda     TankVariantLabels+10,y
         sta     $8D
-        lda     $E57B,y
+        lda     TankVariantLabels+11,y
         sta     $8E
         rts
 ; Преобразует первый установленный бит Right/Left/Down/Up в направление 3/1/2/0.
 DecodeDirectionButtons:
+; Вход: A — байт кнопок. Приоритет Right, Left, Down, Up. Выход: A=direction 3/1/2/0 или $FF, если D-pad не нажат.
+; X/Y/RAM не меняет; флаги соответствуют A.
 LE451:  asl     a
         bcc     LE457
         lda     #DIRECTION_RIGHT
@@ -627,21 +750,28 @@ LE469:  lda     #$FF
         rts
 
 DirectionDeltaX:
+; Знаковые единичные векторы для направлений Up,Left,Down,Right.
 LE46C:  .byte   0,$FF,0,1
 DirectionDeltaY:
 LE470:  .byte   $FF,0,1,0
+EnemySpawnX:
 LE474:  .byte   $18,$78,$D8
+EnemySpawnY:
 LE477:  .byte   $18,$18,$18
+PlayerSpawnX:
 LE47A:  .byte   $58,$98
+PlayerSpawnY:
 LE47C:  .byte   $D8,$D8
+InitialTankStateBySlot:
 LE47E:  .byte   $A0,$A0,$A2,$A2,$A2,$A2,$A2,$A2
+; Восемнадцать состояний $A0..$A3, используемых ИИ для выбора направления.
+TankAiDirectionStateTable:
 LE486:  .byte   $A0,$A0,$A0,$A1,$A0,$A3,$A2,$A2
         .byte   $A2,$A1,$A0,$A3,$A1,$A0,$A3,$A1
         .byte   $A2,$A3
 
-; Таблицы адресов обработчиков состояний объекта. Индекс задаётся младшими
-; битами ObjectState; таблица выбирается фазой игрового автомата.
-; Таблицы индексируются удвоенной старшей тетрадой байта состояния.
+; Таблицы адресов обработчиков танков. Индекс — удвоенная старшая тетрада ObjectState;
+; выбор между логикой и отрисовкой делает вызывающий диспетчер.
 TankLogicHandlers:
 LE498:  .word   TankLogicState0
         .word   TankLogicStates1To7,TankLogicStates1To7,TankLogicStates1To7
@@ -656,10 +786,12 @@ LE4B8:  .word   TankDrawState0,DrawTankState1,DrawTankState2
         .word   DrawTankStates8ToD,DrawTankStates8ToD,DrawTankStates8ToD
         .word   DrawTankStatesEToF,DrawTankStatesEToF
 ProjectileLogicHandlers:
+; Пять записей для классов состояния 0..4; классы 1..3 делят обработчик анимации взрыва.
 LE4D8:  .word   ProjectileLogicState0
         .word   ProjectileLogicStates1To3,ProjectileLogicStates1To3,ProjectileLogicStates1To3
         .word   ProjectileLogicState4
 ProjectileDrawHandlers:
+; Пять записей в том же формате для отрисовки.
 LE4E2:  .word   ProjectileDrawState0
         .word   ProjectileDrawStates1To3,ProjectileDrawStates1To3,ProjectileDrawStates1To3
         .word   ProjectileDrawState4
@@ -667,7 +799,11 @@ LE4E2:  .word   ProjectileDrawState0
 ; Заполняет начальное состояние объекта. Для врагов дополнительные свойства
 ; (тип, бонусный флаг и скорость) выбираются псевдослучайно.
 InitializeTankState:
-LE4EC:  lda     LE47E,x
+; Вход: X — слот. Всегда берёт начальное состояние из InitialTankStateBySlot. Для игроков ставит $89,X=3,
+; объединяет $0101,X с attributes и обнуляет frame. Для врагов RNG выбирает три группы битов attributes.
+; До этапа 12 вторая таблица индексируется 0..7, третья 0..3; начиная с этапа 12 — наоборот.
+; Меняет ObjectState/Attributes/Frame, $89,X для игроков и RNG; портит A/Y, X сохраняет.
+LE4EC:  lda     InitialTankStateBySlot,x
         sta     ObjectState,x
         cpx     #$02
         bcs     LE505
@@ -683,7 +819,7 @@ LE4EC:  lda     LE47E,x
 LE505:  jsr     NextRandomByte
         and     #$03
         tay
-        lda     LC5A9,y
+        lda     EnemyTypeAttributeBits,y
         ora     ObjectAttributes,x
         sta     ObjectAttributes,x
         lda     StageNumber
@@ -696,7 +832,7 @@ LE505:  jsr     NextRandomByte
 LE520:  jsr     NextRandomByte
         and     #$07
 LE525:  tay
-        lda     LC5BF,y
+        lda     EnemyBonusAttributeBits,y
         ora     ObjectAttributes,x
         sta     ObjectAttributes,x
         lda     StageNumber
@@ -709,32 +845,48 @@ LE525:  tay
 LE53B:  jsr     NextRandomByte
         and     #$03
 LE540:  tay
-        lda     LC5AD,y
+        lda     EnemyLowAttributeBits,y
         ora     ObjectAttributes,x
         sta     ObjectAttributes,x
         lda     #$00
         sta     ObjectFrame,x
         rts
 
+; Два байта $E0,$A0 по $E54D; статических ссылок нет.
+UnidentifiedE54dData:
         .byte   $E0,$A0
-LE54F:  lda     $8056,y
+; Статически неиспользуемый вход: объединяет байт TankLevels+$56+Y с ObjectAttributes,X и обнуляет ObjectFrame,X.
+; Вход: X — слот, Y — смещение; выход: A — новые attributes. Формат исходного байта не установлен.
+ApplyLevelByteToTankAttributesStub:
+LE54F:  lda     TankLevels+$56,y
         ora     ObjectAttributes,x
         sta     ObjectAttributes,x
         lda     #$00
         sta     ObjectFrame,x
         rts
+; Начинает сканирование сборщиков усиления в collision-модуле. При $46>7 ставит $49=7, иначе $49=1,
+; затем хвостовым JMP переходит к CheckPowerUpTankOverlap. Для штатных диапазонов $46 это даёт
+; проверку слотов 7..0 в расширенных вариантах и 1..0 в обычных.
+; Портит A/X/Y/ScratchPtr и collision work RAM по контракту хвоста.
+BeginPowerUpCollectorScan:
 LE55B:  lda     #$07
         cmp     $46
         bcc     LE563
         lda     #$01
 LE563:  sta     $49
-        jmp     LE97E
+        jmp     CheckPowerUpTankOverlap
 
+; Для слотов игроков X=0/1 прибавляет подготовленные цифры $35..$3B к счёту; для врагов ничего не делает.
+; При сложении портит A/X/Y и запись счёта выбранного игрока.
+AddPreparedScoreForPlayerSlot:
 LE568:  cpx     #$02
         bcs     LE56F
-        jsr     LD9BE
+        jsr     AddScoreDigitsToRecord
 LE56F:  rts
 
+; 14 фиксированных 8-байтных тайловых строк "TANK A".."TANK N", каждая с двумя $FF.
+; DrawVariantTitleData выбирает их по двум диапазонам $46; CopyThreeVariantLabelBytes читает три байта из середины.
+TankVariantLabels:
         .byte   $54,$41,$4E,$4B,$20,$41,$FF,$FF
         .byte   $54,$41,$4E,$4B,$20,$42,$FF,$FF
         .byte   $54,$41,$4E,$4B,$20,$43,$FF,$FF
@@ -742,16 +894,20 @@ LE56F:  rts
         .byte   $54,$41,$4E,$4B,$20,$45,$FF,$FF
         .byte   $54,$41,$4E,$4B,$20,$46,$FF,$FF
         .byte   $54,$41,$4E,$4B,$20,$47,$FF,$FF
-        .byte   $54,$41,$4E
-        .byte   $4B,$20,$48,$FF,$FF,$54,$41,$4E
-        .byte   $4B,$20,$49,$FF,$FF,$54,$41,$4E
-        .byte   $4B,$20,$4A,$FF,$FF,$54,$41,$4E
-        .byte   $4B,$20,$4B,$FF,$FF,$54,$41,$4E
-        .byte   $4B,$20,$4C,$FF,$FF,$54,$41,$4E
-        .byte   $4B,$20,$4D,$FF,$FF,$54,$41,$4E
-        .byte   $4B,$20,$4E,$FF,$FF,$31,$39,$39
-        .byte   $30,$FF,$01,$0F,$02,$00,$00,$C8
-        .byte   $CA,$00,$00,$FF,$5C,$5C,$5C,$5C
+        .byte   $54,$41,$4E,$4B,$20,$48,$FF,$FF
+        .byte   $54,$41,$4E,$4B,$20,$49,$FF,$FF
+        .byte   $54,$41,$4E,$4B,$20,$4A,$FF,$FF
+        .byte   $54,$41,$4E,$4B,$20,$4B,$FF,$FF
+        .byte   $54,$41,$4E,$4B,$20,$4C,$FF,$FF
+        .byte   $54,$41,$4E,$4B,$20,$4D,$FF,$FF
+        .byte   $54,$41,$4E,$4B,$20,$4E,$FF,$FF
+EditionYearText:
+        .byte   $31,$39,$39,$30,$FF
+; Неидентифицированный $FF-завершённый 10-байтный поток.
+UnidentifiedE5e5Data:
+        .byte   $01,$0F,$02,$00,$00,$C8,$CA,$00,$00,$FF
+; 20 байтов $5C и терминатор $FF; прямой ссылки и точный формат не установлены.
+UnidentifiedE5efData:
         .byte   $5C,$5C,$5C,$5C,$5C,$5C,$5C,$5C
         .byte   $5C,$5C,$5C,$5C,$5C,$5C,$5C,$5C
-        .byte   $FF
+        .byte   $5C,$5C,$5C,$5C,$FF

@@ -206,6 +206,7 @@ LC159:  jsr     WaitForNextFrame
         lda     #$04
         sta     $4D
         jsr     CloseNametableCurtain
+StageSelectionInputLoop:
 LC172:  jsr     UpdateStageNumberDisplay
         lda     $4C
         bne     LC1C5
@@ -277,7 +278,7 @@ LC1F9:  jsr     WaitForNextFrame
         lda     $6D
         bne     LC203
         jsr     RunGameplayLogicTick
-LC203:  jsr     LE23B
+LC203:  jsr     DrawAndExpirePowerUp
         jsr     DrawProjectiles
         jsr     DrawTanks
         lda     Joy1Pressed
@@ -304,7 +305,7 @@ StageResultFrameLoop:
 LC238:  jsr     WaitForNextFrame
         jsr     SuppressInputOutsideActiveStage
         jsr     RunGameplayLogicTick
-        jsr     LE23B
+        jsr     DrawAndExpirePowerUp
         jsr     DrawTanks
         jsr     DrawProjectiles
         jsr     UpdateHalfSecondPhaseFlag
@@ -348,7 +349,8 @@ LC283:  jsr     ClearScreenAndAudio
         jsr     ClearScreenAndResumeNmi
 LC292:  jmp     LC095
 
-; Гасит рендеринг, очищает обе nametable в shadow RAM/PPU и снова включает NMI.
+; Гасит рендеринг, очищает shadow RAM, загружает её в текущую nametable,
+; выбранную через $05, и снова включает NMI.
 ; Портит A/X и PPU state; Y не гарантируется из-за вызываемых процедур.
 ClearScreenAndResumeNmi:
 LC295:  jsr     DisableRenderingForBulkUpdate
@@ -380,7 +382,7 @@ LC2B3:  ldx     #$15
         jsr     ResetEightByteRecord
 ; Альтернативный вход пропускает очистку двух записей счёта; используется attract mode.
 InitializeSessionAfterScoreRecords:
-LC2BD:  jsr     LE3C9
+LC2BD:  jsr     InitializePlayerVariantAttributes
         jsr     InitializeRuntimeChecksumGuard
         lda     #$00
         sta     $66
@@ -408,20 +410,20 @@ LC2DD:  lda     #$01
 ; Хвостовым JMP передаётся UpdateTank1990Extensions. Почти вся игровая RAM и A/X/Y могут измениться;
 ; PPU-очередь/OAM shadow/APU request flags также могут быть обновлены.
 RunGameplayLogicTick:
-LC2E6:  jsr     LE181
+LC2E6:  jsr     MarkTankOccupiedTiles
         jsr     UpdatePlayerTankInput
         jsr     UpdateTanks
-        jsr     LE1FA
+        jsr     ClearTankOccupiedTiles
         jsr     UpdateProjectiles
-        jsr     LE2A9
-        jsr     LE27C
-        jsr     LE122
-        jsr     LE162
+        jsr     UpdateBaseEffects
+        jsr     UpdatePlayerShieldEffects
+        jsr     UpdatePlayerFiring
+        jsr     UpdateEnemyFiring
         jsr     SpawnPendingEnemyTank
-        jsr     LE604
-        jsr     LE910
-        jsr     LE70C
-        jsr     LE972
+        jsr     UpdateProjectileTerrainCollisions
+        jsr     UpdateProjectileProjectileCollisions
+        jsr     UpdateProjectileTankCollisions
+        jsr     UpdatePowerUpPickup
         jsr     UpdateStageResultObject
         jsr     UpdatePlayerMovementAudio
         jsr     UpdateLivesHud
@@ -460,11 +462,11 @@ LC331:  jsr     ClearProjectileStates
         lda     Player1Lives
         beq     LC34A
         ldx     #$00
-        jsr     LE363
+        jsr     SpawnTank
 LC34A:  lda     Player2Lives
         beq     LC353
         ldx     #$01
-        jsr     LE363
+        jsr     SpawnTank
 LC353:  lda     #$14
         sta     $7F
         sta     $80
@@ -545,7 +547,7 @@ LC3B5:  lda     #$01
         stx     $56
         ldy     #$46
         sty     $57
-        jsr     LE3D8
+        jsr     DrawVariantTitleData
         nop
         nop
         nop
@@ -581,7 +583,7 @@ LC41D:  jsr     WaitForNextFrame
         bne     LC43F
         jsr     GenerateAttractModeInput
         jsr     RunGameplayLogicTick
-        jsr     LE23B
+        jsr     DrawAndExpirePowerUp
         jsr     DrawTanks
         jsr     DrawProjectiles
         jsr     CheckStageLoopFinished
@@ -681,12 +683,12 @@ LC4A1:  lda     #$80
         lda     #$01
         sta     $8E
         jsr     DrawSelectedMenuOption
-        lda     #$40
+        lda     #<VariantMenuTankNames
         sta     $4B
         lda     #$00
         sta     MenuSelection
         sta     $4A
-LC4F9:  lda     #$E8
+LC4F9:  lda     #>VariantMenuTankNames
         sta     ScratchPtrHi
         lda     $4B
         sta     ScratchPtrLo
@@ -704,9 +706,9 @@ LC4F9:  lda     #$E8
         lda     $4A
         cmp     #$0E
         bcc     LC4F9
-LC51C:  lda     #$D3
+LC51C:  lda     #>VariantMenuSelectionCursor
         sta     ScratchPtrHi
-        lda     #$B3
+        lda     #<VariantMenuSelectionCursor
         sta     ScratchPtrLo
         jsr     QueueVariantMenuText
 LC527:  lda     Joy1Held
@@ -762,9 +764,9 @@ LC57D:  jsr     WaitForNextFrame
         bne     LC57D
         lda     #$01
         sta     $030D
-        lda     #$E8
+        lda     #>VariantMenuBlankCursorText
         sta     ScratchPtrHi
-        lda     #$B2
+        lda     #<VariantMenuBlankCursorText
         sta     ScratchPtrLo
         jsr     QueueVariantMenuText
         rts
@@ -867,7 +869,8 @@ UnidentifiedC638Data:
 RestrictedPowerUpTypeTable:
 LC63A:  .byte   $00,$01,$02,$03,$03,$04,$05,$06
 ; Генерирует Joy1/Joy2 для attract mode. Для каждого игрока выбирает цель:
-; координаты $86/$87 при активном $62, иначе первый активный танк из слотов 2/4/3.
+; координаты $86/$87 при активном $62, иначе первый активный танк из слотов
+; X+2, X+4, X+3 (для игроков 0/1 это соответственно 2/4/3 и 3/5/4).
 ; LDDA2 возвращает направление; DemoInputByDirection добавляет огонь. Меняет Joy*Held/Pressed, $5A/$71/$72 и work RAM; портит A/X/Y.
 GenerateAttractModeInput:
 LC642:  lda     #$01

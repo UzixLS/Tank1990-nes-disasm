@@ -530,7 +530,7 @@ LD771:  lda     ScratchPtrHi
 
 ; Пишет A в (ScratchPtr),Y и ставит тот же байт в PPU-очередь. Адрес PPU получается
 ; из shadow-адреса прибавлением $1C к старшему байту. Формат команды: hi, lo, data, $FF.
-; Сохраняет X; меняет A и PpuUpdateBuffer/PpuBufferPos.
+; Сохраняет X; меняет A, $47 и PpuUpdateBuffer/PpuBufferPos.
 StoreAndQueueShadowTile:
 LD784:  sta     (ScratchPtrLo),y
         stx     $47
@@ -616,7 +616,8 @@ LD7F7:  lda     #$00
 LD80A:  rts
 
 ; Рисует TSA-блок 2x2 тайла и обновляет его атрибут палитры.
-; Вход: A -- индекс метатайла 0..15, X/Y -- пиксельные координаты, кратные 16.
+; Вход: A -- индекс метатайла 0..15, X/Y -- пиксельные координаты. Процедура
+; сама выравнивает полученные тайловые координаты на ячейку 16x16 пикселей.
 ; Пишет четыре тайла в shadow и четыре PPU-команды, а также одну команду атрибута.
 ; Меняет A/X/Y, ScratchPtr, $00-$04, $47/$48, attribute shadow и PPU-очередь.
 DrawMetatile:  pha
@@ -974,7 +975,8 @@ LDA27:  sta     $3B
 ; Добавляет один 8x8-спрайт в OamShadow через курсор $0D и шаг $0E.
 ; Вход: X/Y -- экранные X и базовый Y, $53 -- tile, $04 -- attributes, $6E -- добавочные
 ; attributes для тайла $22 в shadow под спрайтом. В OAM пишутся (Y-8, tile, attributes, X).
-; Побочно: $47/$48, ScratchPtr, $00, $0D; A/X/Y изменены.
+; Побочно: $47/$48, ScratchPtr, $00, $0D; для shadow-тайла $22 также меняет
+; $04. A/X/Y изменены.
 EmitOamSprite:
 LDA2B:  txa
         sta     $47

@@ -19,9 +19,11 @@
 - фоновые метатайлы 2×2: `assets/metatiles/background.tsa`;
 - игровой код и таблицы: `src/*.s` и `src/*.inc`.
 
-Основные таблицы диспетчеризации в `src/prg1_lo.s` используют символические
-ссылки: `TankLogicHandlers`, `TankDrawHandlers`, `ProjectileLogicHandlers`,
-`ProjectileDrawHandlers`, `PowerUpEffectHandlers` и `AudioCommandHandlers`.
+Основные таблицы диспетчеризации используют символические ссылки:
+`TankLogicHandlers`, `TankDrawHandlers`, `ProjectileLogicHandlers` и
+`ProjectileDrawHandlers` находятся в `src/projectiles.s`,
+`PowerUpEffectHandlers` — в `src/collisions.s`, а `AudioCommandHandlers` — в
+`src/audio.s`. Логика состояний танков находится в `src/tanks.s`.
 У аудиопотоков есть точки входа `AudioSequence00`–`AudioSequence27`; несколько
 потоков могут совместно использовать один и тот же хвост данных. Формат
 потоков и команды интерпретатора описаны в `docs/audio.md`.
@@ -37,7 +39,6 @@ BMP используют только индексы палитры 0–3. Цв�
 сдвига. Для расширения ROM нужно завести отдельную конфигурацию линкера и
 изменить iNES-заголовок/mapper осознанно.
 
-Имена `Lxxxx` всё ещё означают исследованные только до уровня границ
-инструкций адреса. Они не считаются стабильным API. Смысловые имена из
-`ram.inc` и имена процедур без адресного префикса предпочтительны для нового
-кода.
+Метки `Lxxxx` сохраняют исходные CPU-адреса и удобны при сверке с отладчиком,
+но не считаются стабильным API. Смысловые имена из `ram.inc`, имена процедур и
+имена таблиц без адресного префикса предпочтительны для нового кода.
