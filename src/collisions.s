@@ -8,14 +8,14 @@
 ; 4x4-подобласти местности. Это позволяет разрушать соответствующую часть кирпича.
 ; Побочно меняет A/X/Y, ScratchPtr, $00, $47/$48, $54/$55, $64/$65,
 ; $5A, состояние базы $68, shadow/PPU-очередь, состояния снарядов и
-; флаги событий $0307/$030B/$030C/$030D.
+; состояния соответствующих аудиопотоков уничтожения, удара и рикошета.
 UpdateProjectileTerrainCollisions:
-LE604:  lda     #$09
+LE604:  lda     #(ProjectileSlotCount-1)
         sta     $5A
 LE608:  ldx     $5A
         lda     ProjectileState,x
-        and     #$F0
-        cmp     #$40
+        and     #StateClassMask
+        cmp     #ProjectileStateActive
         bne     LE68B
         lda     ProjectileFlags,x
         bne     LE61D
@@ -27,7 +27,7 @@ LE608:  ldx     $5A
 ; $64/$65 — те же компоненты, умноженные на 4 для второй точки стороны.
 PrepareProjectileTerrainOffsets:
 LE61D:  lda     ProjectileState,x
-        and     #$03
+        and     #DirectionMask
         tay
         lda     ProjectileDirectionStepX,y
         bpl     LE62C
@@ -111,16 +111,16 @@ LE69A:  jsr     RecomputeTerrainSubcellMask
         cmp     #$C8
         bne     LE6C6
         ; $C8-$CB — четыре тайла целой базы.
-        lda     $68
+        lda     BattleState
         beq     LE6C6
         lda     #$27
-        sta     $68
+        sta     BattleState
         lda     #$01
-        sta     $030B
-        sta     $0307
+        sta     BaseDestructionToneAudioState
+        sta     PlayerOrBaseDestructionNoiseAudioState
         jsr     DrawDestroyedBase
         ldx     $5A
-        lda     #$33
+        lda     #ProjectileStateImpact
         sta     ProjectileState,x
         jmp     LE709
 
@@ -136,7 +136,7 @@ LE6CB:  .byte   $EA
 ; Остальные значения < $12 теряют выбранный бит 4x4-подобласти.
 DestroyProjectileOnTerrain:
 LE6CC:  ldx     $5A
-        lda     #$33
+        lda     #ProjectileStateImpact
         sta     ProjectileState,x
         lda     (ScratchPtrLo),y
         cmp     #$11
@@ -144,32 +144,32 @@ LE6CC:  ldx     $5A
         lda     ProjectileFlags,x
         and     #$02
         beq     LE6EB
-; Очищает весь байт terrain и ставит событие $030C. Сам ProjectileState не
+; Очищает весь байт terrain и запрашивает BrickHitAudioState. Сам ProjectileState не
 ; меняет: обычный усиленный выстрел приходит сюда уже со state $33, а особый
 ; путь tile $22 входит напрямую и потому сохраняет летящий снаряд.
 DestroyWholeTerrainTile:
 LE6DE:  lda     #$00
         jsr     StoreAndQueueShadowTile
         lda     #$01
-        sta     $030C
+        sta     BrickHitAudioState
         jmp     LE709
 
 LE6EB:  lda     (ScratchPtrLo),y
         cmp     #$10
         beq     LE700
-        cpx     #$02
+        cpx     #FirstEnemyTankSlot
         bcs     LE6FA
         lda     #$01
-        sta     $030C
+        sta     BrickHitAudioState
 DestroyTerrainSubcell:
 LE6FA:  jsr     ClearTerrainSubcellQueued
         lda     #$01
         rts
 
-LE700:  cpx     #$02
+LE700:  cpx     #FirstEnemyTankSlot
         bcs     LE709
         lda     #$01
-        sta     $030D
+        sta     RicochetOrMenuStepAudioState
 LE709:  lda     #$00
         rts
 
@@ -182,7 +182,8 @@ LE709:  lda     #$00
 ; в слотах 0,1,8,9, начисляет уничтожения и очки.
 ; Побочно меняет A/X/Y, $47, $5A/$5B, ProjectileState, состояния/атрибуты
 ; танков, статистику $73-$7A, записи счёта и звуковые/bonus-флаги. Условное
-; создание бонуса также меняет RNG, $0309, $49, $62 и $86-$88.
+; создание бонуса также меняет RNG, PowerUpSpawnAudioState,
+; PowerUpCollectorSlot и поля бонуса.
 UpdateProjectileTankCollisions:
 LE70C:  lda     #$01
         sta     $5A
@@ -191,17 +192,17 @@ LE710:
         ldx     $5A
         lda     ObjectState,x
         bpl     LE71A
-        cmp     #$E0
+        cmp     #NonTargetableTankStateMin
         bcc     LE71D
 LE71A:  jmp     LE77A
 
 CheckEnemyProjectilesAgainstPlayer:
-LE71D:  lda     #$07
+LE71D:  lda     #(TankSlotCount-1)
         sta     $5B
 LE721:  ldy     $5B
         lda     ProjectileState,y
-        and     #$F0
-        cmp     #$40
+        and     #StateClassMask
+        cmp     #ProjectileStateActive
         bne     LE772
         lda     ProjectileX,y
         sec
@@ -221,9 +222,9 @@ LE739:  cmp     #$0A
         adc     #$01
 LE74A:  cmp     #$0A
         bcs     LE772
-        lda     #$33
+        lda     #ProjectileStateImpact
         sta     ProjectileState,y
-        lda     $89,x
+        lda     PlayerShieldTimer,x
         beq     LE75F
         lda     #$00
         sta     ProjectileState,y
@@ -240,8 +241,8 @@ ApplyPlayerHitVariantState:
 LE763:
         jsr     GetVariantAttributeBits
         nop
-        sta     $0178,x
-        sta     $0101,x
+        sta     PlayerExtendedUpgrade,x
+        sta     PlayerUpgradeLevel,x
         sta     ObjectAttributes,x
         jmp     LE77A
 
@@ -258,17 +259,17 @@ LE772:  dec     $5B
 AdvancePlayerCollisionPassOrBeginEnemyPass:
 LE77A:  jsr     AdvanceTankCollisionPass
         nop
-        lda     #$07
+        lda     #(TankSlotCount-1)
         sta     $5A
 LE782:  ldx     $5A
         lda     ObjectState,x
         bpl     LE78C
-        cmp     #$E0
+        cmp     #NonTargetableTankStateMin
         bcc     LE78F
 LE78C:  jmp     LE834
 
 CheckPlayerProjectilesAgainstEnemy:
-LE78F:  lda     #$09
+LE78F:  lda     #(ProjectileSlotCount-1)
         sta     $5B
 LE793:  lda     $5B
         and     #$06
@@ -278,8 +279,8 @@ LE793:  lda     $5B
 
 LE79C:  ldy     $5B
         lda     ProjectileState,y
-        and     #$F0
-        cmp     #$40
+        and     #StateClassMask
+        cmp     #ProjectileStateActive
         beq     LE7AA
         jmp     LE82D
 
@@ -301,7 +302,7 @@ LE7B7:  cmp     #$0A
         adc     #$01
 LE7C8:  cmp     #$0A
         bcs     LE82D
-        lda     #$33
+        lda     #ProjectileStateImpact
         sta     ProjectileState,y
         lda     ObjectAttributes,x
         and     #$04
@@ -318,16 +319,17 @@ LE7E2:  lda     ObjectAttributes,x
         beq     LE7F2
         dec     ObjectAttributes,x
         lda     #$01
-        sta     $030E
+        sta     ArmorHitAudioState
         jmp     LE82D
 
-; Полное уничтожение: state $73, событие $030A, статистика типа/владельца
+; Полное уничтожение: state $73, запрос TankDestructionAudioState,
+; статистика типа/владельца
 ; и, кроме специального режима $8F=2, награда 100..400 очков.
 DestroyEnemyTankAndAwardScore:
 LE7F2:  jsr     DestroyTankAndClearExtension
         nop
         lda     #$01
-        sta     $030A
+        sta     TankDestructionAudioState
         lda     ObjectAttributes,x
         lsr     a
         lsr     a
@@ -341,10 +343,10 @@ LE7F2:  jsr     DestroyTankAndClearExtension
         and     #$01
         sta     $47
         bne     LE813
-        inc     $73,x
+        inc     Player1KillCounts,x
         jmp     LE815
 
-LE813:  inc     $77,x
+LE813:  inc     Player2KillCounts,x
 LE815:  lda     $8F
         cmp     #$02
         beq     LE834
@@ -401,38 +403,39 @@ EnemyTypeScoreAwards:
 LE8BA:  .byte   $10,$20,$30,$40
 
 ; Выбирает свободную позицию и тип появляющегося power-up.
-; $86/$87 получают одну из координат 48,96,144,192. Пока кандидат пересекается
-; с активным танком, CheckPowerUpTankOverlap ставит $62 и генерация повторяется.
-; Во время проверки $88=$FF служит sentinel «ещё не создано». После успешной
+; PowerUpX/Y получают одну из координат 48,96,144,192. Пока кандидат пересекается
+; с активным танком, CheckPowerUpTankOverlap ставит PowerUpPickupDisplayTimer и
+; генерация повторяется. Во время проверки PowerUpType=$FF служит sentinel
+; «ещё не создано». После успешной
 ; позиции случайный индекс 0..7 проходит через SelectPowerUpTypeForVariant,
-; результат сохраняется в $88, $62 обнуляется.
+; результат сохраняется в PowerUpType, а таймер обнуляется.
 ; В конце восстанавливает X/Y из caller-owned $5A/$5B; меняет A, RNG,
-; $0309, $49, $62, $86-$88.
+; PowerUpSpawnAudioState, PowerUpCollectorSlot и поля бонуса.
 SpawnPowerUp:
 LE8BE:  lda     #$01
-        sta     $0309
+        sta     PowerUpSpawnAudioState
 LE8C3:  jsr     NextRandomByte
         and     #$03
         jsr     GridIndexToPowerUpCoordinate
-        sta     $86
+        sta     PowerUpX
         jsr     NextRandomByte
         and     #$03
         jsr     GridIndexToPowerUpCoordinate
-        sta     $87
+        sta     PowerUpY
         lda     #$FF
-        sta     $88
+        sta     PowerUpType
         lda     #$00
-        sta     $62
+        sta     PowerUpPickupDisplayTimer
         jsr     UpdatePowerUpPickup
-        lda     $62
+        lda     PowerUpPickupDisplayTimer
         bne     LE8C3
         jsr     NextRandomByte
         and     #$07
         tay
         jsr     SelectPowerUpTypeForVariant
-        sta     $88
+        sta     PowerUpType
         lda     #$00
-        sta     $62
+        sta     PowerUpPickupDisplayTimer
         ldx     $5A
         ldy     $5B
         rts
@@ -463,17 +466,17 @@ LE902:  sta     $00
 ; При |dx|<6 и |dy|<6 оба ProjectileState обнуляются без взрывного state $33.
 ; Побочно меняет A/X/Y, $00, $5A/$5B и ProjectileState; прочую RAM не меняет.
 UpdateProjectileProjectileCollisions:
-LE910:  lda     #$09
+LE910:  lda     #(ProjectileSlotCount-1)
         sta     $5A
 LE914:  lda     $5A
         and     #$06
         bne     LE96D
         ldx     $5A
         lda     ProjectileState,x
-        and     #$F0
-        cmp     #$40
+        and     #StateClassMask
+        cmp     #ProjectileStateActive
         bne     LE96D
-        lda     #$09
+        lda     #(ProjectileSlotCount-1)
         sta     $5B
 LE928:  lda     $5B
         tay
@@ -484,8 +487,8 @@ LE928:  lda     $5B
         cmp     $00
         beq     LE969
         lda     ProjectileState,y
-        and     #$F0
-        cmp     #$40
+        and     #StateClassMask
+        cmp     #ProjectileStateActive
         bne     LE969
         lda     ProjectileX,y
         sec
@@ -514,24 +517,27 @@ LE96D:  dec     $5A
         bpl     LE914
         rts
 
-; Проверяет power-up в ($86,$87) против активных танков.
-; $86=0 означает отсутствие power-up; $62!=0 запрещает повторную проверку.
-; Scan helper LE55B выбирает через $49 слоты 1..0 при $46<=7 или 7..0 при
-; $46>7, затем передаёт управление CheckPowerUpTankOverlap.
+; Проверяет power-up в (PowerUpX,PowerUpY) против активных танков.
+; PowerUpX=0 означает отсутствие power-up; ненулевой PowerUpPickupDisplayTimer
+; запрещает повторную проверку. Scan helper LE55B выбирает через
+; PowerUpCollectorSlot слоты 1..0 при GameVariant<=7 или 7..0 при
+; GameVariant>7, затем передаёт управление CheckPowerUpTankOverlap.
 ; Квадрат захвата: |dx|<12, |dy|<12.
-; При $88=$FF процедура используется SpawnPowerUp только как проверка свободного
-; места: ставит $62=$32 и возвращается без эффекта. При $88=0..7 выполняет pickup:
-; при $C6!=$06 добавляет 500 очков сборщику X<2 и ставит $0306; для X>=2
+; При PowerUpType=$FF процедура используется SpawnPowerUp только как проверка
+; свободного места: ставит PowerUpPickupDisplayTimer=$32 и возвращается без
+; эффекта. При PowerUpType=0..7 выполняет pickup:
+; при $C6!=$06 добавляет 500 очков сборщику X<2 и ставит PowerUpPickupAudioState; для X>=2
 ; счёт не меняется. Значение $C6=$06 пропускает оба действия, но всё равно
 ; dispatch'ит выбранный эффект.
-; Побочно меняет A/X/Y, $49/$62, счёт/жизни/audio flags; обработчик эффекта
+; Побочно меняет A/X/Y, PowerUpCollectorSlot, PowerUpPickupDisplayTimer,
+; счёт/жизни и состояния аудиопотоков; обработчик эффекта
 ; может менять произвольное игровое состояние. При dispatch снимает со стека
 ; собственный адрес возврата. Поэтому RTS обработчика разматывает ещё один уровень
 ; стека и пропускает остаток процедуры, которая вызвала UpdatePowerUpPickup.
 UpdatePowerUpPickup:
-LE972:  lda     $86
+LE972:  lda     PowerUpX
         beq     LE9E1
-        lda     $62
+        lda     PowerUpPickupDisplayTimer
         bne     LE9E1
         jmp     BeginPowerUpCollectorScan
 
@@ -539,14 +545,14 @@ LE972:  lda     $86
 UnreferencedE97dNop:
 LE97D:  .byte   $EA
 CheckPowerUpTankOverlap:
-LE97E:  ldx     $49
+LE97E:  ldx     PowerUpCollectorSlot
         lda     ObjectState,x
         bpl     LE9DD
-        cmp     #$E0
+        cmp     #NonTargetableTankStateMin
         bcs     LE9DD
         lda     ObjectX,x
         sec
-        sbc     $86
+        sbc     PowerUpX
         bpl     LE994
         eor     #$FF
         clc
@@ -555,7 +561,7 @@ LE994:  cmp     #$0C
         bcs     LE9DD
         lda     ObjectY,x
         sec
-        sbc     $87
+        sbc     PowerUpY
         bpl     LE9A4
         eor     #$FF
         clc
@@ -563,23 +569,23 @@ LE994:  cmp     #$0C
 LE9A4:  cmp     #$0C
         bcs     LE9DD
         lda     #$32
-        sta     $62
-        lda     $88
+        sta     PowerUpPickupDisplayTimer
+        lda     PowerUpType
         bmi     LE9E1
         lda     $C6
         cmp     #$06
         beq     LE9CA
         lda     #$50
         jsr     PreparePackedScoreIncrement
-        ldx     $49
+        ldx     PowerUpCollectorSlot
         ; AddPreparedScoreForPlayerSlot работает только для слотов игроков 0/1.
         jsr     AddPreparedScoreForPlayerSlot
         jsr     AwardScoreThresholdLives
-        ldx     $49
+        ldx     PowerUpCollectorSlot
         lda     #$01
-        sta     $0306
+        sta     PowerUpPickupAudioState
 DispatchCollectedPowerUp:
-LE9CA:  lda     $88
+LE9CA:  lda     PowerUpType
         asl     a
         tay
         lda     PowerUpEffectHandlers,y
@@ -590,7 +596,7 @@ LE9CA:  lda     $88
         pla
         jmp     (ScratchPtrLo)
 
-LE9DD:  dec     $49
+LE9DD:  dec     PowerUpCollectorSlot
         bpl     LE97E
 LE9E1:  rts
 
@@ -612,7 +618,7 @@ LE9E2:  .word   PowerUpEffect0,PowerUpEffect1,PowerUpEffect2,PowerUpEffect3
 ; Меняет A, StageNumber и флаги; X/Y сохраняются.
 AdvanceStageNumber:
 LE9F2:  inc     StageNumber
-        lda     $46
+        lda     GameVariant
         and     #$0F
         cmp     #$06
         beq     LE9FF
@@ -650,7 +656,7 @@ LEA12:  pha
         lda     $5A
         and     #$01
         tax
-        lda     $0178,x
+        lda     PlayerExtendedUpgrade,x
         cmp     #$A0
         bcc     LEA2E
         nop
@@ -671,18 +677,19 @@ LEA36:  jmp     DestroyProjectileOnTerrain
 ; Меняет A, ObjectAttributes/ObjectFrame и $0178,X; X/Y сохраняются.
 ClearUpgradeExtensionAndRefreshAttributes:
 LEA39:  lda     #$00
-        sta     $0178,x
-        lda     $0101,x
+        sta     PlayerExtendedUpgrade,x
+        lda     PlayerUpgradeLevel,x
         jmp     MergeTankAttributeBits
 
 ; Сохранённый недостижимый байт после хвостового JMP MergeTankAttributeBits;
 ; следующий адрес $EA45 является самостоятельным entry point. Ссылок нет.
 UnreferencedEa44Byte:
 LEA44:  .byte   $03
-; Небольшой адаптер без статических ссылок: пишет A в audio/event flag $0305.
-; RAM кроме $0305 и регистры X/Y не меняет.
+; Небольшой адаптер без статических ссылок: пишет A в состояние второго
+; pulse-потока звука дополнительной жизни.
+; RAM кроме ExtraLifePulse2AudioState и регистры X/Y не меняет.
 StoreEventFlag0305:
-LEA45:  sta     $0305
+LEA45:  sta     ExtraLifePulse2AudioState
         rts
 ; Знаковые единичные векторы для направлений Up,Left,Down,Right.
 ProjectileDirectionStepX:

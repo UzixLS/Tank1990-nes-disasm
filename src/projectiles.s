@@ -1,9 +1,13 @@
 ; Снаряды, эффекты поля, создание танков и общие таблицы ($E02E-$E603).
 
+TankShadowPtrLo         = $E0
+TankShadowPtrHiAndFlags = $E8
+BaseSpriteTileOffset    = $69
+
 UpdateProjectiles:
 ; Обновляет все 10 слотов снарядов от 9 до 0 через DispatchProjectileLogic.
 ; Выход: $5A=$FF; портит A/X/Y, ScratchPtr и поля снарядов по контракту обработчика.
-LE02E:  lda     #$09
+LE02E:  lda     #(ProjectileSlotCount-1)
         sta     $5A
 LE032:  ldx     $5A
         jsr     DispatchProjectileLogic
@@ -30,7 +34,7 @@ ProjectileLogicState4:
 ; Активный снаряд: двигает на 2 px в направлении из младших двух битов state; при ProjectileFlags bit0 повторяет шаг,
 ; то есть двигает на 4 px. Меняет ProjectileX/Y,X; портит A/Y и флаги.
         lda     ProjectileState,x
-        and     #$03
+        and     #DirectionMask
         tay
         jsr     MoveProjectileTwoPixels
         lda     ProjectileFlags,x
@@ -61,7 +65,7 @@ ProjectileLogicStates1To3:
         and     #$0F
         bne     LE08B
         lda     ProjectileState,x
-        and     #$F0
+        and     #StateClassMask
         sec
         sbc     #$10
         beq     LE089
@@ -71,18 +75,19 @@ LE08B:  rts
 
 ; Создаёт снаряд в слоте X, только если ProjectileState,X=0.
 ; Начальное state=$40|direction; координаты смещены на 8 px от ObjectX/Y,X, flags затем вычисляются по attributes/варианту.
-; Для игрока X<2 ставит request $030F=1. Хвостовой JMP в InitializeProjectileFlagsForVariant; портит A/Y и флаги.
+; Для игрока X<2 запрашивает PlayerFireAudioState. Хвостовой JMP в
+; InitializeProjectileFlagsForVariant; портит A/Y и флаги.
 InitializeProjectileForTank:
 LE08C:  lda     ProjectileState,x
         bne     LE0D7
-        cpx     #$02
+        cpx     #FirstEnemyTankSlot
         bcs     LE099
         lda     #$01
-        sta     $030F
+        sta     PlayerFireAudioState
 LE099:  lda     ObjectState,x
-        and     #$03
+        and     #DirectionMask
         tay
-        ora     #$40
+        ora     #ProjectileStateActive
         sta     ProjectileState,x
         lda     DirectionDeltaX,y
         asl     a
@@ -131,7 +136,7 @@ LE0D7:  rts
 DrawProjectiles:
 ; Отрисовывает все 10 слотов снарядов от 9 до 0. Выход: $5A=$FF; портит
 ; A/X/Y, ScratchPtr, $00, $04/$53, $0D, $47/$48 и OAM shadow.
-LE0D8:  lda     #$09
+LE0D8:  lda     #(ProjectileSlotCount-1)
         sta     $5A
 LE0DC:  ldx     $5A
         jsr     DispatchProjectileDraw
@@ -157,7 +162,7 @@ ProjectileDrawState4:
 ; Рисует активный снаряд в его ProjectileX/Y с кадром по direction. Портит
 ; A/X/Y, ScratchPtr, $00, $04/$53, $0D, $47/$48 и OAM shadow.
         lda     ProjectileState,x
-        and     #$03
+        and     #DirectionMask
         pha
         ldy     ProjectileY,x
         lda     ProjectileX,x
@@ -165,7 +170,7 @@ ProjectileDrawState4:
         lda     #$02
         sta     $04
         lda     #$B1
-        sta     $53
+        sta     OamTile
         pla
         jsr     EmitDirectionalOamSprite
         rts
@@ -192,7 +197,7 @@ LE122:  lda     #$01
 LE126:  ldx     $5A
         lda     ObjectState,x
         bpl     LE15D
-        cmp     #$E0
+        cmp     #NonTargetableTankStateMin
         bcs     LE15D
         jmp     DispatchPlayerFireInput
 
@@ -201,7 +206,8 @@ LE126:  ldx     $5A
 UnreferencedE133Bytes:
 LE133:  .byte   $03,$F0,$27
 ; Ветвь стрельбы игрока X. Для класса attributes $40 и занятого первого снаряда пытается использовать второй:
-; если его state $D4,X свободен, копирует туда state/position/flags первого, очищает первый и создаёт новый.
+; если его второй слот свободен, копирует туда state/position/flags первого,
+; очищает первый и создаёт новый.
 ; Иначе просто пытается инициализировать первый слот. Портит A/Y и projectile RAM; X сохраняет индекс игрока до хвоста цикла.
 FirePlayerProjectile:
 LE136:  lda     ObjectAttributes,x
@@ -210,16 +216,16 @@ LE136:  lda     ObjectAttributes,x
         bne     LE15A
         lda     ProjectileState,x
         beq     LE15A
-        lda     $D4,x
+        lda     ProjectileState+8,x
         bne     LE15D
         lda     ProjectileState,x
-        sta     $D4,x
+        sta     ProjectileState+8,x
         lda     ProjectileX,x
-        sta     $C0,x
+        sta     ProjectileX+8,x
         lda     ProjectileY,x
-        sta     $CA,x
+        sta     ProjectileY+8,x
         lda     ProjectileFlags,x
-        sta     $DE,x
+        sta     ProjectileFlags+8,x
         lda     #$00
         sta     ProjectileState,x
 LE15A:  jsr     InitializeProjectileForTank
@@ -230,12 +236,12 @@ LE15D:  dec     $5A
 ; При $0100=0 обходит врагов X=7..2. Каждый активный танк с вероятностью 1/32 пытается выстрелить.
 ; Портит A/X/Y, RNG и projectile RAM; при ненулевом $0100 ничего не меняет.
 UpdateEnemyFiring:
-LE162:  lda     $0100
+LE162:  lda     EnemyFreezeTimer
         bne     LE180
-        ldx     #$07
+        ldx     #(TankSlotCount-1)
 LE169:  lda     ObjectState,x
         bpl     LE17B
-        cmp     #$E0
+        cmp     #NonTargetableTankStateMin
         bcs     LE17B
         jsr     NextRandomByte
         and     #$1F
@@ -252,12 +258,12 @@ LE180:  rts
 ; Бит 7 тайла служит occupancy-маркером. Для игрока также обновляет bit7
 ; $0103,X по тайлу $21. Портит A/X/Y/ScratchPtr/$00/$5A.
 MarkTankOccupiedTiles:
-LE181:  lda     #$07
+LE181:  lda     #(TankSlotCount-1)
         sta     $5A
 LE185:  ldx     $5A
         lda     ObjectState,x
         bpl     LE1EE
-        cmp     #$E0
+        cmp     #NonTargetableTankStateMin
         bcs     LE1EE
         lda     ObjectY,x
         sec
@@ -270,12 +276,12 @@ LE185:  ldx     $5A
         jsr     PixelCoordinatesToShadowPointer
         ldx     $5A
         lda     ScratchPtrLo
-        sta     $E0,x
+        sta     TankShadowPtrLo,x
         lda     ScratchPtrHi
         and     #$03
-        sta     $E8,x
+        sta     TankShadowPtrHiAndFlags,x
         ldy     #$21
-        cpx     #$02
+        cpx     #FirstEnemyTankSlot
         bcs     LE1C9
         lda     (ScratchPtrLo),y
         cmp     #$21
@@ -292,17 +298,17 @@ LE1C9:  jsr     SetTileOccupiedFlag
         lda     ObjectX,x
         and     #$07
         bne     LE1DD
-        lda     $E8,x
+        lda     TankShadowPtrHiAndFlags,x
         ora     #$80
-        sta     $E8,x
+        sta     TankShadowPtrHiAndFlags,x
         ldy     #$20
         jsr     SetTileOccupiedFlag
 LE1DD:  lda     ObjectY,x
         and     #$07
         bne     LE1EE
-        lda     $E8,x
+        lda     TankShadowPtrHiAndFlags,x
         ora     #$40
-        sta     $E8,x
+        sta     TankShadowPtrHiAndFlags,x
         ldy     #$01
         jsr     SetTileOccupiedFlag
 LE1EE:  dec     $5A
@@ -319,27 +325,27 @@ LE1F3:  lda     (ScratchPtrLo),y
 ; После движения снимает occupancy-bit7 с тех же клеток по кэшу $E0,X/$E8,X. Обходит активные танки 7..0.
 ; Портит A/X/Y/ScratchPtr/$5A и меняет nametable shadow.
 ClearTankOccupiedTiles:
-LE1FA:  lda     #$07
+LE1FA:  lda     #(TankSlotCount-1)
         sta     $5A
 LE1FE:  ldx     $5A
         lda     ObjectState,x
         bpl     LE22F
-        cmp     #$E0
+        cmp     #NonTargetableTankStateMin
         bcs     LE22F
-        lda     $E0,x
+        lda     TankShadowPtrLo,x
         sta     ScratchPtrLo
-        lda     $E8,x
+        lda     TankShadowPtrHiAndFlags,x
         and     #$03
         ora     #$04
         sta     ScratchPtrHi
         ldy     #$21
         jsr     ClearTileOccupiedFlag
-        lda     $E8,x
+        lda     TankShadowPtrHiAndFlags,x
         and     #$80
         beq     LE224
         ldy     #$20
         jsr     ClearTileOccupiedFlag
-LE224:  lda     $E8,x
+LE224:  lda     TankShadowPtrHiAndFlags,x
         and     #$40
         beq     LE22F
         ldy     #$01
@@ -355,25 +361,28 @@ LE234:  lda     (ScratchPtrLo),y
         sta     (ScratchPtrLo),y
         rts
 
-; Рисует объект усиления в $86/$87. При $62=0 он мигает по FrameCounter&8, а код спрайта равен $81+4*$88.
-; При $62!=0 обратно отсчитывает его и рисует код $3B; по достижении 0 скрывает объект, обнуляя $86.
-; Меняет $62/$86/$6E, ScratchPtr, $00, $04/$53, $0D, $47/$48, $54/$55 и
-; OAM shadow; портит A/X/Y, восстанавливает $6E=$20 после отрисовки.
+; Рисует объект усиления в PowerUpX/Y. При нулевом
+; PowerUpPickupDisplayTimer он мигает по FrameCounter&8, а код спрайта равен
+; $81+4*PowerUpType. При ненулевом таймере обратно отсчитывает его и рисует
+; код $3B; по достижении 0 скрывает объект, обнуляя PowerUpX.
+; Меняет таймер, PowerUpX, SpriteBehindTerrainMask, ScratchPtr, $00,
+; $04/OamTile, OamBufferPos, $47/$48, $54/$55 и OAM shadow; портит A/X/Y,
+; восстанавливает SpriteBehindTerrainMask=$20 после отрисовки.
 DrawAndExpirePowerUp:
-LE23B:  lda     $86
+LE23B:  lda     PowerUpX
         beq     LE27B
-        lda     $62
+        lda     PowerUpPickupDisplayTimer
         beq     LE259
-        dec     $62
+        dec     PowerUpPickupDisplayTimer
         bne     LE24E
         lda     #$00
-        sta     $86
+        sta     PowerUpX
         jmp     LE27B
 
 LE24E:  lda     #$02
         sta     $04
         lda     #$3B
-        sta     $53
+        sta     OamTile
         jmp     LE26C
 
 LE259:  lda     FrameCounter
@@ -381,19 +390,19 @@ LE259:  lda     FrameCounter
         beq     LE27B
         lda     #$02
         sta     $04
-        lda     $88
+        lda     PowerUpType
         asl     a
         asl     a
         clc
         adc     #$81
-        sta     $53
-LE26C:  ldx     $86
-        ldy     $87
+        sta     OamTile
+LE26C:  ldx     PowerUpX
+        ldy     PowerUpY
         lda     #$00
-        sta     $6E
+        sta     SpriteBehindTerrainMask
         jsr     EmitTwoTileOamPair
         lda     #$20
-        sta     $6E
+        sta     SpriteBehindTerrainMask
 LE27B:  rts
 
 ; Обходит игроков 1..0 и рисует мигающую защитную анимацию пока $89,X!=0; раз в 64 кадра уменьшает таймер.
@@ -403,12 +412,12 @@ UpdatePlayerShieldEffects:
 LE27C:  lda     #$01
         sta     $5A
 LE280:  ldx     $5A
-        lda     $89,x
+        lda     PlayerShieldTimer,x
         beq     LE2A4
         lda     FrameCounter
         and     #$3F
         bne     LE28E
-        dec     $89,x
+        dec     PlayerShieldTimer,x
 LE28E:  lda     #$02
         sta     $04
         ldy     ObjectY,x
@@ -419,7 +428,7 @@ LE28E:  lda     #$02
         asl     a
         clc
         adc     #$29
-        sta     $53
+        sta     OamTile
         jsr     EmitTwoTileOamPair
 LE2A4:  dec     $5A
         bpl     LE280
@@ -431,7 +440,7 @@ LE2A4:  dec     $5A
 ; Портит A/X/Y/ScratchPtr, $00-$04, $0D, $47/$48, $54/$55, $69,
 ; shadow/PPU-очередь и OAM shadow.
 UpdateBaseEffects:
-LE2A9:  lda     $45
+LE2A9:  lda     BaseFortificationTimer
         beq     LE2D2
         lda     FrameCounter
         and     #$0F
@@ -439,9 +448,9 @@ LE2A9:  lda     $45
         lda     FrameCounter
         and     #$3F
         bne     LE2BD
-        dec     $45
+        dec     BaseFortificationTimer
         beq     LE2CF
-LE2BD:  lda     $45
+LE2BD:  lda     BaseFortificationTimer
         cmp     #$04
         bcs     LE2D2
         lda     FrameCounter
@@ -451,13 +460,13 @@ LE2BD:  lda     $45
         jmp     LE2D2
 
 LE2CF:  jsr     DrawBrickBaseEnclosure
-LE2D2:  lda     $68
+LE2D2:  lda     BattleState
         beq     LE305
         bmi     LE305
         lda     #$03
         sta     $04
-        dec     $68
-        lda     $68
+        dec     BattleState
+        lda     BattleState
         lsr     a
         lsr     a
         sec
@@ -500,32 +509,35 @@ DrawBaseExplosionFrame3:
 LE31C:  lda     #$F9
 LE31E:  ldx     #$78
         ldy     #$D8
-LE322:  sta     $53
+LE322:  sta     OamTile
         jsr     EmitTwoTileOamPair
         rts
 
-; Прибавляет к номеру кадра A смещение $69 и рисует двухспрайтовую пару в X/Y.
+; Прибавляет к номеру кадра A смещение BaseSpriteTileOffset и рисует
+; двухспрайтовую пару в X/Y.
 DrawBaseSpriteWithOffset:
 LE328:  clc
-        adc     $69
+        adc     BaseSpriteTileOffset
         jmp     LE322
 
-; Обнуляет $69 и рисует четыре пары — восемь OAM-спрайтов базы.
+; Обнуляет BaseSpriteTileOffset и рисует четыре пары — восемь OAM-спрайтов базы.
 ; Портит A/X/Y, ScratchPtr, $00, $04/$53/$69, $0D, $47/$48, $54/$55 и OAM shadow.
 DrawIntactBaseFrame:
 LE32E:  lda     #$00
-        sta     $69
+        sta     BaseSpriteTileOffset
         jsr     DrawBaseSpriteGrid
         rts
 
-; Ставит $69=$10 и рисует альтернативные четыре пары — восемь OAM-спрайтов базы.
+; Ставит BaseSpriteTileOffset=$10 и рисует альтернативные четыре пары —
+; восемь OAM-спрайтов базы.
 DrawDestroyedBaseFrame:
 LE336:  lda     #$10
-        sta     $69
+        sta     BaseSpriteTileOffset
         jsr     DrawBaseSpriteGrid
         rts
 
-; Рисует сетку 2x2 двухспрайтовых пар в ($70,$D0)..($80,$E0); $69
+; Рисует сетку 2x2 двухспрайтовых пар в ($70,$D0)..($80,$E0);
+; BaseSpriteTileOffset
 ; прибавляется к кодам $D1/$D5/$D9/$DD. Портит A/X/Y, ScratchPtr, $00,
 ; $04/$53, $0D, $47/$48, $54/$55 и OAM shadow; $69 не меняет.
 DrawBaseSpriteGrid:
@@ -547,34 +559,35 @@ LE33E:  ldx     #$70
         jsr     DrawBaseSpriteWithOffset
         rts
 ; Создаёт танк в слоте X в spawn-state $F0. Игроки 0/1 ставятся в PlayerSpawnX/Y; враги циклически используют три EnemySpawnX/Y.
-; Обнуляет attributes, для игроков также $6F,X; рисует spawn-метатайл $0F.
+; Обнуляет attributes, для игроков также PlayerStunTimer,X; рисует
+; spawn-метатайл $0F.
 ; Портит A/X/Y, ScratchPtr, $00-$04, $47/$48, $6A для врагов,
 ; nametable/attribute shadow и PPU-очередь.
 SpawnTank:
 LE363:  lda     #$00
         sta     ObjectAttributes,x
-        cpx     #$02
+        cpx     #FirstEnemyTankSlot
         bcs     LE37C
         lda     PlayerSpawnX,x
         sta     ObjectX,x
         lda     PlayerSpawnY,x
         sta     ObjectY,x
         lda     #$00
-        sta     $6F,x
+        sta     PlayerStunTimer,x
         jmp     LE393
 
-LE37C:  inc     $6A
-        ldy     $6A
+LE37C:  inc     EnemySpawnColumn
+        ldy     EnemySpawnColumn
         cpy     #$03
         bne     LE389
         lda     #$00
-        sta     $6A
+        sta     EnemySpawnColumn
         tay
 LE389:  lda     EnemySpawnX,y
         sta     ObjectX,x
         lda     EnemySpawnY,y
         sta     ObjectY,x
-LE393:  lda     #$F0
+LE393:  lda     #TankStateSpawning
         sta     ObjectState,x
         ldy     ObjectY,x
         lda     ObjectX,x
@@ -593,8 +606,8 @@ LE3A2:  .byte   $04
 SpawnTankWithAttributes:
 LE3A3:  sta     ObjectAttributes,x
         lda     #$00
-        sta     $86
-        lda     #$F0
+        sta     PowerUpX
+        lda     #TankStateSpawning
         sta     ObjectState,x
         ldy     ObjectY,x
         lda     ObjectX,x
@@ -604,28 +617,29 @@ LE3A3:  sta     ObjectAttributes,x
         rts
 
 PowerUpEffect1:
-; Вход: X — слот подобравшего. Для игрока X<2 ставит общий таймер $0100=$0A; для X>=2 — таймеры игроков $6F/$70=$C8.
+; Вход: X — слот подобравшего. Для игрока X<2 ставит EnemyFreezeTimer=$0A;
+; для X>=2 — оба PlayerStunTimer=$C8.
 ; Портит A и флаги; X/Y не меняет.
-LE3B8:  cpx     #$02
+LE3B8:  cpx     #FirstEnemyTankSlot
         bcs     LE3C2
         lda     #$0A
-        sta     $0100
+        sta     EnemyFreezeTimer
         rts
 
 LE3C2:  lda     #$C8
-        sta     $6F
-        sta     $70
+        sta     PlayerStunTimer
+        sta     PlayerStunTimer+1
         rts
 ; Инициализирует $0101/$0102 значением $20, если $46 отрицателен либо в его
 ; неотрицательном значении установлен bit5; иначе записывает 0.
 ; Выход: A — записанное значение; X/Y и остальная RAM не меняются.
 InitializePlayerVariantAttributes:
-LE3C9:  lda     $46
+LE3C9:  lda     GameVariant
         bpl     LE3CF
         lda     #$20
 LE3CF:  and     #$20
-        sta     $0101
-        sta     $0102
+        sta     PlayerUpgradeLevel
+        sta     PlayerUpgradeLevel+1
         rts
 
 ; Выбирает одну из строк TankVariantLabels по $46, записывает её адрес в AuxPtr и растрирует по $56/$57.
@@ -633,7 +647,7 @@ LE3CF:  and     #$20
 DrawVariantTitleData:
 LE3D8:  lda     #$E5
         sta     AuxPtrHi
-        lda     $46
+        lda     GameVariant
         asl     a
         bcc     LE3E4
         clc
@@ -648,10 +662,10 @@ LE3E4:  asl     a
 
 ; Переводит танк X в state=$73 и очищает его extension $0170,X. Выход: A=0; X/Y не меняются.
 DestroyTankAndClearExtension:
-LE3EF:  lda     #$73
+LE3EF:  lda     #TankStateDestroyed
         sta     ObjectState,x
         lda     #$00
-        sta     $0170,x
+        sta     ObjectSpecialState,x
         rts
 
 ; Сохранённый байт между RTS и следующим entry point; статических ссылок нет.
@@ -670,7 +684,7 @@ LE402:  sta     ObjectAttributes,x
         rts
 ClearProjectileStates:
 ; Обнуляет ProjectileState всех 10 слотов. Выход: A=0, X=$FF; Y и остальные поля снарядов не меняются.
-LE409:  ldx     #$09
+LE409:  ldx     #(ProjectileSlotCount-1)
         lda     #$00
 LE40D:  sta     ProjectileState,x
         dex
@@ -680,7 +694,7 @@ LE40D:  sta     ProjectileState,x
 ClearTankStates:
 ; Обнуляет ObjectState и $0103 всех 8 танковых слотов. Выход: A=0, X=$FF; Y и остальные поля не меняются.
 LE413:  lda     #$00
-        ldx     #$07
+        ldx     #(TankSlotCount-1)
 LE417:  sta     ObjectState,x
         sta     $0103,x
         dex
@@ -810,11 +824,11 @@ InitializeTankState:
 ; Меняет ObjectState/Attributes/Frame, $89,X для игроков и RNG; портит A/Y, X сохраняет.
 LE4EC:  lda     InitialTankStateBySlot,x
         sta     ObjectState,x
-        cpx     #$02
+        cpx     #FirstEnemyTankSlot
         bcs     LE505
         lda     #$03
-        sta     $89,x
-        lda     $0101,x
+        sta     PlayerShieldTimer,x
+        lda     PlayerUpgradeLevel,x
         ora     ObjectAttributes,x
         sta     ObjectAttributes,x
         lda     #$00
@@ -822,7 +836,7 @@ LE4EC:  lda     InitialTankStateBySlot,x
         rts
 
 LE505:  jsr     NextRandomByte
-        and     #$03
+        and     #DirectionMask
         tay
         lda     EnemyTypeAttributeBits,y
         ora     ObjectAttributes,x
@@ -831,7 +845,7 @@ LE505:  jsr     NextRandomByte
         cmp     #$0C
         bcc     LE520
         jsr     NextRandomByte
-        and     #$03
+        and     #DirectionMask
         jmp     LE525
 
 LE520:  jsr     NextRandomByte
@@ -848,7 +862,7 @@ LE525:  tay
         jmp     LE540
 
 LE53B:  jsr     NextRandomByte
-        and     #$03
+        and     #DirectionMask
 LE540:  tay
         lda     EnemyLowAttributeBits,y
         ora     ObjectAttributes,x
@@ -870,22 +884,23 @@ LE54F:  lda     TankLevels+$56,y
         lda     #$00
         sta     ObjectFrame,x
         rts
-; Начинает сканирование сборщиков усиления в collision-модуле. При $46>7 ставит $49=7, иначе $49=1,
+; Начинает сканирование сборщиков усиления в collision-модуле. При
+; GameVariant>7 ставит PowerUpCollectorSlot=7, иначе 1,
 ; затем хвостовым JMP переходит к CheckPowerUpTankOverlap. Для штатных диапазонов $46 это даёт
 ; проверку слотов 7..0 в расширенных вариантах и 1..0 в обычных.
 ; Портит A/X/Y/ScratchPtr и collision work RAM по контракту хвоста.
 BeginPowerUpCollectorScan:
 LE55B:  lda     #$07
-        cmp     $46
+        cmp     GameVariant
         bcc     LE563
         lda     #$01
-LE563:  sta     $49
+LE563:  sta     PowerUpCollectorSlot
         jmp     CheckPowerUpTankOverlap
 
 ; Для слотов игроков X=0/1 прибавляет подготовленные цифры $35..$3B к счёту; для врагов ничего не делает.
 ; При сложении портит A/X/Y и запись счёта выбранного игрока.
 AddPreparedScoreForPlayerSlot:
-LE568:  cpx     #$02
+LE568:  cpx     #FirstEnemyTankSlot
         bcs     LE56F
         jsr     AddScoreDigitsToRecord
 LE56F:  rts

@@ -3,6 +3,13 @@
 ; Карта занимает 91 байт: 13 строк по 14 нибблов. Первые 13 нибблов каждой
 ; строки -- TSA-индексы поля 13x13, последний ниббл -- неиспользуемый заполнитель.
 
+StageSetSelector       = $8F
+StageSetLength         = $8F
+PackedStageNibbleIndex = $5A
+StageDrawX             = $56
+StageDrawY             = $57
+PackedStageByteSize    = $5B
+
 ; Выбирает описатель набора по младшему нибблу $46, вычисляет адрес StageNumber
 ; и распаковывает поле 13x13 в shadow nametable через DrawMetatile.
 ; Вход: A=$FF включает специальный режим (StageNumber=$20, дескриптор 6); при ином A
@@ -21,12 +28,12 @@ LEF76:  cmp     #$FF
         lda     #$06
         bne     LEF86
 SelectStageSetDescriptor:
-LEF82:  lda     $46
+LEF82:  lda     GameVariant
         and     #$0F
-LEF86:  sta     $8F
+LEF86:  sta     StageSetSelector
         asl     a
         clc
-        adc     $8F
+        adc     StageSetSelector
         tax
         lda     ClassicLevelSetDescriptors,x
         sta     ScratchPtrLo
@@ -35,17 +42,17 @@ LEF86:  sta     $8F
         sta     ScratchPtrHi
         inx
         lda     ClassicLevelSetDescriptors,x
-        sta     $8F
+        sta     StageSetLength
         lda     #$00
         sta     $00
         lda     StageNumber
 ; $00 считает удвоенное число полных оборотов по набору; A остаётся в диапазоне 1..N.
 NormalizeStageWithinSet:
-LEFA4:  cmp     $8F
+LEFA4:  cmp     StageSetLength
         bcc     LEFB3
         beq     LEFB3
         sec
-        sbc     $8F
+        sbc     StageSetLength
         inc     $00
         inc     $00
         bne     LEFA4
@@ -59,28 +66,28 @@ LEFBF:  pla
         sta     $00
 LEFC2:  dec     $00
         beq     LEFCE
-        lda     #$5B
+        lda     #PackedStageByteSize
         jsr     AddAToPointer
         jmp     LEFC2
 
 ; ScratchPtr теперь указывает на 91-байтную упакованную карту; AuxPtr сохраняет её для чтения.
 BuildStageShadow:
 LEFCE:  lda     #$00
-        sta     $5A
+        sta     PackedStageNibbleIndex
         lda     ScratchPtrLo
         sta     AuxPtrLo
         lda     ScratchPtrHi
         sta     AuxPtrHi
         lda     #$10
-        sta     $57
+        sta     StageDrawY
 ; Одна строка поля строится за кадр. X/Y идут от $10 до $D0 с шагом $10.
 LEFDE:  jsr     WaitForNextFrame
         lda     #$10
-        sta     $56
-LEFE5:  lda     $5A
+        sta     StageDrawX
+LEFE5:  lda     PackedStageNibbleIndex
         lsr     a
         tay
-        lda     $5A                ; Чётный индекс -- старший ниббл байта, нечётный -- младший.
+        lda     PackedStageNibbleIndex ; Чётный индекс -- старший ниббл байта, нечётный -- младший.
         and     #$01
         beq     LEFF6
         lda     (AuxPtrLo),y
@@ -92,23 +99,23 @@ LEFF6:  lda     (AuxPtrLo),y
         lsr     a
         lsr     a
         lsr     a
-LEFFC:  ldx     $56
-        ldy     $57
+LEFFC:  ldx     StageDrawX
+        ldy     StageDrawY
         jsr     DrawMetatile
         lda     #$00
         sta     PpuBufferPos       ; DrawMetatile нужен здесь для shadow; его PPU-команды отбрасываются.
-        inc     $5A                ; Пропуск ниббла-заполнителя после 13-го метатайла строки.
-        lda     $56
+        inc     PackedStageNibbleIndex ; Пропуск ниббла-заполнителя после 13-го метатайла строки.
+        lda     StageDrawX
         clc
         adc     #$10
-        sta     $56
+        sta     StageDrawX
         cmp     #$E0
         bne     LEFE5
-        inc     $5A
-        lda     $57
+        inc     PackedStageNibbleIndex
+        lda     StageDrawY
         clc
         adc     #$10
-        sta     $57
+        sta     StageDrawY
         cmp     #$E0
         bne     LEFDE
         rts

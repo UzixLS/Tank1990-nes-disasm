@@ -1,8 +1,8 @@
 ; Аудиодвижок и потоки музыки/эффектов ($EA51-$EF75).
 ;
-; Движок ведёт 28 приоритетных потоков. Байт AudioSlotFlags+n равен 0
+; Движок ведёт 28 приоритетных потоков. Байт AudioStreamStates+n равен 0
 ; для неактивного потока, 1 запрашивает запуск, а 2 означает работающий
-; поток. Его запись лежит по адресу AudioSlotRecords+n*8:
+; поток. Его запись лежит по адресу AudioStreamRecords+n*8:
 ;   +0  номер канала APU 1..4; временно 5..8, если регистры уже выданы;
 ;   +1  регистр CTRL ($4000/$4004/$4008/$400C);
 ;   +2  регистр SWEEP/неиспользуемый ($4001/$4005/$4009/$400D);
@@ -13,10 +13,8 @@
 ;   +7  текущий счётчик кадров.
 ; Меньший номер потока первым захватывает нужный аппаратный канал.
 
-AudioSlotFlags       = $0300
-AudioSlotRecords     = $031C
 AudioHardwareOwners  = $F9
-AudioSlotCount       = $1C
+AudioStreamCount       = $1C
 AudioRecordSize      = $08
 AudioHardwareChannels = $04
 
@@ -30,23 +28,23 @@ AudioRecordDuration  = $06
 AudioRecordCountdown = $07
 
 ; Включает pulse/triangle/noise в $4015, запрещает frame IRQ через
-; $4017 и сбрасывает все флаги потоков и поле +0 их записей.
+; $4017 и сбрасывает состояния потоков и поле +0 их записей.
 ; Входы: нет. Выходы: нет. Портит A, X, Y, AudioStatePtrLo/Hi.
 ResetAudioEngine:
 LEA51:  lda     #$0F
         sta     APU_STATUS
         lda     #$C0
         sta     JOY2_FRAME
-        lda     #<AudioSlotRecords
+        lda     #<AudioStreamRecords
         sta     AudioStatePtrLo
-        lda     #>AudioSlotRecords
+        lda     #>AudioStreamRecords
         sta     AudioStatePtrHi
         ldx     #$00
         ldy     #$00
-ResetNextAudioSlot:
+ResetNextAudioStream:
 LEA67:  tya
         sta     (AudioStatePtrLo),y
-        sta     AudioSlotFlags,x
+        sta     AudioStreamStates,x
         clc
         lda     AudioStatePtrLo
         adc     #AudioRecordSize
@@ -54,7 +52,7 @@ LEA67:  tya
         bcc     LEA78
         inc     AudioStatePtrHi
 LEA78:  inx
-        cpx     #AudioSlotCount
+        cpx     #AudioStreamCount
         bne     LEA67
         rts
 
@@ -62,17 +60,18 @@ LEA78:  inx
 ; Сначала выбирает первый по номеру поток для каждого канала и копирует
 ; его четыре байта в APU. Затем уменьшает таймеры и декодирует по одному
 ; событию для истёкших потоков. Такой порядок откладывает запись новой
-; ноты в APU до следующего кадра. При ненулевом $6D обслуживается только поток 0.
+; ноты в APU до следующего кадра. При ненулевом PauseState обслуживается
+; только поток 0.
 ; Побочные эффекты: запись $4000-$400F; изменение записей потоков,
 ; AudioHardwareOwners, AudioLoopCounters и временных Audio*; портит A, X, Y.
 UpdateAudioEngine:
-LEA7E:  lda     $6D
+LEA7E:  lda     PauseState
         bne     LEA88
-        lda     #AudioSlotCount
-        sta     AudioChannelCount
+        lda     #AudioStreamCount
+        sta     AudioStreamLimit
         bpl     LEA8C
 LEA88:  lda     #$01
-        sta     AudioChannelCount
+        sta     AudioStreamLimit
 LEA8C:  lda     #$00
         ldx     #(AudioHardwareChannels-1)
 ClearAudioHardwareOwners:
@@ -80,17 +79,17 @@ LEA90:  sta     AudioHardwareOwners,x
         dex
         bpl     LEA90
         lda     #$00
-        sta     AudioChannel
-        lda     #<AudioSlotRecords
+        sta     AudioStreamIndex
+        lda     #<AudioStreamRecords
         sta     AudioStatePtrLo
-        lda     #>AudioSlotRecords
+        lda     #>AudioStreamRecords
         sta     AudioStatePtrHi
 
 ; Первый проход: низкие номера потоков имеют приоритет. Значение +0 от 5
 ; означает, что данные уже были записаны; канал всё равно помечается занятым.
-RouteAudioSlotsToApu:
-LEAA1:  ldx     AudioChannel
-        lda     AudioSlotFlags,x
+RouteAudioStreamsToApu:
+LEAA1:  ldx     AudioStreamIndex
+        lda     AudioStreamStates,x
         beq     LEAE3
         ldy     #AudioRecordChannel
         lda     (AudioStatePtrLo),y
@@ -104,7 +103,7 @@ LEAA1:  ldx     AudioChannel
         sta     AudioHardwareOwners,x
         jmp     LEAE3
 
-WriteAudioSlotToApu:
+WriteAudioStreamToApu:
 LEABD:  tax
         dex
         lda     AudioHardwareOwners,x
@@ -129,16 +128,16 @@ LEAD8:  iny
         inx
         dec     AudioWorkLo
         bne     LEAD8
-AdvanceAudioOutputSlot:
+AdvanceAudioOutputStream:
 LEAE3:  clc
         lda     AudioStatePtrLo
         adc     #AudioRecordSize
         sta     AudioStatePtrLo
         bcc     LEAEE
         inc     AudioStatePtrHi
-LEAEE:  inc     AudioChannel
-        lda     AudioChannel
-        cmp     AudioChannelCount
+LEAEE:  inc     AudioStreamIndex
+        lda     AudioStreamIndex
+        cmp     AudioStreamLimit
         bcc     LEAA1
 ; Отключает незахваченные каналы: у pulse ставит нулевую громкость $10,
 ; у triangle/noise записывает 0 в первый регистр канала.
@@ -161,33 +160,33 @@ LEB0A:  ldx     AudioWorkLo
         cpx     #AudioHardwareChannels
         bcc     LEAF8
         ldy     #$00
-        sty     AudioChannel
-        lda     #<AudioSlotRecords
+        sty     AudioStreamIndex
+        lda     #<AudioStreamRecords
         sta     AudioStatePtrLo
-        lda     #>AudioSlotRecords
+        lda     #>AudioStreamRecords
         sta     AudioStatePtrHi
 
 ; Второй проход: запускает запрошенные потоки, отсчитывает кадр у активных и
 ; читает следующее событие, когда счётчик +7 достиг 0.
 AdvanceAudioStreams:
-LEB1D:  ldx     AudioChannel
-        lda     AudioSlotFlags,x
+LEB1D:  ldx     AudioStreamIndex
+        lda     AudioStreamStates,x
         beq     LEB2E
         cmp     #$01
         bne     LEB42
-        inc     AudioSlotFlags,x
+        inc     AudioStreamStates,x
         jmp     LEB4F
 
-AdvanceToNextAudioSlot:
+AdvanceToNextAudioStream:
 LEB2E:  clc
         lda     AudioStatePtrLo
         adc     #AudioRecordSize
         sta     AudioStatePtrLo
         bcc     LEB39
         inc     AudioStatePtrHi
-LEB39:  inc     AudioChannel
-        lda     AudioChannel
-        cmp     AudioChannelCount
+LEB39:  inc     AudioStreamIndex
+        lda     AudioStreamIndex
+        cmp     AudioStreamLimit
         bcc     LEB1D
         rts
 
@@ -310,9 +309,9 @@ AudioCommandHandlers:
 ; $E8: останавливает поток, обнуляет +0 и откатывает +5 на маркер $E8.
 AudioCommandStop:
 AudioCommandE8:
-LEC0A:  ldx     AudioChannel
+LEC0A:  ldx     AudioStreamIndex
 LEC0C:  lda     #$00
-        sta     AudioSlotFlags,x
+        sta     AudioStreamStates,x
         ldy     #AudioRecordChannel
         sta     (AudioStatePtrLo),y
         ldy     #AudioRecordPosition
@@ -432,11 +431,11 @@ LECA5:  jsr     ReadAudioArgument
         sta     (AudioStatePtrLo),y
         jmp     LEB88
 
-; Выбирает базу байткода по AudioChannel.
-; Вход: AudioChannel=0..27. Выход: AudioDataPtrLo/Hi.
+; Выбирает базу байткода по AudioStreamIndex.
+; Вход: AudioStreamIndex=0..27. Выход: AudioDataPtrLo/Hi.
 ; Портит A, X; Y не меняет.
 LoadAudioSequencePointer:
-LECAF:  lda     AudioChannel
+LECAF:  lda     AudioStreamIndex
         asl     a
         tax
         lda     AudioSequencePointers,x
@@ -449,7 +448,7 @@ LECAF:  lda     AudioChannel
 ; Входы: AudioDataPtrLo/Hi и AudioStatePtrLo/Hi для текущего потока.
 ; Выход: A=байт. Портит Y, сохраняет X.
 ReadAudioArgument:
-LECBE:  lda     AudioChannel
+LECBE:  lda     AudioStreamIndex
         ldy     #AudioRecordPosition
         lda     (AudioStatePtrLo),y
         tay

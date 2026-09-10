@@ -2,6 +2,7 @@
 
 .include "hardware.inc"
 .include "ram.inc"
+.include "game.inc"
 .include "header.s"
 .include "levels.s"
 .include "prg0_rest.s"

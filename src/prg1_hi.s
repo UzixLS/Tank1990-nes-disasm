@@ -2,6 +2,10 @@
 
 .segment "PRG1_HI": absolute
 
+; Проверка использует абсолютную индексацию с X=5/4, поэтому её база на
+; четыре байта ниже RuntimeChecksumExpected.
+IntegrityWorkBase = RuntimeChecksumExpected - $04
+
 ; $FCFC..$FCFF — хвост неидентифицированного потока данных; статических ссылок нет.
 HiBankPrefixData:
         .byte   $20,$D2,$0D,$2D
@@ -12,10 +16,11 @@ MenuOptionText1:
         .byte   $31,$35,$5D,$32,$38,$FF
 
 ; Выводит один из двух текстов пункта меню в позицию (21,3) и ждёт кадр.
-; Вход: $8E=0/!=0 выбирает MenuOptionText0/1. Портит ScratchPtr, A, X, Y;
+; Вход: AllPowerUpsEnabled=0/!=0 выбирает MenuOptionText0/1. Портит
+; ScratchPtr, A, X, Y;
 ; QueueTileAtCoordinates/WaitForNextFrame меняют PPU-очередь и кадровое состояние.
 DrawSelectedMenuOption:
-LFD0C:  lda     $8E
+LFD0C:  lda     AllPowerUpsEnabled
         bne     LFD14
         lda     #<MenuOptionText0
         beq     LFD16
@@ -34,7 +39,7 @@ LFD16:  sta     ScratchPtrLo
 ; Портит A, X, Y и PPU-очередь.
 QueueVariantMenuText:
 LFD27:  ldx     #$0B
-        lda     $46
+        lda     GameVariant
         clc
         bpl     LFD32
         and     #$0F
@@ -106,9 +111,11 @@ LFD91:  jmp     SelectStage
 ; Отложенная проверка runtime-контрольной суммы.
 ; При StageNumber<26 и в большинстве кадров только вызывает
 ; UpdateHalfSecondPhaseFlag. Начиная с 26-го этапа с вероятностью 1/8
-; сравнивает вычисленный XOR в $8D с эталоном $8C. При несовпадении переходит по ScratchPtr.
+; сравнивает RuntimeChecksumActual с RuntimeChecksumExpected. При несовпадении
+; переходит по ScratchPtr.
 ; Важно: этот путь не возвращается к вызывающему коду. Возвращающийся путь
-; сохраняет X, но портит A и при StageNumber>=26 может изменить состояние RNG.
+; Портит A; при выполнении сравнения оставляет X=4, иначе X сохраняется.
+; При StageNumber>=26 может также изменить состояние RNG.
 MaybeEnforceRuntimeChecksum:
 LFD94:
         lda     StageNumber
@@ -118,9 +125,9 @@ LFD94:
         and     #$0E
         bne     LFDAD
         ldx     #$05
-        lda     $88,x
+        lda     IntegrityWorkBase,x
         dex
-        cmp     $88,x
+        cmp     IntegrityWorkBase,x
         beq     LFDAD
         jmp     (ScratchPtrLo)
 
@@ -130,10 +137,10 @@ LFDAD:  jsr     UpdateHalfSecondPhaseFlag
 ; Адаптер для слотов игроков: при X<2 записывает $0A в $0100 и возвращается;
 ; при X>=2 проваливается в PowerUpEffect2. Портит A и флаги.
 InitializePlayerExtensionOrApplyEffect2:
-LFDB1:  cpx     #$02
+LFDB1:  cpx     #FirstEnemyTankSlot
         bcs     LFDBB
         lda     #$0A
-        sta     $0100
+        sta     EnemyFreezeTimer
         rts
 
 PowerUpEffect2:
@@ -141,7 +148,7 @@ PowerUpEffect2:
 ; обнуляет атрибуты через QueueBrickBaseAttributes. Для X<2 при активном $68
 ; обновляет ограждение и ставит $45=$14.
 ; Портит ScratchPtr, A, X, Y; меняет nametable shadow/PPU-очередь через вызываемые процедуры.
-LFDBB:  cpx     #$02
+LFDBB:  cpx     #FirstEnemyTankSlot
         bcc     LFDEF
         lda     #$D3
         sta     ScratchPtrHi
@@ -166,22 +173,22 @@ LFDBB:  cpx     #$02
         jsr     QueueTileAtCoordinates
         jmp     QueueBrickBaseAttributes
 
-LFDEF:  lda     $68
+LFDEF:  lda     BattleState
         bpl     LFDFA
         jsr     DrawSteelBaseEnclosure
         lda     #$14
-        sta     $45
+        sta     BaseFortificationTimer
 LFDFA:  rts
 
 ; Обработчик эффекта 3. Для X>=2 ставит бит $08 в ObjectAttributes слотов 2..7.
 ; Для X<2 увеличивает $0101,X на $20 пока значение меньше $60 и зеркалит его в ObjectAttributes,X.
 ; Сохраняет исходный X; портит A и флаги.
 ApplyPowerUpEffect3:
-LFDFB:  cpx     #$02
+LFDFB:  cpx     #FirstEnemyTankSlot
         bcc     LFE12
         txa
         pha
-        ldx     #$07
+        ldx     #(TankSlotCount-1)
 LFE03:  lda     ObjectAttributes,x
         ora     #$08
         sta     ObjectAttributes,x
@@ -193,34 +200,35 @@ LFE03:  lda     ObjectAttributes,x
         tax
         rts
 
-LFE12:  lda     $0101,x
+LFE12:  lda     PlayerUpgradeLevel,x
         cmp     #$60
         bcs     LFE21
         clc
         adc     #$20
-        sta     $0101,x
+        sta     PlayerUpgradeLevel,x
         sta     ObjectAttributes,x
 LFE21:  rts
 
 PowerUpEffect4:
 ; Поражает танки противоположной стороны: для X<2 — слоты 2..7, для X>=2 — игроков 0..1,
-; если их ObjectState активен. Записывает state=$73, attributes=0; для игроков также $0101=$20.
-; Поднимает флаг эффекта $030A; портит A, Y, $5A, флаги.
-LFE22:  cpx     #$02
+; если их ObjectState активен. Записывает TankStateDestroyed, attributes=0;
+; для игроков также PlayerUpgradeLevel=$20.
+; Запрашивает аудиопоток уничтожения танка; портит A, Y, $5A, флаги.
+LFE22:  cpx     #FirstEnemyTankSlot
         bcc     LFE51
         lda     #$01
         sta     $5A
-        sta     $030A
+        sta     TankDestructionAudioState
 LFE2D:  ldy     $5A
         lda     ObjectState,y
         bpl     LFE4C
-        cmp     #$E0
+        cmp     #NonTargetableTankStateMin
         bcs     LFE4C
-        lda     $6F,y
+        lda     PlayerStunTimer,y
         bne     LFE4C
         lda     #$20
-        sta     $0101,y
-        lda     #$73
+        sta     PlayerUpgradeLevel,y
+        lda     #TankStateDestroyed
         sta     ObjectState,y
         lda     #$00
         sta     ObjectAttributes,y
@@ -228,16 +236,16 @@ LFE4C:  dec     $5A
         bpl     LFE2D
         rts
 
-LFE51:  lda     #$07
+LFE51:  lda     #(TankSlotCount-1)
         sta     $5A
         lda     #$01
-        sta     $030A
+        sta     TankDestructionAudioState
 LFE5A:  ldy     $5A
         lda     ObjectState,y
         bpl     LFE6F
-        cmp     #$E0
+        cmp     #NonTargetableTankStateMin
         bcs     LFE6F
-        lda     #$73
+        lda     #TankStateDestroyed
         sta     ObjectState,y
         lda     #$00
         sta     ObjectAttributes,y
@@ -248,19 +256,20 @@ LFE6F:  dec     $5A
         rts
 
 PowerUpEffect5:
-; Для игрока X<2 добавляет жизнь и поднимает UI-флаги $0304/$0305. Для X>=2 преобразует
+; Для игрока X<2 добавляет жизнь и запрашивает два аудиопотока звука
+; дополнительной жизни. Для X>=2 преобразует
 ; младшие биты ObjectAttributes всех слотов 2..7. Сохраняет исходный X; портит A и флаги.
-LFE78:  cpx     #$02
+LFE78:  cpx     #FirstEnemyTankSlot
         bcs     LFE87
         inc     Player1Lives,x
         lda     #$01
-        sta     $0304
-        sta     $0305
+        sta     ExtraLifePulse1AudioState
+        sta     ExtraLifePulse2AudioState
         rts
 
 LFE87:  txa
         pha
-        ldx     #$07
+        ldx     #(TankSlotCount-1)
 LFE8B:  lda     ObjectAttributes,x
         ora     #$03
         eor     #$04
@@ -276,9 +285,9 @@ LFE8B:  lda     ObjectAttributes,x
 ; Выход: A=$63; X/Y и остальная RAM не меняются.
 SetMaximumObjectUpgrade:
 LFE9B:  lda     #$63
-        cpx     #$02
+        cpx     #FirstEnemyTankSlot
         bcs     LFEA4
-        sta     $0101,x
+        sta     PlayerUpgradeLevel,x
 LFEA4:  sta     ObjectAttributes,x
         rts
 
@@ -286,7 +295,7 @@ PowerUpEffect7:
 ; Активирует дополнительную способность объекта X через $0170,X=$FF.
 ; Её наблюдаемые эффекты: дополнительная отрисовка и проход через TSA $12; точное игровое имя не закреплено.
 LFEA7:  lda     #$FF
-        sta     $0170,x
+        sta     ObjectSpecialState,x
         rts
 
 ; Послекадровый проход расширения Tank 1990.
@@ -295,10 +304,10 @@ LFEA7:  lda     #$FF
 ; затем запускает integrity guard и обрабатывает передачу жизни между игроками.
 ; Портит A, X, Y, $04, $53, $5A и рабочие поля вызываемых процедур; может изменить Player*Lives.
 UpdateTank1990Extensions:
-LFEAD:  lda     #$07
+LFEAD:  lda     #(TankSlotCount-1)
         sta     $5A
 LFEB1:  ldx     $5A
-        lda     $0170,x
+        lda     ObjectSpecialState,x
         nop
         nop
         beq     LFEC9
@@ -308,7 +317,7 @@ LFEB1:  ldx     $5A
         lda     ObjectX,x
         tax
         lda     #$63
-        sta     $53
+        sta     OamTile
         jsr     EmitTwoTileOamPair
 LFEC9:  dec     $5A
         bpl     LFEB1
@@ -354,7 +363,7 @@ LFF05:  pha
         nop
         nop
         ldx     $5A
-        lda     $0170,x
+        lda     ObjectSpecialState,x
         nop
         nop
         nop
@@ -380,7 +389,7 @@ LFF25:  pha
         nop
         nop
         ldx     $5A
-        lda     $0170,x
+        lda     ObjectSpecialState,x
         nop
         nop
         nop
@@ -401,7 +410,7 @@ LFF3E:  cmp     #$20
 ResetExtensionState:
 LFF45:  lda     #$00
         ldx     #$0F
-LFF49:  sta     $0170,x
+LFF49:  sta     ObjectSpecialState,x
         dex
         bpl     LFF49
         jsr     InitializeCoreRuntime
@@ -414,40 +423,43 @@ LFF53:  sta     $0174
         sta     $0175
         sta     $0176
         sta     $0177
-        sta     $0178
+        sta     PlayerExtendedUpgrade
         jsr     InitializeCoreRuntime
         rts
-; Обрабатывает попадание снаряда в объект X с нулевым $89,X.
-; Ненулевой $0170,X поглощается/очищается. Без него объект переводится в state=$73, кроме случая $0101,X=$63:
-; тогда ставится $030E=1 и значение $40 в $0101,X, $0178,X и ObjectAttributes,X. Не возвращается.
+; Обрабатывает попадание снаряда в объект X с нулевым PlayerShieldTimer,X.
+; Ненулевой ObjectSpecialState,X поглощается/очищается. Без него объект
+; переводится в TankStateDestroyed, кроме PlayerUpgradeLevel,X=$63: тогда
+; запрашивается ArmorHitAudioState, а $40 записывается в PlayerUpgradeLevel,
+; PlayerExtendedUpgrade и ObjectAttributes. Не возвращается.
 HandleProjectileHitOnTank:
-LFF66:  lda     $0170,x
+LFF66:  lda     ObjectSpecialState,x
         beq     LFF73
         lda     #$00
-        sta     $0170,x
+        sta     ObjectSpecialState,x
         jmp     AdvancePlayerCollisionPassOrBeginEnemyPass
 
-LFF73:  lda     $0101,x
+LFF73:  lda     PlayerUpgradeLevel,x
         cmp     #$63
         beq     LFF81
-        lda     #$73
+        lda     #TankStateDestroyed
         sta     ObjectState,x
         jmp     ApplyPlayerHitVariantState
 
 LFF81:  lda     #$01
-        sta     $030E
+        sta     ArmorHitAudioState
         lda     #$40
-        sta     $0101,x
-        sta     $0178,x
+        sta     PlayerUpgradeLevel,x
+        sta     PlayerExtendedUpgrade,x
         sta     ObjectAttributes,x
         jmp     AdvancePlayerCollisionPassOrBeginEnemyPass
 
-; Поднимает $0307 и возвращает в A модификатор $20 при отрицательном $46, иначе 0.
+; Запрашивает PlayerOrBaseDestructionNoiseAudioState и возвращает в A
+; модификатор $20 при отрицательном GameVariant, иначе 0.
 ; X/Y не меняет; портит флаги.
 GetVariantAttributeBits:
 LFF93:  lda     #$01
-        sta     $0307
-        lda     $46
+        sta     PlayerOrBaseDestructionNoiseAudioState
+        lda     GameVariant
         bmi     LFF9F
         lda     #$00
         rts
@@ -467,10 +479,10 @@ LFFA3:  sta     ObjectAttributes,x
 ; $5A и флаги.
 AdvanceTankCollisionPass:
 LFFA8:  lda     ObjectState,x
-        cmp     #$73
+        cmp     #TankStateDestroyed
         bne     LFFB3
         lda     #$00
-        sta     $0170,x
+        sta     ObjectSpecialState,x
 LFFB3:  dec     $5A
         bpl     LFFB8
         rts
@@ -480,14 +492,14 @@ LFFB8:  jmp     CheckNextPlayerTank
 ; Очищает дополнительное состояние $0170,X. Выход: A=0; X/Y сохраняются.
 ClearObjectExtensionState:
 LFFBB:  lda     #$00
-        sta     $0170,x
+        sta     ObjectSpecialState,x
         rts
 ; Настраивает ProjectileFlags,X по режиму $46 и ObjectAttributes,X.
 ; В базовом режиме передаёт старшую тетраду атрибутов в
 ; DecodeProjectileFlagsFromAttributes. В расширенном режиме ($46<0)
 ; бит $08 или класс $60 дают flags=3, часть прочих ненулевых классов — flags=1. Портит A и флаги.
 InitializeProjectileFlagsForVariant:
-LFFC1:  lda     $46
+LFFC1:  lda     GameVariant
         bmi     LFFCC
         lda     ObjectAttributes,x
         and     #$F0
@@ -523,4 +535,3 @@ LFFF0:  rts
         .word   NmiHandler
         .word   ResetHandler
         .word   ResetHandler
-

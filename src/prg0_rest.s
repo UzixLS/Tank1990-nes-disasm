@@ -83,7 +83,7 @@ LA5B2:  jsr     ShouldRunIntegrityCheck
         bcc     LA5BF
 LA5BC:  jmp     LA5BC
 
-LA5BF:  lda     $0101,x
+LA5BF:  lda     PlayerUpgradeLevel,x
         rts
 
 ; Вторая XOR-контрольная сумма: $EFC0..$EFCC (13 байт).
@@ -115,7 +115,7 @@ LA5DC:  jsr     ShouldRunIntegrityCheck
 LA5E6:  jmp     LA5E6
 
 LA5E9:  lda     #$0A
-        sta     $89,x
+        sta     PlayerShieldTimer,x
         rts
 
 ; XOR-контрольная сумма $8D12..$8D18 (область данных уровней).
@@ -147,24 +147,24 @@ LA60F:  jmp     SpawnTank
 ; Записывает $20 в $0101,X при $46 >= 3, иначе 0.
 ; Вход: X — индекс; выход: A — записанное значение; портит флаги.
 SetIndexedModeExtensionByte:
-LA612:  lda     $46
+LA612:  lda     GameVariant
         cmp     #$03
         bcc     LA61C
         lda     #$20
         bne     LA61E
 LA61C:  lda     #$00
-LA61E:  sta     $0101,x
+LA61E:  sta     PlayerUpgradeLevel,x
         rts
 
 ; Неиндексированный вариант SetIndexedModeExtensionByte для $0101.
 SetPlayerOneModeExtensionByte:
-LA622:  lda     $46
+LA622:  lda     GameVariant
         cmp     #$03
         bcc     LA62C
         lda     #$20
         bne     LA62E
 LA62C:  lda     #$00
-LA62E:  sta     $0101
+LA62E:  sta     PlayerUpgradeLevel
         rts
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
@@ -198,7 +198,7 @@ LA690:  jsr     WaitForNextFrame
 LA69C:  pla
         pla
         lda     #$AB
-        sta     $46
+        sta     GameVariant
         jmp     ResetHandler
 
         .byte   $FF,$FF,$FF,$FF,$FF
@@ -1169,16 +1169,17 @@ LBF80:
 InitializeObjectExtensionPrototype:
 LBF84:  sta     $00
         lda     #$40
-        sta     $0101,x
-        sta     $0178,x
+        sta     PlayerUpgradeLevel,x
+        sta     PlayerExtendedUpgrade,x
         sta     ObjectAttributes,x
         jmp     AdvancePlayerCollisionPassOrBeginEnemyPass
 
-; Возвращает A=$20, если $46 отрицателен, иначе A=0; всегда поднимает флаг $0307.
+; Возвращает A=$20, если GameVariant отрицателен, иначе A=0; всегда
+; запрашивает PlayerOrBaseDestructionNoiseAudioState.
 GetModeExtensionBitsPrototype:
 LBF93:  lda     #$01
-        sta     $0307
-        lda     $46
+        sta     PlayerOrBaseDestructionNoiseAudioState
+        lda     GameVariant
         bmi     LBF9F
         lda     #$00
         rts
@@ -1198,7 +1199,7 @@ LBFA8:  lda     ObjectState,x
         cmp     #$73
         bne     LBFB3
         lda     #$00
-        sta     $0170,x
+        sta     ObjectSpecialState,x
 LBFB3:  dec     $5A
         bpl     LBFB8
         rts
@@ -1208,7 +1209,7 @@ LBFB8:  jmp     CheckNextPlayerTank
 ; завершающего RTS по $BFC0 начинается заполнение $FF.
 ClearObjectExtensionPrototype:
 LBFBB:  lda     #$00
-        sta     $0170,x
+        sta     ObjectSpecialState,x
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF

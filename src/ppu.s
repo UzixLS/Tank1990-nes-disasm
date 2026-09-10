@@ -25,7 +25,7 @@ NmiHandler:
         sta     OAM_DMA
         lda     PPU_STATUS
         jsr     FlushPpuUpdateBuffer
-        lda     $4D
+        lda     BackgroundPaletteIndex
         bmi     LD41D
         jsr     UploadBackgroundPalette
 LD41D:  lda     NametableBits
@@ -44,7 +44,7 @@ LD41D:  lda     NametableBits
         lda     FrameCounter
         and     #$3F
         bne     LD446
-        inc     $0A
+        inc     SlowFrameCounter
 LD446:  plp
         pla
         tay
@@ -58,21 +58,21 @@ LD446:  plp
 ; нулевой страницы с индексом из растущего $10.
 NextRandomByte:  txa
         pha
-        lda     $0F
+        lda     RandomState
         asl     a
         asl     a
         asl     a
         sec
-        sbc     $0F
+        sbc     RandomState
         clc
-        adc     $0A
-        inc     $10
-        ldx     $10
+        adc     SlowFrameCounter
+        inc     RandomIndex
+        ldx     RandomIndex
         adc     $00,x
-        sta     $0F
+        sta     RandomState
         pla
         tax
-        lda     $0F
+        lda     RandomState
         rts
 
 ; Дожидается vblank и включает NMI с pattern table $1000.
@@ -113,18 +113,18 @@ LD481:  sta     NametableShadow,x
 InitializeCoreRuntime:
 LD491:
         lda     #$00
-        sta     $60
-        sta     $6B
+        sta     TileTranslationOffset
+        sta     DigitBlankMode
         sta     PpuBufferPos
-        sta     $0D
-        sta     $6D
+        sta     OamBufferPos
+        sta     PauseState
         lda     #$FF
-        sta     $4D
+        sta     BackgroundPaletteIndex
         jsr     UploadInitialPalettes
         lda     #$04
-        sta     $0E
+        sta     OamBufferStep
         lda     #$20
-        sta     $6E
+        sta     SpriteBehindTerrainMask
         jsr     ClearNametableBuffer
         jsr     LDA93
         ldx     #$15
@@ -140,10 +140,10 @@ LD491:
         lda     #$00
         sta     MenuSelection
 LD4CE:  lda     #$1C
-        sta     $05
+        sta     NametablePpuOffset
         jsr     UploadNametableBuffer
         lda     #$24
-        sta     $05
+        sta     NametablePpuOffset
         jsr     UploadNametableBuffer
         jsr     StoreRestartSignature
         jsr     ResetAudioEngine
@@ -204,7 +204,7 @@ LD51F:  lda     BackgroundPaletteSets,x
         dey
         bne     LD51F
         lda     #$FF
-        sta     $4D
+        sta     BackgroundPaletteIndex
         lda     #$3F
         sta     PPU_ADDR
         lda     #$00
@@ -365,13 +365,14 @@ LD697:  lda     JOY1,x
         rts
 
 ; Копирует $FF-терминированную строку тайлов в PPU-очередь и зеркалит её
-; в shadow nametable. Вход: ScratchPtr -> строка, X/Y -- колонка/строка, $05 --
-; разность между старшим байтом shadow ($04..) и PPU ($20..). Терминатор в shadow не пишется.
+; в shadow nametable. Вход: ScratchPtr -> строка, X/Y -- колонка/строка;
+; NametablePpuOffset — разность между старшим байтом shadow ($04..) и PPU
+; ($20..). Терминатор в shadow не пишется.
 ; Побочно: AuxPtr становится адресом shadow; меняет A/X/Y, $00, PpuUpdateBuffer/PpuBufferPos.
 QueueTileAtCoordinates:  jsr     TileCoordinatesToShadowAddress
         sta     AuxPtrHi
         clc
-        adc     $05
+        adc     NametablePpuOffset
         ldx     PpuBufferPos
         sta     PpuUpdateBuffer,x
         inx
@@ -394,12 +395,13 @@ LD6DA:  stx     PpuBufferPos
 
 ; Добавляет в PPU-очередь строку без изменения shadow nametable.
 ; Для каждого байта < $80 прибавляет tile bias $60; управляющие байты >= $80,
-; включая $FF-терминатор, копируются без сдвига. Вход: ScratchPtr, X/Y, $05, $60.
+; включая $FF-терминатор, копируются без сдвига. Вход: ScratchPtr, X/Y,
+; NametablePpuOffset и TileTranslationOffset.
 ; Побочно: A/X/Y, $00, PpuUpdateBuffer/PpuBufferPos.
 QueueTranslatedTileString:
 LD6DD:  jsr     TileCoordinatesToShadowAddress
         clc
-        adc     $05
+        adc     NametablePpuOffset
         ldx     PpuBufferPos
         sta     PpuUpdateBuffer,x
         inx
@@ -410,7 +412,7 @@ LD6DD:  jsr     TileCoordinatesToShadowAddress
 LD6F0:  lda     (ScratchPtrLo),y
         bmi     LD6F7
         clc
-        adc     $60
+        adc     TileTranslationOffset
 LD6F7:  sta     PpuUpdateBuffer,x
         inx
         cmp     #$FF
@@ -516,11 +518,12 @@ LD764:  lda     (ScratchPtrLo),y
 LD770:  rts
 
 ; Немедленно копирует один байт (ScratchPtr),Y в PPU-адрес
-; (ScratchPtrHi+$05):ScratchPtrLo. Предполагает отключённый рендеринг; меняет A и PPU latch/data.
+; (ScratchPtrHi+NametablePpuOffset):ScratchPtrLo. Предполагает отключённый
+; рендеринг; меняет A и PPU latch/data.
 UploadShadowByteDirect:
 LD771:  lda     ScratchPtrHi
         clc
-        adc     $05
+        adc     NametablePpuOffset
         sta     PPU_ADDR
         lda     ScratchPtrLo
         sta     PPU_ADDR
@@ -562,7 +565,7 @@ AddAToPointer:  clc
         inc     ScratchPtrHi
 LD7B3:  rts
 
-; Передаёт всю теневую nametable $0400-$07FF в PPU. Вход: $05 задаёт
+; Передаёт всю теневую nametable $0400-$07FF в PPU. NametablePpuOffset задаёт
 ; смещение старшего байта (обычно $1C для $2000 или $20 для $2400).
 ; Предполагает отключённый рендеринг. Выход: ScratchPtr=$0800, Y=0; A и PPU latch/data изменены.
 UploadNametableBuffer:  lda     #$00
@@ -743,7 +746,7 @@ LD8D6:  lda     (AuxPtrLo),y
         ldx     $56
         ldy     $57
         clc
-        adc     $60
+        adc     TileTranslationOffset
         jsr     RasterizeChrTileToShadow
         lda     $56
         clc
@@ -784,7 +787,7 @@ LD917:  lda     PpuUpdateBuffer,x
         lda     PpuUpdateBuffer,x
         cmp     #$FF
         bne     LD905
-        lda     $017F,x
+        lda     PpuUpdateBuffer-1,x
 LD929:  sta     PPU_DATA
         jmp     LD917
 
@@ -805,7 +808,7 @@ LD934:  lda     $00,y
 
 LD93E:  cmp     #$FF
         bne     LD94A
-        lda     $6B
+        lda     DigitBlankMode
         bne     LD948
         dex
         dey
@@ -825,7 +828,7 @@ LD951:  lda     #$10
         lda     #$64
         sta     $57
         lda     #$30
-        sta     $60
+        sta     TileTranslationOffset
         ldy     #$3D
 LD95F:  lda     $00,y
         bne     LD96F
@@ -841,7 +844,7 @@ LD96F:  lda     #$00
         sty     AuxPtrLo
         jsr     RasterizeTileStringToShadow
         lda     #$00
-        sta     $60
+        sta     TileTranslationOffset
         rts
 
 ; Сравнивает две семизначные записи $15-$1B и $1D-$23 с рекордом $3D-$43.
@@ -851,8 +854,8 @@ LD96F:  lda     #$00
 UpdateHighScoreRecord:
 LD97D:  ldx     #$00
         ldy     #$00
-LD981:  lda     $15,x
-        cmp     $3D,x
+LD981:  lda     Player1Score,x
+        cmp     HighScore,x
         bne     LD98F
         inx
         cpx     #$07
@@ -861,15 +864,15 @@ LD981:  lda     $15,x
 
 LD98F:  bmi     LD99E
         ldx     #$00
-LD993:  lda     $15,x
-        sta     $3D,x
+LD993:  lda     Player1Score,x
+        sta     HighScore,x
         inx
         cpx     #$07
         bne     LD993
         ldy     #$01
 LD99E:  ldx     #$00
-LD9A0:  lda     $1D,x
-        cmp     $3D,x
+LD9A0:  lda     Player2Score,x
+        cmp     HighScore,x
         bne     LD9AE
         inx
         cpx     #$07
@@ -878,8 +881,8 @@ LD9A0:  lda     $1D,x
 
 LD9AE:  bmi     LD9BD
         ldx     #$00
-LD9B2:  lda     $1D,x
-        sta     $3D,x
+LD9B2:  lda     Player2Score,x
+        sta     HighScore,x
         inx
         cpx     #$07
         bne     LD9B2
@@ -901,7 +904,7 @@ LD9BE:  txa
         ldy     #$06
         clc
 LD9C9:  lda     $35,y
-        adc     $15,x
+        adc     Player1Score,x
         cmp     #$0A
         bmi     LD9D9
         sec
@@ -910,7 +913,7 @@ LD9C9:  lda     $35,y
         jmp     LD9DA
 
 LD9D9:  clc
-LD9DA:  sta     $15,x
+LD9DA:  sta     Player1Score,x
         dex
         dey
         bpl     LD9C9
@@ -926,13 +929,13 @@ LD9E1:  sta     $00
         lda     $00
         beq     LD9F9
         and     #$0F
-        sta     $3A
+        sta     DecimalTens
         lda     $00
         lsr     a
         lsr     a
         lsr     a
         lsr     a
-        sta     $39
+        sta     DecimalHundreds
         rts
 
 LD9F9:  lda     #$01
@@ -968,12 +971,13 @@ LDA1D:  asl     a
         bcc     LDA28
         sec
         sbc     #$0A
-        inc     $3A
+        inc     DecimalTens
         jmp     $DA1C                 ; Хаковый вход внутрь предыдущего JMP.
-LDA28:  sta     $3B
+LDA28:  sta     DecimalOnes
         rts
 ; Добавляет один 8x8-спрайт в OamShadow через курсор $0D и шаг $0E.
-; Вход: X/Y -- экранные X и базовый Y, $53 -- tile, $04 -- attributes, $6E -- добавочные
+; Вход: X/Y -- экранные X и базовый Y, OamTile -- tile, $04 -- attributes,
+; SpriteBehindTerrainMask -- добавочные
 ; attributes для тайла $22 в shadow под спрайтом. В OAM пишутся (Y-8, tile, attributes, X).
 ; Побочно: $47/$48, ScratchPtr, $00, $0D; для shadow-тайла $22 также меняет
 ; $04. A/X/Y изменены.
@@ -992,21 +996,21 @@ LDA2B:  txa
         cmp     #$22
         bne     LDA47
         lda     $04
-        ora     $6E
+        ora     SpriteBehindTerrainMask
         sta     $04
-LDA47:  ldx     $0D
+LDA47:  ldx     OamBufferPos
         lda     $48
         sta     OamShadow,x
-        lda     $53
-        sta     $0201,x
+        lda     OamTile
+        sta     OamShadow+1,x
         lda     $04
-        sta     $0202,x
+        sta     OamShadow+2,x
         lda     $47
-        sta     $0203,x
+        sta     OamShadow+3,x
         txa
         clc
-        adc     $0E
-        sta     $0D
+        adc     OamBufferStep
+        sta     OamBufferPos
         rts
 
 ; Выбирает тайл $53 + 2*A, сдвигает X на -5 и выводит один спрайт.
@@ -1014,8 +1018,8 @@ LDA47:  ldx     $0D
 EmitDirectionalOamSprite:
 LDA64:  asl     a
         clc
-        adc     $53
-        sta     $53
+        adc     OamTile
+        sta     OamTile
         txa
         sec
         sbc     #$05
@@ -1024,15 +1028,16 @@ LDA64:  asl     a
         rts
 
 ; Выбирает двухтайловый кадр $53 + 8*A и выводит два соседних по X спрайта
-; с тайлами base и base+2. Вход: A -- кадр, X/Y -- позиция; $53/$04/$6E как EmitOamSprite.
+; с тайлами base и base+2. Вход: A -- кадр, X/Y -- позиция;
+; OamTile/$04/SpriteBehindTerrainMask как EmitOamSprite.
 ; Сохраняет исходные X/Y в $54/$55, но по выходу регистры изменены вторым вызовом.
 EmitTwoTileOamObject:
 LDA73:  asl     a
         asl     a
         asl     a
         clc
-        adc     $53
-        sta     $53
+        adc     OamTile
+        sta     OamTile
 ; Альтернативный вход: $53 уже содержит tile-base, X/Y -- позицию пары.
 EmitTwoTileOamPair:
 LDA7B:  stx     $54
@@ -1042,8 +1047,8 @@ LDA7B:  stx     $54
         sbc     #$08
         tax
         jsr     EmitOamSprite
-        inc     $53
-        inc     $53
+        inc     OamTile
+        inc     OamTile
         ldx     $54
         ldy     $55
         jsr     EmitOamSprite
@@ -1054,21 +1059,21 @@ LDA7B:  stx     $54
 ; меняет приоритет спрайтов между кадрами и снижает заметность переполнения строки растра.
 ; Выход: $0D=4, $0E=-$0E; A=$F0, X=4; Y не меняет.
 FinishAlternatingOamFrame:
-LDA93:  ldx     $0D
-        lda     $0E
+LDA93:  ldx     OamBufferPos
+        lda     OamBufferStep
         eor     #$FF
         clc
         adc     #$01
-        sta     $0E
+        sta     OamBufferStep
 LDA9E:  txa
         clc
-        adc     $0E
+        adc     OamBufferStep
         tax
         lda     #$F0
         sta     OamShadow,x
         cpx     #$04
         bne     LDA9E
-        stx     $0D
+        stx     OamBufferPos
         rts
 
 ; Нормализует результат предшествующего SEC/SBC: A=0 при Z=1, A=1 при C=1,
