@@ -1,30 +1,47 @@
 ; Столкновения снарядов с местностью/танками, бонусы и диспетчеризация ($E604-$EA50).
 
+; Локальные роли перегруженной scratch-RAM. Адреса совпадают
+; намеренно: роль меняется между несвязанными проходами.
+TerrainProjectileSlot       = $5A
+TerrainAxisXMagnitude      = $54
+TerrainAxisYMagnitude      = $55
+TerrainFarYOffset          = $64
+TerrainFarXOffset          = $65
+TankCollisionSlot          = $5A
+ProjectileCollisionSlot    = $5B
+ProjectileOwnerParity      = $47
+ProjectilePairOuterSlot    = $5A
+ProjectilePairInnerSlot    = $5B
+ProjectilePairOwnerIndex   = $00
+PowerUpCoordinateGridIndex = $00
+
 ; Проверяет активные снаряды 9..0 против местности в теневой nametable.
 ; Активен state-class $40. Снаряды с нулевым ProjectileFlags проверяются
 ; через кадр по чётности slot^FrameCounter, остальные — каждый кадр.
 ; Для направления из младших двух битов ProjectileState вычисляются две
 ; передние стороны снаряда; каждая сторона может затронуть две соседние
 ; 4x4-подобласти местности. Это позволяет разрушать соответствующую часть кирпича.
-; Побочно меняет A/X/Y, ScratchPtr, $00, $47/$48, $54/$55, $64/$65,
-; $5A, состояние базы $68, shadow/PPU-очередь, состояния снарядов и
+; Побочно меняет A/X/Y, ScratchPtr, terrain scratch aliases,
+; состояние базы BattleState, shadow/PPU-очередь, состояния снарядов и
 ; состояния соответствующих аудиопотоков уничтожения, удара и рикошета.
 UpdateProjectileTerrainCollisions:
 LE604:  lda     #(ProjectileSlotCount-1)
-        sta     $5A
-LE608:  ldx     $5A
+        sta     TerrainProjectileSlot
+CheckNextProjectileTerrain:
+LE608:  ldx     TerrainProjectileSlot
         lda     ProjectileState,x
         and     #StateClassMask
         cmp     #ProjectileStateActive
-        bne     LE68B
+        bne     AdvanceTerrainProjectile
         lda     ProjectileFlags,x
         bne     LE61D
         txa
         eor     FrameCounter
         and     #$01
-        beq     LE68B
-; Абсолютные компоненты направления: $54=|dx|, $55=|dy|;
-; $64/$65 — те же компоненты, умноженные на 4 для второй точки стороны.
+        beq     AdvanceTerrainProjectile
+; TerrainAxisXMagnitude/TerrainAxisYMagnitude — |dx|/|dy|;
+; TerrainFarYOffset/TerrainFarXOffset — поперечные смещения на 4 px
+; для второй точки каждой передней стороны снаряда.
 PrepareProjectileTerrainOffsets:
 LE61D:  lda     ProjectileState,x
         and     #DirectionMask
@@ -34,95 +51,97 @@ LE61D:  lda     ProjectileState,x
         eor     #$FF
         clc
         adc     #$01
-LE62C:  sta     $54
+LE62C:  sta     TerrainAxisXMagnitude
         asl     a
         asl     a
-        sta     $64
+        sta     TerrainFarYOffset
         lda     ProjectileDirectionStepY,y
         bpl     LE63C
         eor     #$FF
         clc
         adc     #$01
-LE63C:  sta     $55
+LE63C:  sta     TerrainAxisYMagnitude
         asl     a
         asl     a
-        sta     $65
+        sta     TerrainFarXOffset
         ldy     ProjectileY,x
         lda     ProjectileX,x
         tax
         jsr     ProbeProjectileTerrainAtPixel
-        beq     LE65F
-        ldx     $5A
+        beq     ProbeOppositeProjectileEdge
+        ldx     TerrainProjectileSlot
         lda     ProjectileY,x
         clc
-        adc     $64
-        sta     $48
+        adc     TerrainFarYOffset
+        sta     CollisionPointY
         lda     ProjectileX,x
         clc
-        adc     $65
-        sta     $47
+        adc     TerrainFarXOffset
+        sta     CollisionPointX
         jsr     ResolveProjectileTerrainHit
-LE65F:  ldx     $5A
+ProbeOppositeProjectileEdge:
+LE65F:  ldx     TerrainProjectileSlot
         lda     ProjectileY,x
         sec
-        sbc     $54
+        sbc     TerrainAxisXMagnitude
         tay
         lda     ProjectileX,x
         sec
-        sbc     $55
+        sbc     TerrainAxisYMagnitude
         tax
         jsr     ProbeProjectileTerrainAtPixel
-        beq     LE68B
-        ldx     $5A
+        beq     AdvanceTerrainProjectile
+        ldx     TerrainProjectileSlot
         lda     ProjectileY,x
         sec
-        sbc     $64
+        sbc     TerrainFarYOffset
         sec
-        sbc     $54
-        sta     $48
+        sbc     TerrainAxisXMagnitude
+        sta     CollisionPointY
         lda     ProjectileX,x
         sec
-        sbc     $65
+        sbc     TerrainFarXOffset
         sec
-        sbc     $55
-        sta     $47
+        sbc     TerrainAxisYMagnitude
+        sta     CollisionPointX
         jsr     ResolveProjectileTerrainHit
-LE68B:  dec     $5A
+AdvanceTerrainProjectile:
+LE68B:  dec     TerrainProjectileSlot
         bmi     LE692
-        jmp     LE608
+        jmp     CheckNextProjectileTerrain
 
 LE692:  rts
 
 ; Проверяет terrain в пиксельной точке X/Y.
-; Сохраняет координаты в $47/$48, вычисляет ScratchPtr и маску подобласти,
+; Сохраняет координаты в CollisionPointX/Y, вычисляет ScratchPtr и маску подобласти,
 ; затем проваливается в ResolveProjectileTerrainHit.
 ; Возвращает A=1 только при частичном разрушении обычного terrain; A=0 для
 ; отсутствия столкновения, целого уничтожения тайла, стали/границы и базы.
 ProbeProjectileTerrainAtPixel:
-LE693:  stx     $47
-        sty     $48
+LE693:  stx     CollisionPointX
+        sty     CollisionPointY
         jsr     PixelCoordinatesToShadowPointer
 ResolveProjectileTerrainHit:
 LE69A:  jsr     RecomputeTerrainSubcellMask
         jsr     TestTerrainSubcell
-        beq     LE709
+        beq     FinishTerrainProbeWithoutPartialDamage
         lda     (ScratchPtrLo),y
         and     #$FC
         cmp     #$C8
-        bne     LE6C6
+        bne     ClassifyProjectileTerrainTile
         ; $C8-$CB — четыре тайла целой базы.
         lda     BattleState
-        beq     LE6C6
+        beq     ClassifyProjectileTerrainTile
         lda     #$27
         sta     BattleState
-        lda     #$01
+        lda     #AudioStateStartRequested
         sta     BaseDestructionToneAudioState
         sta     PlayerOrBaseDestructionNoiseAudioState
         jsr     DrawDestroyedBase
-        ldx     $5A
+        ldx     TerrainProjectileSlot
         lda     #ProjectileStateImpact
         sta     ProjectileState,x
-        jmp     LE709
+        jmp     FinishTerrainProbeWithoutPartialDamage
 
 ClassifyProjectileTerrainTile:
 LE6C6:  lda     (ScratchPtrLo),y
@@ -135,41 +154,44 @@ LE6CB:  .byte   $EA
 ; $11 — неразрушаемая граница; $10 — сталь, которую разрушает только флаг $02.
 ; Остальные значения < $12 теряют выбранный бит 4x4-подобласти.
 DestroyProjectileOnTerrain:
-LE6CC:  ldx     $5A
+LE6CC:  ldx     TerrainProjectileSlot
         lda     #ProjectileStateImpact
         sta     ProjectileState,x
         lda     (ScratchPtrLo),y
         cmp     #$11
-        beq     LE700
+        beq     MaybePlayProjectileRicochet
         lda     ProjectileFlags,x
         and     #$02
-        beq     LE6EB
+        beq     DamageProjectileTerrain
 ; Очищает весь байт terrain и запрашивает BrickHitAudioState. Сам ProjectileState не
 ; меняет: обычный усиленный выстрел приходит сюда уже со state $33, а особый
 ; путь tile $22 входит напрямую и потому сохраняет летящий снаряд.
 DestroyWholeTerrainTile:
 LE6DE:  lda     #$00
         jsr     StoreAndQueueShadowTile
-        lda     #$01
+        lda     #AudioStateStartRequested
         sta     BrickHitAudioState
-        jmp     LE709
+        jmp     FinishTerrainProbeWithoutPartialDamage
 
+DamageProjectileTerrain:
 LE6EB:  lda     (ScratchPtrLo),y
         cmp     #$10
-        beq     LE700
+        beq     MaybePlayProjectileRicochet
         cpx     #FirstEnemyTankSlot
-        bcs     LE6FA
-        lda     #$01
+        bcs     DestroyTerrainSubcell
+        lda     #AudioStateStartRequested
         sta     BrickHitAudioState
 DestroyTerrainSubcell:
 LE6FA:  jsr     ClearTerrainSubcellQueued
         lda     #$01
         rts
 
+MaybePlayProjectileRicochet:
 LE700:  cpx     #FirstEnemyTankSlot
-        bcs     LE709
-        lda     #$01
+        bcs     FinishTerrainProbeWithoutPartialDamage
+        lda     #AudioStateStartRequested
         sta     RicochetOrMenuStepAudioState
+FinishTerrainProbeWithoutPartialDamage:
 LE709:  lda     #$00
         rts
 
@@ -180,30 +202,33 @@ LE709:  lda     #$00
 ; AdvanceTankCollisionPass из high-bank возвращает сюда для следующего игрока.
 ; Фаза 2 проверяет врагов Object 7..2 против логических снарядов игроков
 ; в слотах 0,1,8,9, начисляет уничтожения и очки.
-; Побочно меняет A/X/Y, $47, $5A/$5B, ProjectileState, состояния/атрибуты
+; Побочно меняет A/X/Y, TankCollisionSlot,
+; ProjectileCollisionSlot/ProjectileOwnerParity, ProjectileState, состояния/атрибуты
 ; танков, статистику $73-$7A, записи счёта и звуковые/bonus-флаги. Условное
 ; создание бонуса также меняет RNG, PowerUpSpawnAudioState,
 ; PowerUpCollectorSlot и поля бонуса.
 UpdateProjectileTankCollisions:
 LE70C:  lda     #$01
-        sta     $5A
+        sta     TankCollisionSlot
 CheckNextPlayerTank:
 LE710:
-        ldx     $5A
+        ldx     TankCollisionSlot
         lda     ObjectState,x
-        bpl     LE71A
+        bpl     SkipCurrentPlayerCollisionPass
         cmp     #NonTargetableTankStateMin
-        bcc     LE71D
-LE71A:  jmp     LE77A
+        bcc     CheckEnemyProjectilesAgainstPlayer
+SkipCurrentPlayerCollisionPass:
+LE71A:  jmp     AdvancePlayerCollisionPassOrBeginEnemyPass
 
 CheckEnemyProjectilesAgainstPlayer:
 LE71D:  lda     #(TankSlotCount-1)
-        sta     $5B
-LE721:  ldy     $5B
+        sta     ProjectileCollisionSlot
+CheckNextEnemyProjectile:
+LE721:  ldy     ProjectileCollisionSlot
         lda     ProjectileState,y
         and     #StateClassMask
         cmp     #ProjectileStateActive
-        bne     LE772
+        bne     AdvanceEnemyProjectileCollision
         lda     ProjectileX,y
         sec
         sbc     ObjectX,x
@@ -212,7 +237,7 @@ LE721:  ldy     $5B
         clc
         adc     #$01
 LE739:  cmp     #$0A
-        bcs     LE772
+        bcs     AdvanceEnemyProjectileCollision
         lda     ProjectileY,y
         sec
         sbc     ObjectY,x
@@ -221,15 +246,16 @@ LE739:  cmp     #$0A
         clc
         adc     #$01
 LE74A:  cmp     #$0A
-        bcs     LE772
+        bcs     AdvanceEnemyProjectileCollision
         lda     #ProjectileStateImpact
         sta     ProjectileState,y
         lda     PlayerShieldTimer,x
-        beq     LE75F
+        beq     HandleUnshieldedPlayerHit
         lda     #$00
         sta     ProjectileState,y
-        jmp     LE772
+        jmp     AdvanceEnemyProjectileCollision
 
+HandleUnshieldedPlayerHit:
 LE75F:  jmp     HandleProjectileHitOnTank
 
 ; Недостижимый NOP после безусловного JMP.
@@ -244,12 +270,13 @@ LE763:
         sta     PlayerExtendedUpgrade,x
         sta     PlayerUpgradeLevel,x
         sta     ObjectAttributes,x
-        jmp     LE77A
+        jmp     AdvancePlayerCollisionPassOrBeginEnemyPass
 
-LE772:  dec     $5B
-        lda     $5B
+AdvanceEnemyProjectileCollision:
+LE772:  dec     ProjectileCollisionSlot
+        lda     ProjectileCollisionSlot
         cmp     #$01
-        bne     LE721
+        bne     CheckNextEnemyProjectile
 ; JSR вызывает проход игроков повторно через внутренний JMP из
 ; AdvanceTankCollisionPass. Первый
 ; переход сохраняет адрес возврата на стеке, второй вызов при $5A<0 возвращается
@@ -260,30 +287,35 @@ AdvancePlayerCollisionPassOrBeginEnemyPass:
 LE77A:  jsr     AdvanceTankCollisionPass
         nop
         lda     #(TankSlotCount-1)
-        sta     $5A
-LE782:  ldx     $5A
+        sta     TankCollisionSlot
+CheckNextEnemyTank:
+LE782:  ldx     TankCollisionSlot
         lda     ObjectState,x
-        bpl     LE78C
+        bpl     SkipCurrentEnemyCollisionPass
         cmp     #NonTargetableTankStateMin
-        bcc     LE78F
-LE78C:  jmp     LE834
+        bcc     CheckPlayerProjectilesAgainstEnemy
+SkipCurrentEnemyCollisionPass:
+LE78C:  jmp     AdvanceEnemyTankCollision
 
 CheckPlayerProjectilesAgainstEnemy:
 LE78F:  lda     #(ProjectileSlotCount-1)
-        sta     $5B
-LE793:  lda     $5B
+        sta     ProjectileCollisionSlot
+CheckNextPlayerProjectile:
+LE793:  lda     ProjectileCollisionSlot
         and     #$06
-        beq     LE79C
+        beq     TestPlayerProjectileAgainstEnemy
         ; Только слоты 0,1,8,9 принадлежат логическим выстрелам игроков.
-        jmp     LE82D
+        jmp     AdvancePlayerProjectileCollision
 
-LE79C:  ldy     $5B
+TestPlayerProjectileAgainstEnemy:
+LE79C:  ldy     ProjectileCollisionSlot
         lda     ProjectileState,y
         and     #StateClassMask
         cmp     #ProjectileStateActive
-        beq     LE7AA
-        jmp     LE82D
+        beq     MeasurePlayerProjectileTankDistance
+        jmp     AdvancePlayerProjectileCollision
 
+MeasurePlayerProjectileTankDistance:
 LE7AA:  lda     ProjectileX,y
         sec
         sbc     ObjectX,x
@@ -292,7 +324,7 @@ LE7AA:  lda     ProjectileX,y
         clc
         adc     #$01
 LE7B7:  cmp     #$0A
-        bcs     LE82D
+        bcs     AdvancePlayerProjectileCollision
         lda     ProjectileY,y
         sec
         sbc     ObjectY,x
@@ -301,26 +333,26 @@ LE7B7:  cmp     #$0A
         clc
         adc     #$01
 LE7C8:  cmp     #$0A
-        bcs     LE82D
+        bcs     AdvancePlayerProjectileCollision
         lda     #ProjectileStateImpact
         sta     ProjectileState,y
         lda     ObjectAttributes,x
         and     #$04
-        beq     LE7E2
+        beq     DamageOrDestroyEnemyTank
         jsr     SpawnPowerUp
         lda     ObjectAttributes,x
         cmp     #$E4
-        bne     LE7E2
+        bne     DamageOrDestroyEnemyTank
         dec     ObjectAttributes,x
 ; Низкие два бита атрибутов работают как дополнительные hit points.
 DamageOrDestroyEnemyTank:
 LE7E2:  lda     ObjectAttributes,x
         and     #$03
-        beq     LE7F2
+        beq     DestroyEnemyTankAndAwardScore
         dec     ObjectAttributes,x
-        lda     #$01
+        lda     #AudioStateStartRequested
         sta     ArmorHitAudioState
-        jmp     LE82D
+        jmp     AdvancePlayerProjectileCollision
 
 ; Полное уничтожение: state $73, запрос TankDestructionAudioState,
 ; статистика типа/владельца
@@ -328,7 +360,7 @@ LE7E2:  lda     ObjectAttributes,x
 DestroyEnemyTankAndAwardScore:
 LE7F2:  jsr     DestroyTankAndClearExtension
         nop
-        lda     #$01
+        lda     #AudioStateStartRequested
         sta     TankDestructionAudioState
         lda     ObjectAttributes,x
         lsr     a
@@ -339,35 +371,40 @@ LE7F2:  jsr     DestroyTankAndClearExtension
         sec
         sbc     #$04
         tax
-        lda     $5B
+        lda     ProjectileCollisionSlot
         and     #$01
-        sta     $47
-        bne     LE813
+        sta     ProjectileOwnerParity
+        bne     CreditPlayer2Kill
         inc     Player1KillCounts,x
-        jmp     LE815
+        jmp     MaybeAwardEnemyScore
 
+CreditPlayer2Kill:
 LE813:  inc     Player2KillCounts,x
-LE815:  lda     $8F
+MaybeAwardEnemyScore:
+LE815:  lda     StageSetLength
         cmp     #$02
-        beq     LE834
+        beq     AdvanceEnemyTankCollision
         lda     EnemyTypeScoreAwards,x
         jsr     PreparePackedScoreIncrement
-        lda     $47
+        lda     ProjectileOwnerParity
         tax
         jsr     AddScoreDigitsToRecord
         jsr     AwardScoreThresholdLives
-        jmp     LE834
+        jmp     AdvanceEnemyTankCollision
 
-LE82D:  dec     $5B
-        bmi     LE834
-        jmp     LE793
+AdvancePlayerProjectileCollision:
+LE82D:  dec     ProjectileCollisionSlot
+        bmi     AdvanceEnemyTankCollision
+        jmp     CheckNextPlayerProjectile
 
-LE834:  dec     $5A
-        lda     $5A
+AdvanceEnemyTankCollision:
+LE834:  dec     TankCollisionSlot
+        lda     TankCollisionSlot
         cmp     #$01
-        beq     LE83F
-        jmp     LE782
+        beq     FinishProjectileTankCollisions
+        jmp     CheckNextEnemyTank
 
+FinishProjectileTankCollisions:
 LE83F:  rts
 
 ; Четырнадцать фиксированных восьмибайтных строк скрытого variant-меню.
@@ -409,11 +446,13 @@ LE8BA:  .byte   $10,$20,$30,$40
 ; «ещё не создано». После успешной
 ; позиции случайный индекс 0..7 проходит через SelectPowerUpTypeForVariant,
 ; результат сохраняется в PowerUpType, а таймер обнуляется.
-; В конце восстанавливает X/Y из caller-owned $5A/$5B; меняет A, RNG,
+; В конце восстанавливает X/Y из caller-owned TankCollisionSlot/
+; ProjectileCollisionSlot; меняет A, RNG,
 ; PowerUpSpawnAudioState, PowerUpCollectorSlot и поля бонуса.
 SpawnPowerUp:
-LE8BE:  lda     #$01
+LE8BE:  lda     #AudioStateStartRequested
         sta     PowerUpSpawnAudioState
+ChoosePowerUpCoordinates:
 LE8C3:  jsr     NextRandomByte
         and     #$03
         jsr     GridIndexToPowerUpCoordinate
@@ -428,7 +467,7 @@ LE8C3:  jsr     NextRandomByte
         sta     PowerUpPickupDisplayTimer
         jsr     UpdatePowerUpPickup
         lda     PowerUpPickupDisplayTimer
-        bne     LE8C3
+        bne     ChoosePowerUpCoordinates
         jsr     NextRandomByte
         and     #$07
         tay
@@ -436,8 +475,8 @@ LE8C3:  jsr     NextRandomByte
         sta     PowerUpType
         lda     #$00
         sta     PowerUpPickupDisplayTimer
-        ldx     $5A
-        ldy     $5B
+        ldx     TankCollisionSlot
+        ldy     ProjectileCollisionSlot
         rts
 
 ; Полный вариант разрешает все восемь типов без преобразования.
@@ -445,12 +484,12 @@ AllPowerUpTypes:
 LE8FA:  .byte   $00,$01,$02,$03,$04,$05,$06,$07
 
 ; Преобразует A=0..3 в координату (A*6+6)*8: 48,96,144,192.
-; Выход A; меняет scratch $00 и флаги, X/Y сохраняет.
+; Выход A; меняет PowerUpCoordinateGridIndex и флаги, X/Y сохраняет.
 GridIndexToPowerUpCoordinate:
-LE902:  sta     $00
+LE902:  sta     PowerUpCoordinateGridIndex
         asl     a
         clc
-        adc     $00
+        adc     PowerUpCoordinateGridIndex
         asl     a
         clc
         adc     #$06
@@ -464,32 +503,35 @@ LE902:  sta     $00
 ; внутренний — все 10 слотов. Пары с одинаковым индексом modulo 8 исключаются,
 ; поэтому основные и дополнительные слоты одного владельца не гасят друг друга.
 ; При |dx|<6 и |dy|<6 оба ProjectileState обнуляются без взрывного state $33.
-; Побочно меняет A/X/Y, $00, $5A/$5B и ProjectileState; прочую RAM не меняет.
+; Побочно меняет A/X/Y, ProjectilePairOuterSlot/
+; ProjectilePairInnerSlot/ProjectilePairOwnerIndex и ProjectileState; прочую RAM не меняет.
 UpdateProjectileProjectileCollisions:
 LE910:  lda     #(ProjectileSlotCount-1)
-        sta     $5A
-LE914:  lda     $5A
+        sta     ProjectilePairOuterSlot
+CheckNextProjectilePairOuter:
+LE914:  lda     ProjectilePairOuterSlot
         and     #$06
-        bne     LE96D
-        ldx     $5A
+        bne     AdvanceProjectilePairOuter
+        ldx     ProjectilePairOuterSlot
         lda     ProjectileState,x
         and     #StateClassMask
         cmp     #ProjectileStateActive
-        bne     LE96D
+        bne     AdvanceProjectilePairOuter
         lda     #(ProjectileSlotCount-1)
-        sta     $5B
-LE928:  lda     $5B
+        sta     ProjectilePairInnerSlot
+CheckNextProjectilePairInner:
+LE928:  lda     ProjectilePairInnerSlot
         tay
         and     #$07
-        sta     $00
-        lda     $5A
+        sta     ProjectilePairOwnerIndex
+        lda     ProjectilePairOuterSlot
         and     #$07
-        cmp     $00
-        beq     LE969
+        cmp     ProjectilePairOwnerIndex
+        beq     AdvanceProjectilePairInner
         lda     ProjectileState,y
         and     #StateClassMask
         cmp     #ProjectileStateActive
-        bne     LE969
+        bne     AdvanceProjectilePairInner
         lda     ProjectileX,y
         sec
         sbc     ProjectileX,x
@@ -498,7 +540,7 @@ LE928:  lda     $5B
         clc
         adc     #$01
 LE94D:  cmp     #$06
-        bcs     LE969
+        bcs     AdvanceProjectilePairInner
         lda     ProjectileY,y
         sec
         sbc     ProjectileY,x
@@ -507,14 +549,16 @@ LE94D:  cmp     #$06
         clc
         adc     #$01
 LE95E:  cmp     #$06
-        bcs     LE969
+        bcs     AdvanceProjectilePairInner
         lda     #$00
         sta     ProjectileState,x
         sta     ProjectileState,y
-LE969:  dec     $5B
-        bpl     LE928
-LE96D:  dec     $5A
-        bpl     LE914
+AdvanceProjectilePairInner:
+LE969:  dec     ProjectilePairInnerSlot
+        bpl     CheckNextProjectilePairInner
+AdvanceProjectilePairOuter:
+LE96D:  dec     ProjectilePairOuterSlot
+        bpl     CheckNextProjectilePairOuter
         rts
 
 ; Проверяет power-up в (PowerUpX,PowerUpY) против активных танков.
@@ -536,9 +580,9 @@ LE96D:  dec     $5A
 ; стека и пропускает остаток процедуры, которая вызвала UpdatePowerUpPickup.
 UpdatePowerUpPickup:
 LE972:  lda     PowerUpX
-        beq     LE9E1
+        beq     FinishPowerUpPickupScan
         lda     PowerUpPickupDisplayTimer
-        bne     LE9E1
+        bne     FinishPowerUpPickupScan
         jmp     BeginPowerUpCollectorScan
 
 ; Недостижимый NOP между trampoline LE55B и циклом проверки.
@@ -547,9 +591,9 @@ LE97D:  .byte   $EA
 CheckPowerUpTankOverlap:
 LE97E:  ldx     PowerUpCollectorSlot
         lda     ObjectState,x
-        bpl     LE9DD
+        bpl     AdvancePowerUpCollectorScan
         cmp     #NonTargetableTankStateMin
-        bcs     LE9DD
+        bcs     AdvancePowerUpCollectorScan
         lda     ObjectX,x
         sec
         sbc     PowerUpX
@@ -558,7 +602,7 @@ LE97E:  ldx     PowerUpCollectorSlot
         clc
         adc     #$01
 LE994:  cmp     #$0C
-        bcs     LE9DD
+        bcs     AdvancePowerUpCollectorScan
         lda     ObjectY,x
         sec
         sbc     PowerUpY
@@ -567,14 +611,14 @@ LE994:  cmp     #$0C
         clc
         adc     #$01
 LE9A4:  cmp     #$0C
-        bcs     LE9DD
+        bcs     AdvancePowerUpCollectorScan
         lda     #$32
         sta     PowerUpPickupDisplayTimer
         lda     PowerUpType
-        bmi     LE9E1
+        bmi     FinishPowerUpPickupScan
         lda     $C6
         cmp     #$06
-        beq     LE9CA
+        beq     DispatchCollectedPowerUp
         lda     #$50
         jsr     PreparePackedScoreIncrement
         ldx     PowerUpCollectorSlot
@@ -582,7 +626,7 @@ LE9A4:  cmp     #$0C
         jsr     AddPreparedScoreForPlayerSlot
         jsr     AwardScoreThresholdLives
         ldx     PowerUpCollectorSlot
-        lda     #$01
+        lda     #AudioStateStartRequested
         sta     PowerUpPickupAudioState
 DispatchCollectedPowerUp:
 LE9CA:  lda     PowerUpType
@@ -596,8 +640,10 @@ LE9CA:  lda     PowerUpType
         pla
         jmp     (ScratchPtrLo)
 
+AdvancePowerUpCollectorScan:
 LE9DD:  dec     PowerUpCollectorSlot
-        bpl     LE97E
+        bpl     CheckPowerUpTankOverlap
+FinishPowerUpPickupScan:
 LE9E1:  rts
 
 ; Восемь 16-битных адресов обработчиков, индекс $88*2. Номера здесь намеренно
@@ -643,17 +689,18 @@ LEA0F:
         jmp     SetMaximumObjectUpgrade
 
 ; Классифицирует tile, прочитанный ProbeProjectileTerrainAtPixel.
-; Вход: A=tile, $5A=projectile slot, ScratchPtr/Y/$00 указывают подобласть.
+; Вход: A=tile, TerrainProjectileSlot=projectile slot;
+; ScratchPtr/Y и TerrainSubcellMask указывают подобласть.
 ; Для player slots 0,1,8,9 и улучшения $0178,owner >= $A0 tile $22 может быть
 ; полностью очищен без остановки снаряда. Tile >=$12 в остальных случаях
 ; пропускает снаряд; tile <$12 передаётся DestroyProjectileOnTerrain.
 ; Выход и побочные эффекты совпадают с ResolveProjectileTerrainHit.
 ClassifyTerrainForProjectile:
 LEA12:  pha
-        lda     $5A
+        lda     TerrainProjectileSlot
         and     #$06
         bne     LEA2E
-        lda     $5A
+        lda     TerrainProjectileSlot
         and     #$01
         tax
         lda     PlayerExtendedUpgrade,x
@@ -668,7 +715,7 @@ LEA12:  pha
 LEA2E:  pla
 LEA2F:  cmp     #$12
         bcc     LEA36
-        jmp     LE709
+        jmp     FinishTerrainProbeWithoutPartialDamage
 
 LEA36:  jmp     DestroyProjectileOnTerrain
 

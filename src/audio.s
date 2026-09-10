@@ -13,10 +13,16 @@
 ;   +7  текущий счётчик кадров.
 ; Меньший номер потока первым захватывает нужный аппаратный канал.
 
-AudioHardwareOwners  = $F9
-AudioStreamCount       = $1C
-AudioRecordSize      = $08
-AudioHardwareChannels = $04
+AudioHardwareOwners          = $F9
+AudioStreamCount             = $1C
+AudioRecordSize              = $08
+AudioHardwareChannels        = $04
+AudioNoiseChannel            = $04
+AudioRoutedChannelBias       = $05
+AudioRoutedToLogicalOffset   = $04
+AudioDurationTokenBase       = $60
+AudioCommandTokenBase        = $E8
+AudioChannelClaimed          = $01
 
 AudioRecordChannel   = $00
 AudioRecordControl   = $01
@@ -49,11 +55,12 @@ LEA67:  tya
         lda     AudioStatePtrLo
         adc     #AudioRecordSize
         sta     AudioStatePtrLo
-        bcc     LEA78
+        bcc     AdvanceResetAudioStream
         inc     AudioStatePtrHi
+AdvanceResetAudioStream:
 LEA78:  inx
         cpx     #AudioStreamCount
-        bne     LEA67
+        bne     ResetNextAudioStream
         rts
 
 ; Один кадровый шаг интерпретатора музыки и звуковых эффектов.
@@ -66,18 +73,20 @@ LEA78:  inx
 ; AudioHardwareOwners, AudioLoopCounters и временных Audio*; портит A, X, Y.
 UpdateAudioEngine:
 LEA7E:  lda     PauseState
-        bne     LEA88
+        bne     LimitAudioToPauseStream
         lda     #AudioStreamCount
         sta     AudioStreamLimit
-        bpl     LEA8C
+        bpl     BeginAudioRoutingPass
+LimitAudioToPauseStream:
 LEA88:  lda     #$01
         sta     AudioStreamLimit
+BeginAudioRoutingPass:
 LEA8C:  lda     #$00
         ldx     #(AudioHardwareChannels-1)
 ClearAudioHardwareOwners:
 LEA90:  sta     AudioHardwareOwners,x
         dex
-        bpl     LEA90
+        bpl     ClearAudioHardwareOwners
         lda     #$00
         sta     AudioStreamIndex
         lda     #<AudioStreamRecords
@@ -90,30 +99,30 @@ LEA90:  sta     AudioHardwareOwners,x
 RouteAudioStreamsToApu:
 LEAA1:  ldx     AudioStreamIndex
         lda     AudioStreamStates,x
-        beq     LEAE3
+        beq     AdvanceAudioOutputStream
         ldy     #AudioRecordChannel
         lda     (AudioStatePtrLo),y
-        beq     LEAE3
-        cmp     #$05
-        bcc     LEABD
+        beq     AdvanceAudioOutputStream
+        cmp     #AudioRoutedChannelBias
+        bcc     WriteAudioStreamToApu
         sec
-        sbc     #$05
+        sbc     #AudioRoutedChannelBias
         tax
-        lda     #$01
+        lda     #AudioChannelClaimed
         sta     AudioHardwareOwners,x
-        jmp     LEAE3
+        jmp     AdvanceAudioOutputStream
 
 WriteAudioStreamToApu:
 LEABD:  tax
         dex
         lda     AudioHardwareOwners,x
-        bne     LEAE3
-        lda     #$01
+        bne     AdvanceAudioOutputStream
+        lda     #AudioChannelClaimed
         sta     AudioHardwareOwners,x
         txa
         tay
         clc
-        adc     #$05
+        adc     #AudioRoutedChannelBias
         ldy     #AudioRecordChannel
         sta     (AudioStatePtrLo),y
         txa
@@ -122,23 +131,25 @@ LEABD:  tax
         tax
         lda     #AudioHardwareChannels
         sta     AudioWorkLo
+CopyNextAudioRegister:
 LEAD8:  iny
         lda     (AudioStatePtrLo),y
         sta     APU_PULSE1_CTRL,x
         inx
         dec     AudioWorkLo
-        bne     LEAD8
+        bne     CopyNextAudioRegister
 AdvanceAudioOutputStream:
 LEAE3:  clc
         lda     AudioStatePtrLo
         adc     #AudioRecordSize
         sta     AudioStatePtrLo
-        bcc     LEAEE
+        bcc     AdvanceAudioOutputIndex
         inc     AudioStatePtrHi
+AdvanceAudioOutputIndex:
 LEAEE:  inc     AudioStreamIndex
         lda     AudioStreamIndex
         cmp     AudioStreamLimit
-        bcc     LEAA1
+        bcc     RouteAudioStreamsToApu
 ; Отключает незахваченные каналы: у pulse ставит нулевую громкость $10,
 ; у triangle/noise записывает 0 в первый регистр канала.
 SilenceUnclaimedAudioChannels:
@@ -146,7 +157,7 @@ SilenceUnclaimedAudioChannels:
 SilenceNextAudioChannel:
 LEAF8:  stx     AudioWorkLo
         lda     AudioHardwareOwners,x
-        bne     LEB0A
+        bne     RestoreAudioHardwareIndex
         txa
         asl     a
         asl     a
@@ -155,10 +166,11 @@ LEAF8:  stx     AudioWorkLo
         and     #$10
         eor     #$10
         sta     APU_PULSE1_CTRL,x
+RestoreAudioHardwareIndex:
 LEB0A:  ldx     AudioWorkLo
         inx
         cpx     #AudioHardwareChannels
-        bcc     LEAF8
+        bcc     SilenceNextAudioChannel
         ldy     #$00
         sty     AudioStreamIndex
         lda     #<AudioStreamRecords
@@ -171,23 +183,24 @@ LEB0A:  ldx     AudioWorkLo
 AdvanceAudioStreams:
 LEB1D:  ldx     AudioStreamIndex
         lda     AudioStreamStates,x
-        beq     LEB2E
-        cmp     #$01
-        bne     LEB42
+        beq     AdvanceToNextAudioStream
+        cmp     #AudioStateStartRequested
+        bne     CountDownAudioEvent
         inc     AudioStreamStates,x
-        jmp     LEB4F
+        jmp     InitializeAudioStream
 
 AdvanceToNextAudioStream:
 LEB2E:  clc
         lda     AudioStatePtrLo
         adc     #AudioRecordSize
         sta     AudioStatePtrLo
-        bcc     LEB39
+        bcc     AdvanceAudioStreamIndex
         inc     AudioStatePtrHi
+AdvanceAudioStreamIndex:
 LEB39:  inc     AudioStreamIndex
         lda     AudioStreamIndex
         cmp     AudioStreamLimit
-        bcc     LEB1D
+        bcc     AdvanceAudioStreams
         rts
 
 CountDownAudioEvent:
@@ -196,8 +209,8 @@ LEB42:  ldy     #AudioRecordCountdown
         sec
         sbc     #$01
         sta     (AudioStatePtrLo),y
-        beq     LEB85
-        bne     LEB2E
+        beq     ResumeAudioStream
+        bne     AdvanceToNextAudioStream
 ; При запуске позиция сбрасывается, затем заголовок копируется в +0,+1,+2,+4.
 ; Для канала 4 (noise) заголовок содержит ещё байт +3.
 InitializeAudioStream:
@@ -219,12 +232,12 @@ LEB4F:  lda     #$00
         sta     (AudioStatePtrLo),y
         ldy     #AudioRecordChannel
         lda     (AudioStatePtrLo),y
-        cmp     #$04
-        bne     LEB88
+        cmp     #AudioNoiseChannel
+        bne     DecodeNextAudioToken
         jsr     ReadAudioArgument
         ldy     #AudioRecordPeriodLo
         sta     (AudioStatePtrLo),y
-        bpl     LEB88
+        bpl     DecodeNextAudioToken
 
 ; При истечении таймера указатель таблицы восстанавливается по номеру потока.
 ResumeAudioStream:
@@ -233,15 +246,15 @@ LEB85:  jsr     LoadAudioSequencePointer
 ; Декодер может прочитать цепочку модификаторов длительности/команд за один вызов.
 DecodeNextAudioToken:
 LEB88:  jsr     ReadAudioArgument
-        cmp     #$E8
-        bcs     LEBE1
-        cmp     #$60
-        beq     LEBD7
-        bcc     LEB9E
-        sbc     #$60
+        cmp     #AudioCommandTokenBase
+        bcs     DecodeAudioCommand
+        cmp     #AudioDurationTokenBase
+        beq     FinishAudioTimedToken
+        bcc     SetAudioNotePeriod
+        sbc     #AudioDurationTokenBase
         ldy     #AudioRecordDuration
         sta     (AudioStatePtrLo),y
-        jmp     LEB88
+        jmp     DecodeNextAudioToken
 
 ; Нота $00-$5F: биты 7..3 выбирают один из 12 базовых периодов, биты 2..0
 ; делят его на 2^n. Старшие пять бит +4 сохраняются.
@@ -257,13 +270,13 @@ LEB9E:  pha
         sta     AudioWorkHi
         pla
         and     #$07
-        beq     LEBBB
+        beq     WriteAudioNotePeriod
         tax
 ShiftAudioNotePeriod:
 LEBB4:  lsr     AudioWorkLo
         ror     AudioWorkHi
         dex
-        bne     LEBB4
+        bne     ShiftAudioNotePeriod
 WriteAudioNotePeriod:
 LEBBB:  ldy     #AudioRecordPeriodHi
         lda     (AudioStatePtrLo),y
@@ -276,9 +289,9 @@ LEBBB:  ldy     #AudioRecordPeriodHi
         ldy     #AudioRecordChannel
         lda     (AudioStatePtrLo),y
         cmp     #$05
-        bcc     LEBD7
+        bcc     FinishAudioTimedToken
         sec
-        sbc     #$04
+        sbc     #AudioRoutedToLogicalOffset
         sta     (AudioStatePtrLo),y
 ; $60 оставляет период без изменения; и нота, и $60 переносят +6 в текущий +7.
 FinishAudioTimedToken:
@@ -286,10 +299,10 @@ LEBD7:  ldy     #AudioRecordDuration
         lda     (AudioStatePtrLo),y
         iny
         sta     (AudioStatePtrLo),y
-        jmp     LEB2E
+        jmp     AdvanceToNextAudioStream
 
 DecodeAudioCommand:
-LEBE1:  sbc     #$E8
+LEBE1:  sbc     #AudioCommandTokenBase
         jsr     DispatchAudioCommand
 
 ; DispatchAudioCommand использует адрес возврата как базу этой inline-таблицы и передаёт
@@ -310,7 +323,7 @@ AudioCommandHandlers:
 AudioCommandStop:
 AudioCommandE8:
 LEC0A:  ldx     AudioStreamIndex
-LEC0C:  lda     #$00
+LEC0C:  lda     #AudioStateOff
         sta     AudioStreamStates,x
         ldy     #AudioRecordChannel
         sta     (AudioStatePtrLo),y
@@ -319,7 +332,7 @@ LEC0C:  lda     #$00
         sec
         sbc     #$01
         sta     (AudioStatePtrLo),y
-        jmp     LEB2E
+        jmp     AdvanceToNextAudioStream
 
 ; $E9 operand: сохраняет биты 5..0 регистра CTRL и подмешивает operand.
 AudioCommandSetControlHighBits:
@@ -331,7 +344,7 @@ LEC21:  jsr     ReadAudioArgument
         and     #$3F
         ora     AudioWorkLo
         sta     (AudioStatePtrLo),y
-        jmp     LEB88
+        jmp     DecodeNextAudioToken
 
 ; $EA operand: сохраняет биты 7..6 CTRL и подмешивает operand.
 AudioCommandSetControlLowBits:
@@ -343,7 +356,7 @@ LEC33:  jsr     ReadAudioArgument
         and     #$C0
         ora     AudioWorkLo
         sta     (AudioStatePtrLo),y
-        jmp     LEB88
+        jmp     DecodeNextAudioToken
 
 ; $EB operand: сохраняет биты 7..4 CTRL и подмешивает operand.
 AudioCommandSetControlLowNibble:
@@ -355,7 +368,7 @@ LEC45:  jsr     ReadAudioArgument
         and     #$F0
         ora     AudioWorkLo
         sta     (AudioStatePtrLo),y
-        jmp     LEB88
+        jmp     DecodeNextAudioToken
 
 ; $EC operand: заменяет второй аппаратный регистр канала (+2).
 AudioCommandSetAux:
@@ -363,7 +376,7 @@ AudioCommandEC:
 LEC57:  jsr     ReadAudioArgument
         ldy     #AudioRecordAux
         sta     (AudioStatePtrLo),y
-        jmp     LEB88
+        jmp     DecodeNextAudioToken
 
 ; $ED operand: заменяет шаблон старшего регистра периода (+4).
 AudioCommandSetPeriodHigh:
@@ -371,7 +384,7 @@ AudioCommandED:
 LEC61:  jsr     ReadAudioArgument
         ldy     #AudioRecordPeriodHi
         sta     (AudioStatePtrLo),y
-        jmp     LEB88
+        jmp     DecodeNextAudioToken
 
 ; $EE operand: заменяет CTRL (+1) целиком.
 AudioCommandSetControl:
@@ -379,17 +392,18 @@ AudioCommandEE:
 LEC6B:  jsr     ReadAudioArgument
         ldy     #AudioRecordControl
         sta     (AudioStatePtrLo),y
-        jmp     LEB88
+        jmp     DecodeNextAudioToken
 
 ; $EF: сбрасывает три общих для всех потоков счётчика циклов $F0-$F2.
 AudioCommandResetLoopCounters:
 AudioCommandEF:
 LEC75:  lda     #$00
         ldx     #$02
+ClearNextAudioLoopCounter:
 LEC79:  sta     AudioLoopCounters,x
         dex
-        bpl     LEC79
-        jmp     LEB88
+        bpl     ClearNextAudioLoopCounter
+        jmp     DecodeNextAudioToken
 
 ; $F0-$F2 count,target: выбирают один из трёх общих счётчиков. Пока он не равен count,
 ; переходят к абсолютной позиции target внутри потока. При равенстве счётчик
@@ -397,7 +411,7 @@ LEC79:  sta     AudioLoopCounters,x
 AudioCommandLoop0:
 AudioCommandF0:
 LEC81:  ldx     #$00
-        beq     LEC8A
+        beq     ExecuteAudioLoopCommand
 AudioCommandLoop1:
 AudioCommandF1:
 LEC85:  ldx     #$01
@@ -405,13 +419,14 @@ LEC85:  ldx     #$01
 AudioCommandLoop2:
 AudioCommandF2:
 LEC88:  ldx     #$02
+ExecuteAudioLoopCommand:
 LEC8A:  jsr     ReadAudioArgument
         inc     AudioLoopCounters,x
         cmp     AudioLoopCounters,x
-        bne     LECA5
+        bne     AudioCommandJump
         lda     #$00
         sta     AudioLoopCounters,x
-        beq     LEC99
+        beq     AudioCommandSkipArgument
 
 ; $F3-$F8 operand: в этой версии только пропускают один байт.
 AudioCommandSkipArgument:
@@ -421,7 +436,7 @@ LEC99:  ldy     #AudioRecordPosition
         clc
         adc     #$01
         sta     (AudioStatePtrLo),y
-        jmp     LEB88
+        jmp     DecodeNextAudioToken
 
 ; $F9 target: заменяет позицию +5 абсолютным смещением от начала потока.
 AudioCommandJump:
@@ -429,7 +444,7 @@ AudioCommandF9:
 LECA5:  jsr     ReadAudioArgument
         ldy     #AudioRecordPosition
         sta     (AudioStatePtrLo),y
-        jmp     LEB88
+        jmp     DecodeNextAudioToken
 
 ; Выбирает базу байткода по AudioStreamIndex.
 ; Вход: AudioStreamIndex=0..27. Выход: AudioDataPtrLo/Hi.
@@ -490,13 +505,19 @@ LECE7:  .byte   $F2,$07,$80,$07,$14,$06,$AE,$06
 ; Номер потока одновременно служит индексом в этой таблице и задаёт
 ; приоритет при конкуренции за один канал: 0 — высший, 27 — низший.
 AudioSequencePointers:
-LECFE:  .word   AudioSequence00,AudioSequence01,AudioSequence02,AudioSequence03
-        .word   AudioSequence04,AudioSequence05,AudioSequence06,AudioSequence07
-        .word   AudioSequence08,AudioSequence09,AudioSequence10,AudioSequence11
-        .word   AudioSequence12,AudioSequence13,AudioSequence14,AudioSequence15
-        .word   AudioSequence16,AudioSequence17,AudioSequence18,AudioSequence19
-        .word   AudioSequence20,AudioSequence21,AudioSequence22,AudioSequence23
-        .word   AudioSequence24,AudioSequence25,AudioSequence26,AudioSequence27
+LECFE:  .word   PauseSequence,StageIntroPulse1Sequence
+        .word   StageIntroTriangleSequence,StageIntroPulse2Sequence
+        .word   ExtraLifePulse1Sequence,ExtraLifePulse2Sequence
+        .word   PowerUpPickupSequence,PlayerOrBaseDestructionNoiseSequence
+        .word   AudioSequence08,PowerUpSpawnSequence
+        .word   TankDestructionSequence,BaseDestructionToneSequence
+        .word   BrickHitSequence,RicochetOrMenuStepSequence
+        .word   ArmorHitSequence,PlayerFireSequence
+        .word   IceSlideStartSequence,PlayerMovementLoopSequence
+        .word   GameplayLoopSequence,StatisticsCountPulseSequence
+        .word   StatisticsCountNoiseSequence,SessionResultPulse1Sequence
+        .word   SessionResultPulse2Sequence,SessionResultTriangleSequence
+        .word   AudioSequence24,AudioSequence25,AudioSequence26,StatisticsWinnerBonusSequence
 
 ; Потоки байткода музыки и звуковых эффектов. Заголовок состоит из
 ; channel, control, aux, period-high и дополнительного period-low для channel=4.
@@ -505,6 +526,7 @@ LECFE:  .word   AudioSequence00,AudioSequence01,AudioSequence02,AudioSequence03
 ; переходов отсчитываются от самой AudioSequenceNN, включая байты заголовка.
 AudioSequences:
 ; Поток 01: pulse 1, CTRL=$81, AUX=$7F, period-high=$40.
+StageIntroPulse1Sequence:
 AudioSequence01:
         .byte   $01,$81,$7F,$40,$EF,$68,$1B,$2B,$33
         .byte   $F0,$02,$06,$33,$43,$53,$F0,$02
@@ -512,6 +534,7 @@ AudioSequence01:
         .byte   $0C,$1C,$F0,$02,$18,$78,$1C,$68
         .byte   $1C,$1C,$1C,$78,$1C,$E8
 ; Поток 02: triangle, CTRL=$10, AUX=$7F, period-high=$08.
+StageIntroTriangleSequence:
 AudioSequence02:
         .byte   $03,$10
         .byte   $7F,$08,$78,$1A,$68,$1A,$F1,$03
@@ -521,6 +544,7 @@ AudioSequence02:
         .byte   $52,$68,$52,$F1,$03,$24,$78,$52
         .byte   $E8
 ; Поток 03: pulse 2, CTRL=$81, AUX=$7F, period-high=$40.
+StageIntroPulse2Sequence:
 AudioSequence03:
         .byte   $02,$81,$7F,$40,$78,$51,$68
         .byte   $51,$F2,$03,$07,$78,$0A,$68,$0A
@@ -529,6 +553,7 @@ AudioSequence03:
         .byte   $03,$1D,$78,$3A,$68,$3A,$F2,$03
         .byte   $24,$78,$3A,$E8
 ; Поток 07: noise, CTRL=$1F, AUX=$7F, period-high=$30, period-low=$0A.
+PlayerOrBaseDestructionNoiseSequence:
 AudioSequence07:
         .byte   $04,$1F,$7F,$30
         .byte   $0A,$62,$49,$49,$EA,$1E,$49,$49
@@ -543,87 +568,106 @@ AudioSequence08:
         .byte   $EA,$1C,$01,$EA,$1B,$00,$EA,$1A
         .byte   $01,$EA,$19,$00,$E8
 ; Поток 11: pulse 2, CTRL=$20, AUX=$7F, period-high=$30.
+BaseDestructionToneSequence:
 AudioSequence11:
         .byte   $02,$20,$7F
         .byte   $30,$63,$1A,$12,$51,$31,$19,$11
         .byte   $50,$30,$18,$E8
 ; Поток 10: noise, CTRL=$1F, AUX=$7F, period-high=$40, period-low=$0A.
+TankDestructionSequence:
 AudioSequence10:
         .byte   $04,$1F,$7F,$40
         .byte   $0A,$62,$51,$EA,$1E,$51,$EA,$08
         .byte   $6A,$51,$E8
 ; Поток 15: pulse 1, CTRL=$8F, AUX=$82, period-high=$10.
+PlayerFireSequence:
 AudioSequence15:
         .byte   $01,$8F,$82,$10,$6F
         .byte   $2C,$E8
 ; Поток 06: pulse 2, CTRL=$80, AUX=$7F, period-high=$40.
+PowerUpPickupSequence:
 AudioSequence06:
         .byte   $02,$80,$7F,$40,$63,$52
         .byte   $1B,$3B,$53,$4A,$13,$33,$4B,$1B
         .byte   $3B,$53,$1C,$3C,$E8
 ; Поток 00: pulse 2, CTRL=$82, AUX=$7F, period-high=$40.
+PauseSequence:
 AudioSequence00:
         .byte   $02,$82,$7F
         .byte   $40,$64,$1B,$2B,$3B,$1C,$2C,$3C
         .byte   $6C,$53,$E8
 ; Поток 27: pulse 2, CTRL=$82, AUX=$7F, period-high=$40.
+StatisticsWinnerBonusSequence:
 AudioSequence27:
         .byte   $02,$82,$7F,$40,$63
         .byte   $53,$1B,$1C,$3B,$3C,$53,$6A,$54
         .byte   $E8
 ; Поток 09: pulse 2, CTRL=$60, AUX=$7F, period-high=$40.
+PowerUpSpawnSequence:
 AudioSequence09:
         .byte   $02,$60,$7F,$40,$64,$52,$3A
         .byte   $52,$03,$52,$03,$13,$1B,$E8
 ; Поток 13: pulse 2, CTRL=$D5, AUX=$7F, period-high=$00.
+RicochetOrMenuStepSequence:
 AudioSequence13:
         .byte   $02
         .byte   $D5,$7F,$00,$62,$1C,$1D,$E8
 ; Поток 12: triangle, CTRL=$07, AUX=$7F, period-high=$08.
+BrickHitSequence:
 AudioSequence12:
         .byte   $03
         .byte   $07,$7F,$08,$61,$3A,$13,$22,$E8
 ; Поток 14: pulse 2, CTRL=$40, AUX=$7F, period-high=$00.
+ArmorHitSequence:
 AudioSequence14:
         .byte   $02,$40,$7F,$00,$61,$3D,$62,$45
         .byte   $EA,$10,$28,$E8
 ; Поток 19: pulse 2, CTRL=$80, AUX=$7F, period-high=$18.
+StatisticsCountPulseSequence:
 AudioSequence19:
         .byte   $02,$80,$7F,$18
         .byte   $61,$39,$E8
 ; Поток 20: noise, CTRL=$00, AUX=$7F, period-high=$28, period-low=$0A.
+StatisticsCountNoiseSequence:
 AudioSequence20:
         .byte   $04,$00,$7F,$28,$0A
         .byte   $61,$28,$E8
 ; Поток 18: pulse 2, CTRL=$8C, AUX=$94, period-high=$40; $F9 зацикливает тело.
+GameplayLoopSequence:
 AudioSequence18:
         .byte   $02,$8C,$94,$40,$61
         .byte   $10,$64,$18,$F9,$05
 ; Поток 17: pulse 2, CTRL=$80, AUX=$94, period-high=$48; $F9 зацикливает тело.
+PlayerMovementLoopSequence:
 AudioSequence17:
         .byte   $02,$80,$94
         .byte   $48,$62,$40,$48,$F9,$05
 ; Поток 16: pulse 1, CTRL=$1F, AUX=$7F, period-high=$28.
+IceSlideStartSequence:
 AudioSequence16:
         .byte   $01,$1F
         .byte   $7F,$28,$61,$22,$42,$5A,$1B,$E8
 ; Поток 04: pulse 1, CTRL=$A0, AUX=$7F, period-high=$40.
+ExtraLifePulse1Sequence:
 AudioSequence04:
         .byte   $01,$A0,$7F,$40,$66,$1C,$3C,$1C
         .byte   $53,$1C,$3C,$05,$72,$54,$E8
 ; Поток 05: pulse 2, CTRL=$90, AUX=$7F, period-high=$40.
+ExtraLifePulse2Sequence:
 AudioSequence05:
         .byte   $02
         .byte   $90,$7F,$40,$62,$38,$66,$EA,$20
         .byte   $3B,$53,$3B,$1B,$3B,$53,$1C,$6A
         .byte   $14,$E8
 ; Поток 21: pulse 1, CTRL=$B8, AUX=$7F, period-high=$40.
+SessionResultPulse1Sequence:
 AudioSequence21:
         .byte   $01,$B8,$7F,$40,$EF,$65
         .byte   $0C,$53,$F0,$0C,$05,$0C,$53,$F0
         .byte   $0C,$0B,$34,$24,$F0,$08,$10,$EA
         .byte   $30,$B0,$50,$EA,$20,$9C,$54,$E8
 ; Поток 22: pulse 2, CTRL=$B8, AUX=$7F, period-high=$40.
+SessionResultPulse2Sequence:
 AudioSequence22:
         .byte   $02,$B8,$7F,$40,$65,$43,$33,$F1
         .byte   $0C,$04,$43,$33,$F1,$0C,$0A,$14
@@ -632,6 +676,7 @@ AudioSequence22:
         .byte   $0B,$2B,$33,$53,$0C,$2C,$9C,$EA
         .byte   $20,$2C,$E8
 ; Поток 23: triangle, CTRL=$00, AUX=$7F, period-high=$08.
+SessionResultTriangleSequence:
 AudioSequence23:
         .byte   $03,$00,$7F,$08,$A1
         .byte   $01,$01,$EE,$15,$6A,$0B,$0B,$0B

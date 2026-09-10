@@ -1,6 +1,9 @@
 ; Подтверждённые области RAM. Неизученные игровые переменные пока оставлены
 ; числовыми адресами, чтобы не закреплять за ними ошибочную семантику.
 
+; Рабочий байт palette/attributes для DrawMetatile и OAM emitters.
+; Индексированные обращения $00,X..$07,X используют тот же адрес как часть scratch-записи.
+RenderAttributes  = $04
 NametablePpuOffset = $05
 Joy1Held        = $06
 Joy2Held        = $07
@@ -19,8 +22,25 @@ ScratchPtrHi    = $12
 AuxPtrLo        = $13
 AuxPtrHi        = $14
 
+; Интерфейс terrain-процедур: пиксельная точка сохраняется в $47/$48,
+; а выбранная 4x4-подобласть — одной из масок $01/$02/$04/$08 в $00.
+TerrainSubcellMask = $00
+CollisionPointX    = $47
+CollisionPointY    = $48
+
+; Параметры InitializePlayfieldShadow. Эти байты перегружены вне вызова процедуры.
+NametableRectX      = $56
+NametableRectY      = $57
+NametableRectHeight = $5A
+NametableRectWidth  = $5B
+; Координаты raster-строки разделяют те же scratch-байты с rectangle API.
+RasterStringX       = $56
+RasterStringY       = $57
+
 Player1Score    = $15
 Player2Score    = $1D
+ScoreIncrementDigits    = $35
+ScoreIncrementThousands = ScoreIncrementDigits + $03
 DecimalHundreds = $39
 DecimalTens     = $3A
 DecimalOnes     = $3B
@@ -29,6 +49,13 @@ HighScore       = $3D
 BaseFortificationTimer = $45
 GameVariant     = $46
 PowerUpCollectorSlot = $49
+; Код скрытой комбинации на title; позднее временно служит счётчиком строк variant-меню.
+TitleSecretInputCode = $4A
+; Неноль сохраняет построенную Construction-карту; variant-меню временно
+; переиспользует байт как младшую часть указателя на строки.
+ConstructionMapFlag = $4B
+; Ноль разрешает ручной выбор первого этапа, неноль автоматически запускает следующие.
+StageSelectionLocked = $4C
 BackgroundPaletteIndex = $4D
 
 VerticalScroll  = $4F
@@ -66,6 +93,9 @@ PlayerShieldTimer = $89
 RuntimeChecksumExpected = $8C
 RuntimeChecksumActual = $8D
 AllPowerUpsEnabled = $8E
+; До выбора карты хранит индекс набора; после чтения дескриптора — его длину.
+StageSetSelector = $8F
+StageSetLength   = $8F
 
 ObjectX         = $90
 ObjectY         = $98
@@ -80,6 +110,9 @@ ProjectileFlags = $D6
 
 EnemyFreezeTimer = $0100
 PlayerUpgradeLevel = $0101
+; Два байта игроков. Bit7 показывает нахождение на льду (тайл $21);
+; младшие биты ведут фазу/задержку скольжения и блокировки нового ввода.
+PlayerIceState   = $0103
 ; Маленький движущийся объект создаётся при выбытии одного из игроков,
 ; пока второй продолжает бой; точное экранное значение графики не установлено.
 TransitionObjectX    = $0105
@@ -87,6 +120,7 @@ TransitionObjectY    = $0106
 TransitionObjectDirection = $0107
 TransitionObjectTimer= $0108
 DebugRamIndex   = $0109
+RestartSignature = $0110
 
 ; Восемь расширений танков лежат в $0170-$0177; соседние $0178-$0179
 ; переиспользуются как дополнительные уровни улучшения игроков.
@@ -134,3 +168,9 @@ AudioWorkHi     = $FE
 PpuUpdateBuffer = $0180
 OamShadow       = $0200
 NametableShadow = $0400
+NametableShadowPage1 = NametableShadow + $0100
+NametableShadowPage2 = NametableShadow + $0200
+NametableShadowPage3 = NametableShadow + $0300
+NametableAttributes  = NametableShadow + $03C0
+BaseAttributeUpper   = NametableAttributes + $33
+BaseAttributeLower   = NametableAttributes + $34

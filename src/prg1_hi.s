@@ -6,6 +6,11 @@
 ; четыре байта ниже RuntimeChecksumExpected.
 IntegrityWorkBase = RuntimeChecksumExpected - $04
 
+; Локальные роли $5A в непересекающихся проходах high-bank.
+PowerUpTargetSlot    = $5A
+ExtensionObjectSlot = $5A
+TerrainObjectSlot   = $5A
+
 ; $FCFC..$FCFF — хвост неидентифицированного потока данных; статических ссылок нет.
 HiBankPrefixData:
         .byte   $20,$D2,$0D,$2D
@@ -55,10 +60,10 @@ UnreferencedFd39Data:
         .byte   $DD,$DD,$D9,$99,$DD
 
 ; Выбирает начальное число жизней по состоянию меню/ввода.
-; Выход: A=$15 при $4A=$0F, $08 при Down, $0B при Up, иначе $03.
+; Выход: A=$15 при TitleSecretInputCode=$0F, $08 при Down, $0B при Up, иначе $03.
 ; RAM не меняет; X/Y сохраняет.
 SelectInitialLifeCount:
-LFD46:  lda     $4A
+LFD46:  lda     TitleSecretInputCode
         cmp     #$0F
         bne     LFD4F
         lda     #$15
@@ -143,11 +148,13 @@ LFDB1:  cpx     #FirstEnemyTankSlot
         sta     EnemyFreezeTimer
         rts
 
-PowerUpEffect2:
 ; Вход: X — слот подобравшего усиление. Для X>=2 заменяет три блока вокруг базы и
-; обнуляет атрибуты через QueueBrickBaseAttributes. Для X<2 при активном $68
-; обновляет ограждение и ставит $45=$14.
-; Портит ScratchPtr, A, X, Y; меняет nametable shadow/PPU-очередь через вызываемые процедуры.
+; обнуляет атрибуты через QueueBrickBaseAttributes. Для X<2 при активном
+; BattleState обновляет стальное ограждение и ставит BaseFortificationTimer=$14.
+; Портит ScratchPtr, A, X, Y; меняет nametable shadow и PPU-очередь через
+; вызываемые процедуры. Ветка противника не возвращается самостоятельно, а
+; хвостовым переходом возвращается из QueueBrickBaseAttributes.
+PowerUpEffect2:
 LFDBB:  cpx     #FirstEnemyTankSlot
         bcc     LFDEF
         lda     #$D3
@@ -180,9 +187,9 @@ LFDEF:  lda     BattleState
         sta     BaseFortificationTimer
 LFDFA:  rts
 
-; Обработчик эффекта 3. Для X>=2 ставит бит $08 в ObjectAttributes слотов 2..7.
-; Для X<2 увеличивает $0101,X на $20 пока значение меньше $60 и зеркалит его в ObjectAttributes,X.
-; Сохраняет исходный X; портит A и флаги.
+; Обработчик эффекта 3. Для X>=2 ставит bit3 в ObjectAttributes слотов 2..7.
+; Для X<2 увеличивает PlayerUpgradeLevel,X на $20 до предела $60 и зеркалит
+; его в ObjectAttributes,X. Сохраняет исходный X и Y; портит A и флаги.
 ApplyPowerUpEffect3:
 LFDFB:  cpx     #FirstEnemyTankSlot
         bcc     LFE12
@@ -209,17 +216,18 @@ LFE12:  lda     PlayerUpgradeLevel,x
         sta     ObjectAttributes,x
 LFE21:  rts
 
-PowerUpEffect4:
 ; Поражает танки противоположной стороны: для X<2 — слоты 2..7, для X>=2 — игроков 0..1,
 ; если их ObjectState активен. Записывает TankStateDestroyed, attributes=0;
 ; для игроков также PlayerUpgradeLevel=$20.
-; Запрашивает аудиопоток уничтожения танка; портит A, Y, $5A, флаги.
+; Запрашивает аудиопоток уничтожения танка. X сохраняет; портит A/Y,
+; PowerUpTargetSlot и флаги.
+PowerUpEffect4:
 LFE22:  cpx     #FirstEnemyTankSlot
         bcc     LFE51
         lda     #$01
-        sta     $5A
+        sta     PowerUpTargetSlot
         sta     TankDestructionAudioState
-LFE2D:  ldy     $5A
+LFE2D:  ldy     PowerUpTargetSlot
         lda     ObjectState,y
         bpl     LFE4C
         cmp     #NonTargetableTankStateMin
@@ -232,15 +240,15 @@ LFE2D:  ldy     $5A
         sta     ObjectState,y
         lda     #$00
         sta     ObjectAttributes,y
-LFE4C:  dec     $5A
+LFE4C:  dec     PowerUpTargetSlot
         bpl     LFE2D
         rts
 
 LFE51:  lda     #(TankSlotCount-1)
-        sta     $5A
-        lda     #$01
+        sta     PowerUpTargetSlot
+        lda     #AudioStateStartRequested
         sta     TankDestructionAudioState
-LFE5A:  ldy     $5A
+LFE5A:  ldy     PowerUpTargetSlot
         lda     ObjectState,y
         bpl     LFE6F
         cmp     #NonTargetableTankStateMin
@@ -249,20 +257,20 @@ LFE5A:  ldy     $5A
         sta     ObjectState,y
         lda     #$00
         sta     ObjectAttributes,y
-LFE6F:  dec     $5A
-        lda     $5A
+LFE6F:  dec     PowerUpTargetSlot
+        lda     PowerUpTargetSlot
         cmp     #$01
         bne     LFE5A
         rts
 
-PowerUpEffect5:
 ; Для игрока X<2 добавляет жизнь и запрашивает два аудиопотока звука
 ; дополнительной жизни. Для X>=2 преобразует
 ; младшие биты ObjectAttributes всех слотов 2..7. Сохраняет исходный X; портит A и флаги.
+PowerUpEffect5:
 LFE78:  cpx     #FirstEnemyTankSlot
         bcs     LFE87
         inc     Player1Lives,x
-        lda     #$01
+        lda     #AudioStateStartRequested
         sta     ExtraLifePulse1AudioState
         sta     ExtraLifePulse2AudioState
         rts
@@ -291,9 +299,11 @@ LFE9B:  lda     #$63
 LFEA4:  sta     ObjectAttributes,x
         rts
 
-PowerUpEffect7:
 ; Активирует дополнительную способность объекта X через $0170,X=$FF.
-; Её наблюдаемые эффекты: дополнительная отрисовка и проход через TSA $12; точное игровое имя не закреплено.
+; Наблюдаемые эффекты: дополнительная двухспрайтовая метка, проход через TSA $12
+; и поглощение следующего попадания с очисткой флага. Точное игровое имя не
+; закреплено. Выход: A=$FF; X/Y и остальные поля сохраняет.
+PowerUpEffect7:
 LFEA7:  lda     #$FF
         sta     ObjectSpecialState,x
         rts
@@ -302,24 +312,25 @@ LFEA7:  lda     #$FF
 ; Для каждого слота 7..0 с ненулевым $0170,X рисует двухспрайтовый объект
 ; с координатами танка и кодом $63,
 ; затем запускает integrity guard и обрабатывает передачу жизни между игроками.
-; Портит A, X, Y, $04, $53, $5A и рабочие поля вызываемых процедур; может изменить Player*Lives.
+; Портит A, X, Y, RenderAttributes, OamTile, ExtensionObjectSlot и рабочие поля
+; вызываемых процедур; может изменить Player*Lives.
 UpdateTank1990Extensions:
 LFEAD:  lda     #(TankSlotCount-1)
-        sta     $5A
-LFEB1:  ldx     $5A
+        sta     ExtensionObjectSlot
+LFEB1:  ldx     ExtensionObjectSlot
         lda     ObjectSpecialState,x
         nop
         nop
         beq     LFEC9
         txa
-        sta     $04
+        sta     RenderAttributes
         ldy     ObjectY,x
         lda     ObjectX,x
         tax
         lda     #$63
         sta     OamTile
         jsr     EmitTwoTileOamPair
-LFEC9:  dec     $5A
+LFEC9:  dec     ExtensionObjectSlot
         bpl     LFEB1
         jsr     RunDeferredIntegrityGuard
         lda     MenuSelection
@@ -352,9 +363,12 @@ LFEEF:  lda     Player1Lives
 LFF04:  rts
 
 ; Маршрутизация первой проверки TSA при движении.
-; Вход: A — код TSA, $5A — слот объекта. При $0170,X!=0 код $12 направляется
-; к ProbeSecondTankCorner; иначе TSA<$20 идёт в HandleBlockedTankMovement,
-; TSA>=$20 — к ProbeSecondTankCorner. Не возвращается.
+; Вход: A — код TSA первой точки, TerrainObjectSlot — слот объекта. X на входе
+; не используется. При ObjectSpecialState слота !=0 код $12 считается проходимым;
+; в остальных случаях TSA<$20 блокирует движение, TSA>=$20 разрешает проверку
+; второй точки. Хвостом уходит в ProbeSecondTankCorner либо
+; HandleBlockedTankMovement и самостоятельно не возвращается. Портит A/X и флаги;
+; Y сохраняется до выбранного обработчика.
 RouteFirstTerrainProbe:
 LFF05:  pha
         nop
@@ -362,25 +376,29 @@ LFF05:  pha
         nop
         nop
         nop
-        ldx     $5A
+        ldx     TerrainObjectSlot
         lda     ObjectSpecialState,x
         nop
         nop
         nop
-        beq     LFF1D
+        beq     RestoreFirstTerrainCode
         pla
         cmp     #$12
-        bne     LFF1E
+        bne     ClassifyFirstTerrainCode
+AcceptFirstTerrainProbe:
 LFF1A:  jmp     ProbeSecondTankCorner
 
+RestoreFirstTerrainCode:
 LFF1D:  pla
+ClassifyFirstTerrainCode:
 LFF1E:  cmp     #$20
-        bcs     LFF1A
+        bcs     AcceptFirstTerrainProbe
         jmp     HandleBlockedTankMovement
 
 ; Парный RouteFirstTerrainProbe маршрутизатор второй проверки TSA.
-; При разрешённом проходе переходит в CommitProposedTankMovement, при
-; столкновении — в HandleBlockedTankMovement. Не возвращается.
+; Контракт и классификация TSA те же, но разрешённый проход хвостом переходит в
+; CommitProposedTankMovement. Не возвращается самостоятельно; портит A/X и флаги,
+; Y сохраняется до выбранного обработчика.
 RouteSecondTerrainProbe:
 LFF25:  pha
         nop
@@ -388,20 +406,23 @@ LFF25:  pha
         nop
         nop
         nop
-        ldx     $5A
+        ldx     TerrainObjectSlot
         lda     ObjectSpecialState,x
         nop
         nop
         nop
-        beq     LFF3D
+        beq     RestoreSecondTerrainCode
         pla
         cmp     #$12
-        bne     LFF3E
+        bne     ClassifySecondTerrainCode
+AcceptSecondTerrainProbe:
 LFF3A:  jmp     CommitProposedTankMovement
 
+RestoreSecondTerrainCode:
 LFF3D:  pla
+ClassifySecondTerrainCode:
 LFF3E:  cmp     #$20
-        bcs     LFF3A
+        bcs     AcceptSecondTerrainProbe
         jmp     HandleBlockedTankMovement
 
 ; Сбрасывает 16 байт состояния расширения $0170..$017F, затем вызывает
@@ -416,13 +437,13 @@ LFF49:  sta     ObjectSpecialState,x
         jsr     InitializeCoreRuntime
         rts
 
-; Заполняет пять байт $0174..$0178 значением A, затем вызывает
+; Заполняет ObjectSpecialState+4..+7 и PlayerExtendedUpgrade значением A, затем вызывает
 ; InitializeCoreRuntime. Входные A/X/Y этой процедурой не сохраняются.
 FillExtensionSlots4Through8:
-LFF53:  sta     $0174
-        sta     $0175
-        sta     $0176
-        sta     $0177
+LFF53:  sta     ObjectSpecialState+4
+        sta     ObjectSpecialState+5
+        sta     ObjectSpecialState+6
+        sta     ObjectSpecialState+7
         sta     PlayerExtendedUpgrade
         jsr     InitializeCoreRuntime
         rts
@@ -445,7 +466,7 @@ LFF73:  lda     PlayerUpgradeLevel,x
         sta     ObjectState,x
         jmp     ApplyPlayerHitVariantState
 
-LFF81:  lda     #$01
+LFF81:  lda     #AudioStateStartRequested
         sta     ArmorHitAudioState
         lda     #$40
         sta     PlayerUpgradeLevel,x
@@ -457,7 +478,7 @@ LFF81:  lda     #$01
 ; модификатор $20 при отрицательном GameVariant, иначе 0.
 ; X/Y не меняет; портит флаги.
 GetVariantAttributeBits:
-LFF93:  lda     #$01
+LFF93:  lda     #AudioStateStartRequested
         sta     PlayerOrBaseDestructionNoiseAudioState
         lda     GameVariant
         bmi     LFF9F
@@ -474,16 +495,17 @@ UnreferencedFfa2Byte:
 StoreAttributesAndContinueCollisionPass:
 LFFA3:  sta     ObjectAttributes,x
         jmp     AdvancePlayerCollisionPassOrBeginEnemyPass
-; Хвост итерации по объектам: очищает $0170,X для ObjectState=$73, затем уменьшает $5A.
-; При $5A>=0 переходит к CheckNextPlayerTank, иначе возвращается. Портит A,
-; $5A и флаги.
+; Хвост прохода столкновений по игрокам: очищает ObjectSpecialState,X для
+; ObjectState=TankStateDestroyed, затем уменьшает TankCollisionSlot (тот же $5A).
+; При TankCollisionSlot>=0 переходит к CheckNextPlayerTank, иначе возвращается.
+; Портит A, TankCollisionSlot и флаги.
 AdvanceTankCollisionPass:
 LFFA8:  lda     ObjectState,x
         cmp     #TankStateDestroyed
         bne     LFFB3
         lda     #$00
         sta     ObjectSpecialState,x
-LFFB3:  dec     $5A
+LFFB3:  dec     TankCollisionSlot
         bpl     LFFB8
         rts
 

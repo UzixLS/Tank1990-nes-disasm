@@ -6,6 +6,11 @@ FirstEnemyTankSlot    = $02
 TankSlotCount         = $08
 ProjectileSlotCount   = $0A
 
+StageWidthMetatiles   = 13
+StageHeightMetatiles  = 13
+PackedStageRowSize    = 7
+PackedStageByteSize   = StageHeightMetatiles * PackedStageRowSize
+
 DirectionMask         = $03
 StateClassMask        = $F0
 ; Классы E/F продолжают переходную анимацию, но проверки столкновений,
@@ -17,3 +22,13 @@ TankStateDestroyed    = $73
 TankStateSpawning     = $F0
 ProjectileStateActive = $40
 ProjectileStateImpact = $33
+
+PlayerIceTile          = $21
+PlayerIceActiveFlag    = $80
+PlayerIceInactiveMask  = $7F
+PlayerIceInputLockFlag = $10
+PlayerIceReloadValue   = $9C
+
+AudioStateOff            = $00
+AudioStateStartRequested = $01
+AudioStateActive         = $02

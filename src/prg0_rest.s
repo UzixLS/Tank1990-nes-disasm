@@ -7,6 +7,10 @@ ExtraLevels:
 
 ; Расширения Tank 1990 в свободных областях первого PRG-банка.
 
+MinimumLifeDonationCount = $02
+ExtensionPrototypeSavedA = $00
+ExtensionPrototypeSlot   = $5A
+
 ; Передаёт жизнь выбывшему партнёру в режиме двух игроков.
 ; Вход: текущие MenuSelection, Player*Lives и Joy*Held.
 ; Побочные эффекты: меняет оба счётчика жизней; при успехе X — номер
@@ -14,31 +18,33 @@ ExtraLevels:
 ShareLifeWithDefeatedPartner:
 LA553:  jsr     UpdateHalfSecondPhaseFlag
         lda     MenuSelection
-        beq     LA58A
+        beq     FinishLifeSharingCheck
         lda     Player2Lives
-        beq     LA575
-        cmp     #$02
-        bcc     LA58A
+        beq     TryDonateLifeToPlayer2
+        cmp     #MinimumLifeDonationCount
+        bcc     FinishLifeSharingCheck
         lda     Player1Lives
-        bne     LA58A
+        bne     FinishLifeSharingCheck
         lda     Joy1Held
         and     #BUTTON_A
-        beq     LA58A
+        beq     FinishLifeSharingCheck
         inc     Player1Lives
         dec     Player2Lives
         ldx     #$00
         jmp     RespawnAfterSharedLife
 
+TryDonateLifeToPlayer2:
 LA575:  lda     Player1Lives
-        cmp     #$02
-        bcc     LA58A
+        cmp     #MinimumLifeDonationCount
+        bcc     FinishLifeSharingCheck
         lda     Joy2Held
         and     #BUTTON_A
-        beq     LA58A
+        beq     FinishLifeSharingCheck
         inc     Player2Lives
         dec     Player1Lives
         ldx     #$01
         jmp     RespawnAfterSharedLife
+FinishLifeSharingCheck:
 LA58A:  rts
 
 ; Пропускает передачу в код возрождения через периодическую проверку ROM.
@@ -149,10 +155,12 @@ LA60F:  jmp     SpawnTank
 SetIndexedModeExtensionByte:
 LA612:  lda     GameVariant
         cmp     #$03
-        bcc     LA61C
+        bcc     ClearIndexedModeExtension
         lda     #$20
-        bne     LA61E
+        bne     StoreIndexedModeExtension
+ClearIndexedModeExtension:
 LA61C:  lda     #$00
+StoreIndexedModeExtension:
 LA61E:  sta     PlayerUpgradeLevel,x
         rts
 
@@ -160,10 +168,12 @@ LA61E:  sta     PlayerUpgradeLevel,x
 SetPlayerOneModeExtensionByte:
 LA622:  lda     GameVariant
         cmp     #$03
-        bcc     LA62C
+        bcc     ClearPlayerOneModeExtension
         lda     #$20
-        bne     LA62E
+        bne     StorePlayerOneModeExtension
+ClearPlayerOneModeExtension:
 LA62C:  lda     #$00
+StorePlayerOneModeExtension:
 LA62E:  sta     PlayerUpgradeLevel
         rts
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
@@ -179,10 +189,11 @@ LA62E:  sta     PlayerUpgradeLevel
 ; Для слотов игроков (X=0/1) вызывает два UI-обработчика; для остальных ничего не делает.
 ; Побочные эффекты LD9BE/LD138 зависят от их контрактов; регистры не сохраняются.
 UpdatePlayerSlotUi:
-LA680:  cpx     #$02
-        bcs     LA68A
+LA680:  cpx     #PlayerTankCount
+        bcs     FinishPlayerSlotUiUpdate
         jsr     AddScoreDigitsToRecord
         jsr     AwardScoreThresholdLives
+FinishPlayerSlotUiUpdate:
 LA68A:  rts
 
         .byte   $FF,$FF,$FF,$FF,$FF
@@ -193,8 +204,9 @@ LA690:  jsr     WaitForNextFrame
         lda     Joy1Held
         and     #(BUTTON_A | BUTTON_B)
         cmp     #(BUTTON_A | BUTTON_B)
-        beq     LA69C
+        beq     RestartFromResetChord
         rts
+RestartFromResetChord:
 LA69C:  pla
         pla
         lda     #$AB
@@ -219,12 +231,13 @@ LA69C:  pla
         .byte   $08,$02,$04,$06,$09,$01,$04,$06
         .byte   $01,$09,$04,$06,$06,$04
 ; Периодический gate для проверок целостности.
-; Вход: счётчики $17 и $1F. Выход: C=1, если их сумма равна 3, 6 или 9; иначе C=0.
+; Вход: десятитысячные цифры Player1Score+2 и Player2Score+2.
+; Выход: C=1, если их сумма равна 3, 6 или 9; иначе C=0.
 ; Портит A и флаги; X/Y и RAM не меняет.
 ShouldRunIntegrityCheck:
 LA728:  clc
-        lda     $17
-        adc     $1F
+        lda     Player1Score+2
+        adc     Player2Score+2
         cmp     #$03
         beq     LA73B
         cmp     #$06
@@ -1167,7 +1180,7 @@ LBF80:
 ; Вход: A сохраняется в $00, X — объект. Инициализирует три поля объекта значением $40,
 ; затем переходит в общий обработчик LE77A. Портит A и флаги; X сохраняет до перехода.
 InitializeObjectExtensionPrototype:
-LBF84:  sta     $00
+LBF84:  sta     ExtensionPrototypeSavedA
         lda     #$40
         sta     PlayerUpgradeLevel,x
         sta     PlayerExtendedUpgrade,x
@@ -1177,12 +1190,13 @@ LBF84:  sta     $00
 ; Возвращает A=$20, если GameVariant отрицателен, иначе A=0; всегда
 ; запрашивает PlayerOrBaseDestructionNoiseAudioState.
 GetModeExtensionBitsPrototype:
-LBF93:  lda     #$01
+LBF93:  lda     #AudioStateStartRequested
         sta     PlayerOrBaseDestructionNoiseAudioState
         lda     GameVariant
-        bmi     LBF9F
+        bmi     ReturnEnabledModeExtensionBits
         lda     #$00
         rts
+ReturnEnabledModeExtensionBits:
 LBF9F:  lda     #$20
         rts
 
@@ -1196,13 +1210,15 @@ LBFA3:  sta     ObjectAttributes,x
 ; Выход: $5A уменьшен; портит A и флаги, X не меняет до перехода.
 AdvanceExtensionObjectLoopPrototype:
 LBFA8:  lda     ObjectState,x
-        cmp     #$73
-        bne     LBFB3
+        cmp     #TankStateDestroyed
+        bne     AdvancePrototypeExtensionSlot
         lda     #$00
         sta     ObjectSpecialState,x
-LBFB3:  dec     $5A
-        bpl     LBFB8
+AdvancePrototypeExtensionSlot:
+LBFB3:  dec     ExtensionPrototypeSlot
+        bpl     ContinuePrototypeExtensionLoop
         rts
+ContinuePrototypeExtensionLoop:
 LBFB8:  jmp     CheckNextPlayerTank
 
 ; Первые пять байт совпадают с ClearObjectExtensionState по $FFBB, но вместо

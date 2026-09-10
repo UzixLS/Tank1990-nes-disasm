@@ -7,6 +7,12 @@ ProposedTankX        = $56
 ProposedTankY        = $57
 TankProbeXOffset     = $58
 TankProbeYOffset     = $59
+PlayerDirectionCandidate = $00
+LargeTankQuadrantTileBase = $00
+; В первой половине процедуры здесь хранится отношение цели по X (0/1/2),
+; затем готовый индекс направления 0..8.
+TankTargetDirectionIndex = $64
+TankTargetYRelation      = $65
 ; Поддерживает циклический аудиопоток 17, пока хотя бы у одного игрока нажатое
 ; направление и его ObjectState ненулевой. Класс состояния не проверяется.
 ; Побочный эффект: PlayerMovementLoopAudioState принимает 0, 1 (запрос)
@@ -21,7 +27,7 @@ LDB0B:  lda     PlayerMovementLoopAudioState
         ldx     #$01
         jsr     IsPlayerTankMoving
         bne     LDB37
-        lda     #$00
+        lda     #AudioStateOff
         sta     PlayerMovementLoopAudioState
         rts
 
@@ -32,7 +38,7 @@ LDB24:  ldx     #$00
         ldx     #$01
         jsr     IsPlayerTankMoving
         beq     LDB37
-LDB32:  lda     #$01
+LDB32:  lda     #AudioStateStartRequested
         sta     PlayerMovementLoopAudioState
 LDB37:  rts
 
@@ -86,10 +92,10 @@ LDB74:  rts
 ; Преобразует ввод двух игроков в направление и класс $A их ObjectState.
 ; Кадры FrameCounter mod 4 = 2 пропускаются. Ввод принимается только для активного
 ; танка с классом $8-$D. При повороте не на 180° X/Y привязываются к сетке 8 px.
-; PlayerStunTimer+X и отрицательные значения $0103+X могут временно запретить ввод.
+; PlayerStunTimer+X и отрицательные значения PlayerIceState+X могут временно запретить ввод.
 ; Побочные эффекты: ObjectState/ObjectX/ObjectY/ObjectFrame, два таймера игроков,
-; $0103-$0104 и состояние
-; аудиопотока начала скольжения. Портит A, X, $00.
+; PlayerIceState[0..1] и состояние аудиопотока начала скольжения.
+; Портит A, X, PlayerDirectionCandidate.
 UpdatePlayerTankInput:
 LDB75:  lda     FrameCounter
         and     #$01
@@ -109,13 +115,13 @@ LDB83:  lda     ObjectState,x
         jmp     LDBA6
 
 ReadPlayerDirection:
-LDB94:  lda     $0103,x
+LDB94:  lda     PlayerIceState,x
         bpl     LDB9D
-        and     #$10
+        and     #PlayerIceInputLockFlag
         bne     LDBA6
 LDB9D:  lda     Joy1Held,x
         jsr     DecodeDirectionButtons
-        sta     $00
+        sta     PlayerDirectionCandidate
         bpl     LDBB4
 ; Без принятого направления переводит танк в класс $8 с флагом бита 3.
 SetPlayerTankIdleState:
@@ -127,22 +133,22 @@ LDBA6:  lda     #$80
         jmp     LDBED
 
 ApplyPlayerDirection:
-LDBB4:  lda     $0103,x
+LDBB4:  lda     PlayerIceState,x
         bpl     LDBC7
         and     #$1F
         bne     LDBC7
-        lda     #$9C
-        sta     $0103,x
-        lda     #$01
+        lda     #PlayerIceReloadValue
+        sta     PlayerIceState,x
+        lda     #AudioStateStartRequested
         sta     IceSlideStartAudioState
 ; Перекрёстный поворот выравнивает танк по сетке; разворот на 180° не выравнивает.
 AlignPlayerTankForTurn:
 LDBC7:  lda     ObjectState,x
         and     #DirectionMask
-        cmp     $00
+        cmp     PlayerDirectionCandidate
         beq     LDBE7
         eor     #$02
-        cmp     $00
+        cmp     PlayerDirectionCandidate
         beq     LDBE7
         lda     ObjectX,x
         clc
@@ -155,7 +161,7 @@ LDBC7:  lda     ObjectState,x
         and     #$F8
         sta     ObjectY,x
 CommitPlayerTankDirection:
-LDBE7:  lda     $00
+LDBE7:  lda     PlayerDirectionCandidate
         ora     #$A0
         sta     ObjectState,x
 LDBED:  dex
@@ -168,7 +174,8 @@ ProjectileDrawState0:
 LDBF0:  rts
 
 ; Обновляет восемь танков в обратном порядке. Расписание пропускает часть объектов
-; по чётности FrameCounter/слота; танки игроков обслуживаются по отдельному ритму. $0100
+; по чётности FrameCounter/слота; танки игроков обслуживаются по отдельному ритму.
+; EnemyFreezeTimer
 ; уменьшается раз в 64 кадра. Побочные эффекты зависят от обработчика состояния;
 ; всегда меняет CurrentTankSlot и портит A, X, Y, ScratchPtrLo/Hi.
 UpdateTanks:
@@ -229,16 +236,18 @@ LDC3D:  lda     ObjectState,x
         sta     ScratchPtrHi
         jmp     (ScratchPtrLo)
 
-; Класс $8: промежуточное/недвижное состояние. Поле $0103+X может продлить его для
-; игрока; иначе биты 3..2 уменьшаются по $04 до перехода в класс $A.
+; Класс $8: промежуточное/недвижное состояние. PlayerIceState+X может продлить его для
+; игрока; иначе биты 3..2 уменьшаются по $04 до перехода в класс $A. Вход:
+; X=слот танка. Меняет ObjectState, а при скольжении также PlayerIceState и
+; ObjectFrame; портит A, X/Y сохраняет.
 TankLogicState8:
         cpx     #FirstEnemyTankSlot
         bcs     LDC6B
-        lda     $0103,x
+        lda     PlayerIceState,x
         bpl     LDC6B
-        and     #$7F
+        and     #PlayerIceInactiveMask
         beq     LDC6B
-        dec     $0103,x
+        dec     PlayerIceState,x
         lda     ObjectFrame,x
         eor     #$04
         sta     ObjectFrame,x
@@ -262,19 +271,20 @@ LDC7B:  rts
 ; ProposedTankX/ProposedTankY, TankProbeXOffset/TankProbeYOffset и ScratchPtrLo/Hi.
 TankLogicStateA:
         cpx     #FirstEnemyTankSlot
-        bcc     LDC97
+        bcc     AdvanceTankMovement
         lda     ObjectX,x
         and     #$07
-        bne     LDC97
+        bne     AdvanceTankMovement
         lda     ObjectY,x
         and     #$07
-        bne     LDC97
+        bne     AdvanceTankMovement
         jsr     NextRandomByte
         and     #$0F
-        bne     LDC97
+        bne     AdvanceTankMovement
         jsr     ChooseEnemyTankAiMode
         rts
 
+AdvanceTankMovement:
 LDC97:  lda     ObjectState,x
         and     #DirectionMask
         tay
@@ -282,7 +292,7 @@ LDC97:  lda     ObjectState,x
         asl     a
         asl     a
         asl     a
-        sta     $59
+        sta     TankProbeYOffset
         lda     DirectionDeltaY,y
         clc
         adc     ObjectY,x
@@ -291,80 +301,95 @@ LDC97:  lda     ObjectState,x
         asl     a
         asl     a
         asl     a
-        sta     $58
+        sta     TankProbeXOffset
         lda     DirectionDeltaX,y
         clc
         adc     ObjectX,x
         sta     ProposedTankX
         clc
-        adc     $58
+        adc     TankProbeXOffset
         clc
-        adc     $59
+        adc     TankProbeYOffset
         jsr     ClampFirstTankProbeX
         tax
         lda     ProposedTankY
         clc
-        adc     $58
+        adc     TankProbeXOffset
         clc
-        adc     $59
+        adc     TankProbeYOffset
         jsr     ClampFirstTankProbeY
         tay
         jsr     PixelCoordinatesToShadowPointer
         lda     (ScratchPtrLo),y
-        bmi     LDD11
-        beq     LDCDF
+        bmi     HandleBlockedTankMovement
+        beq     ProbeSecondTankCorner
         jmp     RouteFirstTerrainProbe
 
         .byte   $EA
 ProbeSecondTankCorner:
+; Вход: CurrentTankSlot и ProposedTankX/Y задают перемещение, TankProbeX/YOffset —
+; переднюю грань танка. Проверяет второй её угол через NametableShadow.
+; Пустой terrain передаёт управление CommitProposedTankMovement, блокирующий —
+; HandleBlockedTankMovement, прочий — RouteSecondTerrainProbe.
+; Не возвращается самостоятельно; портит A/X/Y и ScratchPtrLo/Hi.
 LDCDF:  lda     ProposedTankX
         clc
-        adc     $58
+        adc     TankProbeXOffset
         sec
-        sbc     $59
+        sbc     TankProbeYOffset
         jsr     ClampFirstTankProbeX
         tax
         lda     ProposedTankY
         clc
-        adc     $59
+        adc     TankProbeYOffset
         sec
-        sbc     $58
+        sbc     TankProbeXOffset
         jsr     ClampFirstTankProbeY
         tay
         jsr     PixelCoordinatesToShadowPointer
         lda     (ScratchPtrLo),y
-        bmi     LDD11
-        beq     LDD04
+        bmi     HandleBlockedTankMovement
+        beq     CommitProposedTankMovement
         jmp     RouteSecondTerrainProbe
 
         .byte   $EA
 CommitProposedTankMovement:
+; Фиксирует предложенные координаты для CurrentTankSlot и переключает bit2
+; ObjectFrame как фазу гусениц. Выход: X=CurrentTankSlot, A=новый ObjectFrame,X;
+; Y сохраняется. Меняет ObjectX/Y и ObjectFrame текущего танка.
 LDD04:  ldx     CurrentTankSlot
         lda     ProposedTankX
         sta     ObjectX,x
         lda     ProposedTankY
         sta     ObjectY,x
-        jmp     LDD29
+        jmp     ToggleTankAnimationFrame
 
 HandleBlockedTankMovement:
+; Отменяет предложенное перемещение. Для игрока только переключает фазу гусениц.
+; Противник с вероятностью 1/4 разворачивается через ReverseEnemyTankDirection;
+; иначе переводится в класс $8 с установленным bit3 и переключает ObjectFrame.
+; Игрок сразу переключает ObjectFrame. Выход зависит от выбранного хвоста;
+; X=CurrentTankSlot, Y сохраняется. Портит A, флаги и RNG; ObjectX/Y не меняются.
 LDD11:  ldx     CurrentTankSlot
         cpx     #FirstEnemyTankSlot
-        bcc     LDD29
+        bcc     ToggleTankAnimationFrame
         jsr     NextRandomByte
         and     #$03
-        beq     LDD30
+        beq     ReverseEnemyTankDirection
         lda     #$80
         jsr     SetTankStateClass
         lda     #$08
         ora     ObjectState,x
         sta     ObjectState,x
+ToggleTankAnimationFrame:
 LDD29:  lda     ObjectFrame,x
         eor     #$04
         sta     ObjectFrame,x
         rts
 
 ; При столкновении на узле 8x8 переводит противника в класс $9, затем разворачивает
-; направление на 180 градусов. Вне узла меняется только направление.
+; направление на 180 градусов. Вне узла меняется только направление. Вход:
+; X=слот противника. Выход: A=новый ObjectState,X; X/Y и прочую RAM сохраняет.
 ReverseEnemyTankDirection:
 LDD30:  lda     ObjectX,x
         and     #$07
@@ -380,7 +405,9 @@ LDD41:  lda     ObjectState,x
         rts
 
 ; Класс $9 выбирает новое направление: половина вызовов переходит к более крупному
-; AI-решению, остальные случайно поворачивают на соседнее направление.
+; AI-решению, остальные случайно поворачивают на соседнее направление. Вход:
+; X=слот противника. Меняет ObjectState,X и RNG; портит A, Y может быть изменён
+; целевым AI-путём, X сохраняется.
 TankLogicState9:
         jsr     NextRandomByte
         and     #$01
@@ -404,8 +431,9 @@ LDD63:  and     #DirectionMask
 LDD6A:  jsr     ChooseEnemyTankAiMode
         rts
 
-; Корректирует координату первой точки переднего края, не позволяя ей пересечь
-; предложенную координату движения ProposedTankX/ProposedTankY. Эти два входа сохраняют X/Y.
+; Корректирует координату точки переднего края, не позволяя ей совпасть с базовой
+; предложенной координатой или перейти через неё. Вход: A=проверяемая X; выход:
+; A либо неизменён, либо уменьшен на 1. X/Y и RAM сохраняет.
 ClampFirstTankProbeX:
 LDD6E:  cmp     ProposedTankX
         bcc     LDD75
@@ -414,15 +442,17 @@ LDD6E:  cmp     ProposedTankX
 LDD75:  rts
 
 ClampFirstTankProbeY:
+; Аналог ClampFirstTankProbeX для A=проверяемой Y и ProposedTankY.
 LDD76:  cmp     ProposedTankY
         bcc     LDD7D
         sec
         sbc     #$01
 LDD7D:  rts
 
-; Классы $B-$D выбирают фиксированную/динамическую цель и сразу сводятся к классу $A
-; с направлением, выбранным таблицей LE486. $D целится в координаты слота 0, $C -- в
-; пару $91/$99, $B -- в точку ($78,$D8). Точное игровое назначение $91/$99 не установлено.
+; Классы $B-$D выбирают цель и сразу сводятся к классу $A с направлением из
+; TankAiDirectionStateTable. $D целится в игрока 1 (слот 0), $C — в игрока 2
+; (слот 1), $B — в базу в точке ($78,$D8). Портят A/Y, TankTargetX/Y и рабочие
+; поля выбора направления; X сохраняется.
 TankLogicStateD:
         lda     ObjectX
         sta     TankTargetX
@@ -431,9 +461,9 @@ TankLogicStateD:
         jmp     LDD9C
 
 TankLogicStateC:
-        lda     $91
+        lda     ObjectX+1
         sta     TankTargetX
-        lda     $99
+        lda     ObjectY+1
         sta     TankTargetY
         jmp     LDD9C
 
@@ -448,7 +478,9 @@ LDD9C:  jsr     ChooseTankStateTowardTarget
 
 ; Выбирает направление к TankTargetX/Y. Знаки разностей X/Y кодируются значениями
 ; 0..2, образуют индекс 0..8, а альтернативная половина таблицы используется по
-; кадровому/случайному условию. Выход: A -- готовое состояние из LE486. Портит A/Y,$64/$65.
+; кадровому/случайному условию. Выход: A — готовое состояние из
+; TankAiDirectionStateTable. Портит A/Y, TankTargetDirectionIndex и
+; TankTargetYRelation; для противника также RNG. X сохраняет.
 ChooseTankStateTowardTarget:
 LDDA2:  lda     TankTargetX
         sec
@@ -456,47 +488,53 @@ LDDA2:  lda     TankTargetX
         jsr     NormalizeSubtractionSign
         clc
         adc     #$01
-        sta     $64
+        sta     TankTargetDirectionIndex
         lda     TankTargetY
         sec
         sbc     ObjectY,x
         jsr     NormalizeSubtractionSign
         clc
         adc     #$01
-        sta     $65
+        sta     TankTargetYRelation
         asl     a
         clc
-        adc     $65
+        adc     TankTargetYRelation
         clc
-        adc     $64
-        sta     $64
+        adc     TankTargetDirectionIndex
+        sta     TankTargetDirectionIndex
         cpx     #FirstEnemyTankSlot
-        bcs     LDDD4
+        bcs     ChooseRandomEnemyAxisPriority
         txa
         asl     a
         eor     SlowFrameCounter
         and     #$02
-        beq     LDDE4
-        jmp     LDDDB
+        beq     UsePrimaryTargetDirection
+        jmp     UseAlternateTargetDirection
 
+ChooseRandomEnemyAxisPriority:
 LDDD4:  jsr     NextRandomByte
         and     #$01
-        beq     LDDE4
+        beq     UsePrimaryTargetDirection
+UseAlternateTargetDirection:
 LDDDB:  lda     #$09
         clc
-        adc     $64
+        adc     TankTargetDirectionIndex
         tay
-        jmp     LDDE6
+        jmp     LoadTargetDirectionState
 
-LDDE4:  ldy     $64
-LDDE6:  lda     LE486,y
+UsePrimaryTargetDirection:
+LDDE4:  ldy     TankTargetDirectionIndex
+LoadTargetDirectionState:
+LDDE6:  lda     TankAiDirectionStateTable,y
         rts
 
 ; Классы $1-$7 -- обратный фазовый отсчёт. Класс уменьшается, когда младшая
 ; тетрада после DEC достигает нуля; после $2 следует промежуточная фаза $16,
 ; остальные получают младшую фазу 3.
 ; Завершение класса $1 удаляет объект: у игрока списывается жизнь и при наличии запаса
-; запускается возрождение, у противника уменьшается счётчик $80.
+; запускается возрождение, у противника уменьшается EnemiesRemaining. Вход:
+; X=слот танка. Меняет ObjectState и при завершении — число жизней/противников;
+; SpawnTank может изменить дополнительные поля. Портит A, X/Y сохраняются без спавна.
 TankLogicStates1To7:
         dec     ObjectState,x
         lda     ObjectState,x
@@ -555,6 +593,8 @@ LDE34:  lda     Player1Lives
 LDE45:  rts
 
 InitializePlayerTransitionRecord:
+; Завершает создание переходного объекта: timer=13, Y=$D8 и FrameCounter=0.
+; Выход: A=0; X/Y сохраняет. Меняет только перечисленные поля.
 LDE46:  lda     #$0D
         sta     TransitionObjectTimer
         lda     #$D8
@@ -564,6 +604,8 @@ LDE46:  lda     #$0D
         rts
 
 ; Класс $F проигрывает возрастающий 14-фазный переход и становится классом $E.
+; Вход: X=слот. Меняет ObjectState,X; выход A — младшая фаза либо $E0,
+; X/Y и остальную RAM сохраняет.
 TankLogicStateF:
         inc     ObjectState,x
         lda     ObjectState,x
@@ -575,6 +617,8 @@ TankLogicStateF:
 LDE63:  rts
 
 ; Класс $E проигрывает возрастающий 14-фазный переход, затем инициализирует танк.
+; Вход: X=слот. До последней фазы меняет только ObjectState,X и сохраняет X/Y;
+; InitializeTankState на последней фазе меняет остальные поля танка.
 TankLogicStateE:
         inc     ObjectState,x
         lda     ObjectState,x
@@ -587,36 +631,44 @@ LDE71:  rts
 ; Выбирает следующий AI-класс. Сравнения EnemyActivityInterval с
 ; SlowFrameCounter
 ; переключают между случайным направлением класса $A и целевыми классами $B-$D.
-; Вход: X -- слот; выход: ObjectState,X изменён, A содержит записанный класс.
+; Вход: X — слот противника. Если игрок 1 неактивен, выбирает цель игрока 2;
+; иначе чётные слоты целятся в игрока 1, а нечётные — в живого игрока 2.
+; Выход: ObjectState,X изменён, A содержит записанный класс. Портит A и RNG;
+; X/Y сохраняет.
 ChooseEnemyTankAiMode:
 LDE72:  lda     EnemyActivityInterval
         lsr     a
         lsr     a
         cmp     SlowFrameCounter
-        bcs     LDE7F
+        bcs     MaybeChooseRandomEnemyDirection
         lda     #$B0
-        jmp     LDEA2
+        jmp     CommitEnemyAiClass
 
+MaybeChooseRandomEnemyDirection:
 LDE7F:  lsr     a
         cmp     SlowFrameCounter
-        bcc     LDE8E
+        bcc     ChooseEnemyPlayerTarget
         jsr     NextRandomByte
         and     #DirectionMask
         ora     #$A0
         sta     ObjectState,x
         rts
 
+ChooseEnemyPlayerTarget:
 LDE8E:  lda     ObjectState
-        beq     LDE9B
+        beq     TargetSecondPlayer
         txa
         and     #$01
-        beq     LDEA0
-        lda     $A1
-        beq     LDEA0
+        beq     TargetFirstPlayer
+        lda     ObjectState+1
+        beq     TargetFirstPlayer
+TargetSecondPlayer:
 LDE9B:  lda     #$C0
-        jmp     LDEA2
+        jmp     CommitEnemyAiClass
 
+TargetFirstPlayer:
 LDEA0:  lda     #$D0
+CommitEnemyAiClass:
 LDEA2:  jsr     SetTankStateClass
         rts
 
@@ -665,6 +717,10 @@ DrawTankStates5To7:
         rts
 
 ComputeAndDrawTankTransitionFrame:
+; Вход: A — ObjectState класса $5-$7, X/Y — экранные координаты пары спрайтов.
+; Преобразует класс в tile $F9/$F5/$F1, задаёт RenderAttributes=3 и выводит
+; пару через EmitTwoTileOamPair. Портит A/X/Y, OamTile, RenderAttributes,
+; OAM cursor/shadow и scratch-поля EmitTwoTileOamPair.
 LDEE2:  lsr     a
         lsr     a
         lsr     a
@@ -682,7 +738,7 @@ LDEF0:  clc
         adc     #$F1
         sta     OamTile
         lda     #$03
-        sta     $04
+        sta     RenderAttributes
         jsr     EmitTwoTileOamPair
         rts
 
@@ -704,7 +760,7 @@ DrawTankState1:
         adc     #$B9
         sta     OamTile
         lda     #$03
-        sta     $04
+        sta     RenderAttributes
         ldy     ObjectY,x
         lda     ObjectX,x
         tax
@@ -738,7 +794,7 @@ DrawTankState2:
 ; формируя объект 32x32. LDF99 выбирает tile-base по классу и номеру квадранта.
 DrawTankStates3To4:
         lda     #$03
-        sta     $04
+        sta     RenderAttributes
         lda     #$00
         sta     SpriteBehindTerrainMask
         jsr     PrepareLargeTankQuadrant
@@ -789,19 +845,23 @@ DrawTankStates3To4:
         rts
 
 PrepareLargeTankQuadrant:
+; Вход: A=номер квадранта 0..3, CurrentTankSlot — рисуемый танк класса $3/$4.
+; Вычисляет OamTile для квадранта, затем возвращает его координаты одновременно
+; как A=X=ObjectX и Y=ObjectY. Меняет LargeTankQuadrantTileBase и OamTile;
+; Object/RAM кроме этих scratch-полей не меняет.
 LDF99:  ldx     CurrentTankSlot
         asl     a
         asl     a
         clc
         adc     #$D1
-        sta     $00
+        sta     LargeTankQuadrantTileBase
         lda     ObjectState,x
         and     #StateClassMask
         sec
         sbc     #$30
         eor     #$10
         clc
-        adc     $00
+        adc     LargeTankQuadrantTileBase
         sta     OamTile
         ldy     ObjectY,x
         lda     ObjectX,x
@@ -844,7 +904,7 @@ LDFDD:  lda     PlayerStunTimer,x
         rts
 
 LDFE8:  txa
-LDFE9:  sta     $04
+LDFE9:  sta     RenderAttributes
         lda     ObjectState,x
         and     #DirectionMask
         pha
@@ -878,7 +938,7 @@ LE019:  asl     a
         adc     #$A1
         sta     OamTile
         lda     #$03
-        sta     $04
+        sta     RenderAttributes
         ldy     ObjectY,x
         lda     ObjectX,x
         tax

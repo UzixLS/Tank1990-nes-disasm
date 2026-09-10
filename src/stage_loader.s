@@ -3,12 +3,15 @@
 ; Карта занимает 91 байт: 13 строк по 14 нибблов. Первые 13 нибблов каждой
 ; строки -- TSA-индексы поля 13x13, последний ниббл -- неиспользуемый заполнитель.
 
-StageSetSelector       = $8F
-StageSetLength         = $8F
+StageWrapOffset        = $00
 PackedStageNibbleIndex = $5A
 StageDrawX             = $56
 StageDrawY             = $57
-PackedStageByteSize    = $5B
+
+; StageSetSelector нужен только до чтения дескриптора. Затем тот же байт
+; становится StageSetLength; эти два имени описывают непересекающиеся времена жизни.
+; StageWrapOffset сначала считает 2*число полных оборотов по набору, затем хранит
+; нормализованный номер карты для цикла прибавления PackedStageByteSize.
 
 ; Выбирает описатель набора по младшему нибблу $46, вычисляет адрес StageNumber
 ; и распаковывает поле 13x13 в shadow nametable через DrawMetatile.
@@ -17,19 +20,21 @@ PackedStageByteSize    = $5B
 ; Формула адреса точно сохраняет поведение ROM: для длины набора N от StageNumber
 ; многократно вычитается N; к base добавляются (2*wraps)%6 и
 ; 91*(normalizedStage-1).
-; Побочно: меняет A/X/Y, ScratchPtr, AuxPtr, $00, $5A, $56/$57, $8F, shadow nametable,
+; Побочно: меняет A/X/Y, ScratchPtr, AuxPtr, StageWrapOffset, PackedStageNibbleIndex,
+; StageDrawX/Y, StageSetSelector/Length, shadow nametable,
 ; attribute shadow и временно PPU-очередь. После каждого метатайла PpuBufferPos сбрасывается:
 ; эта процедура строит shadow, а не передаёт всю карту в PPU.
 LoadAndDrawStage:
 LEF76:  cmp     #$FF
-        bne     LEF82
+        bne     SelectStageSetDescriptor
         lda     #$20
         sta     StageNumber
         lda     #$06
-        bne     LEF86
+        bne     UseSelectedStageSet
 SelectStageSetDescriptor:
 LEF82:  lda     GameVariant
         and     #$0F
+UseSelectedStageSet:
 LEF86:  sta     StageSetSelector
         asl     a
         clc
@@ -44,31 +49,34 @@ LEF86:  sta     StageSetSelector
         lda     ClassicLevelSetDescriptors,x
         sta     StageSetLength
         lda     #$00
-        sta     $00
+        sta     StageWrapOffset
         lda     StageNumber
-; $00 считает удвоенное число полных оборотов по набору; A остаётся в диапазоне 1..N.
+; StageWrapOffset считает удвоенное число полных оборотов; A остаётся в диапазоне 1..N.
 NormalizeStageWithinSet:
 LEFA4:  cmp     StageSetLength
-        bcc     LEFB3
-        beq     LEFB3
+        bcc     StageNumberNormalized
+        beq     StageNumberNormalized
         sec
         sbc     StageSetLength
-        inc     $00
-        inc     $00
-        bne     LEFA4
+        inc     StageWrapOffset
+        inc     StageWrapOffset
+        bne     NormalizeStageWithinSet
+StageNumberNormalized:
 LEFB3:  pha
         jsr     RemainderBySix
         adc     ScratchPtrLo
         sta     ScratchPtrLo
-        bcc     LEFBF
+        bcc     StageDataBaseAdjusted
         inc     ScratchPtrHi
+StageDataBaseAdjusted:
 LEFBF:  pla
-        sta     $00
-LEFC2:  dec     $00
-        beq     LEFCE
+        sta     StageWrapOffset
+AdvanceToSelectedStage:
+LEFC2:  dec     StageWrapOffset
+        beq     BuildStageShadow
         lda     #PackedStageByteSize
         jsr     AddAToPointer
-        jmp     LEFC2
+        jmp     AdvanceToSelectedStage
 
 ; ScratchPtr теперь указывает на 91-байтную упакованную карту; AuxPtr сохраняет её для чтения.
 BuildStageShadow:
@@ -81,24 +89,28 @@ LEFCE:  lda     #$00
         lda     #$10
         sta     StageDrawY
 ; Одна строка поля строится за кадр. X/Y идут от $10 до $D0 с шагом $10.
+BeginStageRow:
 LEFDE:  jsr     WaitForNextFrame
         lda     #$10
         sta     StageDrawX
+DecodeNextStageMetatile:
 LEFE5:  lda     PackedStageNibbleIndex
         lsr     a
         tay
         lda     PackedStageNibbleIndex ; Чётный индекс -- старший ниббл байта, нечётный -- младший.
         and     #$01
-        beq     LEFF6
+        beq     ExtractHighStageNibble
         lda     (AuxPtrLo),y
         and     #$0F
-        jmp     LEFFC
+        jmp     DrawDecodedStageMetatile
 
+ExtractHighStageNibble:
 LEFF6:  lda     (AuxPtrLo),y
         lsr     a
         lsr     a
         lsr     a
         lsr     a
+DrawDecodedStageMetatile:
 LEFFC:  ldx     StageDrawX
         ldy     StageDrawY
         jsr     DrawMetatile
@@ -110,12 +122,12 @@ LEFFC:  ldx     StageDrawX
         adc     #$10
         sta     StageDrawX
         cmp     #$E0
-        bne     LEFE5
+        bne     DecodeNextStageMetatile
         inc     PackedStageNibbleIndex
         lda     StageDrawY
         clc
         adc     #$10
         sta     StageDrawY
         cmp     #$E0
-        bne     LEFDE
+        bne     BeginStageRow
         rts

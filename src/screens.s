@@ -2,16 +2,19 @@
 
 StatisticsPlayer1Count = $5D
 StatisticsPlayer2Count = $5E
+StatisticsEnemyType    = $5A
 StatisticsRowActive    = $7C
 Player1StageKillTotal  = $7D
 Player2StageKillTotal  = $7E
+CurtainRowIndex        = $57
+NametableRowFillTile   = $63
 
 ; Активный экран заголовка и главного меню.
 ; Использует слот танка 0 как мигающий курсор; SELECT циклически выбирает
 ; 1 PLAYER / 2 PLAYERS / CONSTRUCTION, START передаёт управление через таблицу.
-; Если $4B=0, после десяти тиков $0A возвращается для запуска демо-цикла.
-; Скрытая комбинация ввода меняет $4A; значение $2E при START открывает LC4A1.
-; Побочно меняет состояние танков, MenuSelection, $0A/$4A, scroll/nametable,
+; Если ConstructionMapFlag=0, после десяти тиков SlowFrameCounter возвращается для запуска демо-цикла.
+; Скрытая комбинация ввода меняет TitleSecretInputCode; значение $2E при START открывает variant-меню.
+; Побочно меняет состояние танков, MenuSelection, SlowFrameCounter/TitleSecretInputCode, scroll/nametable,
 ; палитру и OAM. A/X/Y не сохраняются. Ветви START снимают со стека адрес
 ; вызова TitleScreen и потому не возвращаются обычным RTS.
 TitleScreen:
@@ -30,7 +33,7 @@ LC9C0:  lda     #$03
         sta     PlayerStunTimer
         sta     PlayerStunTimer+1
         sta     VerticalScroll
-        sta     $4A
+        sta     TitleSecretInputCode
         lda     #$02
         sta     NametableBits
 TitleMenuLoop:
@@ -54,19 +57,19 @@ LCA04:  lda     Joy1Held
         lda     Joy1Pressed
         and     #BUTTON_A
         beq     LCA17
-        ; Down удерживается, A нажата в этом кадре: старший ниббл $4A растёт.
+        ; Down удерживается, A нажата в этом кадре: старший ниббл TitleSecretInputCode растёт.
         lda     #$10
         clc
-        adc     $4A
-        sta     $4A
+        adc     TitleSecretInputCode
+        sta     TitleSecretInputCode
 LCA17:  lda     Joy1Held
         and     #BUTTON_RIGHT
         beq     LCA25
         lda     Joy1Pressed
         and     #BUTTON_B
         beq     LCA25
-        ; Right удерживается, B нажата в этом кадре: $4A уменьшается на единицу.
-        dec     $4A
+        ; Right удерживается, B нажата в этом кадре: TitleSecretInputCode уменьшается на единицу.
+        dec     TitleSecretInputCode
 LCA25:  lda     MenuSelection
         cmp     #$03
         bcc     LCA2F
@@ -76,20 +79,20 @@ LCA2F:  jsr     UpdateTitleCursor
         lda     SlowFrameCounter
         cmp     #$0A
         bne     LCA3D
-        lda     $4B
+        lda     ConstructionMapFlag
         bne     LCA3D
         rts
 
 LCA3D:  lda     Joy1Pressed
         and     #BUTTON_START
         beq     LC9E6
-        lda     $4A
+        lda     TitleSecretInputCode
         cmp     #$2E
         bne     LCA52
         jsr     RunVariantSelectionMenu
         pla
         pla
-        jmp     LC092
+        jmp     MainFrontendLoop
 
         .byte   $EA
 LCA52:  lda     #$00
@@ -114,11 +117,12 @@ LCA69:  .word   StartOnePlayer, StartTwoPlayers, StartConstruction
 ; GameMode=$05, новая игровая сессия и переход к выбору этапа.
 StartOnePlayer:
         lda     #$05
-        jmp     LCA76
+        jmp     StartSelectedGameMode
 
 ; GameMode=$07, новая игровая сессия и переход к выбору этапа.
 StartTwoPlayers:
         lda     #$07
+StartSelectedGameMode:
 LCA76:  sta     GameMode
         jsr     InitializeGameSession
         jmp     SelectStage
@@ -229,8 +233,8 @@ LCAF5:  lda     #>BlankBaseRow
         ldy     #$1B
         jsr     QueueTileAtCoordinates
 
-; Общий хвост обновления палитры нижней части базы: $07F3=0,
-; в $07F4 сохраняются только биты $CC. Очередь получает адрес $23F3 и два байта.
+; Общий хвост обновления палитры нижней части базы: BaseAttributeUpper=0,
+; в BaseAttributeLower сохраняются только биты $CC. Очередь получает адрес $23F3 и два байта.
 QueueBrickBaseAttributes:
 LCB31:
         ldx     PpuBufferPos
@@ -241,12 +245,12 @@ LCB31:
         sta     PpuUpdateBuffer,x
         inx
         lda     #$00
-        sta     $07F3
+        sta     BaseAttributeUpper
         sta     PpuUpdateBuffer,x
         inx
-        lda     $07F4
+        lda     BaseAttributeLower
         and     #$CC
-        sta     $07F4
+        sta     BaseAttributeLower
         sta     PpuUpdateBuffer,x
         inx
         lda     #$FF
@@ -256,7 +260,7 @@ LCB31:
         rts
 
 ; Рисует только две центральные строки целой базы без окружающих стен.
-; Очищает верхнюю пару палитр в $07F3 маской $3F и ставит атрибут в очередь.
+; Очищает верхнюю пару палитр в BaseAttributeUpper маской $3F и ставит атрибут в очередь.
 ; Меняет A/X/Y, ScratchPtr, shadow nametable/attributes и PPU-очередь.
 DrawBareBase:
 LCB5D:  lda     #>IntactBaseUpperTiles
@@ -280,9 +284,9 @@ LCB5D:  lda     #>IntactBaseUpperTiles
         lda     #$F3
         sta     PpuUpdateBuffer,x
         inx
-        lda     $07F3
+        lda     BaseAttributeUpper
         and     #$3F
-        sta     $07F3
+        sta     BaseAttributeUpper
         sta     PpuUpdateBuffer,x
         inx
         lda     #$FF
@@ -292,7 +296,7 @@ LCB5D:  lda     #>IntactBaseUpperTiles
         rts
 
 ; Рисует четыре семитайловые строки базы со стальным ограждением.
-; Устанавливает соответствующие палитровые поля $07F3/$07F4 и ставит их в очередь.
+; Устанавливает соответствующие палитровые поля BaseAttributeUpper/Lower и ставит их в очередь.
 ; Вызывается в том числе при мигании заканчивающегося защитного эффекта $45.
 ; Меняет A/X/Y, ScratchPtr, shadow nametable/attributes и PPU-очередь.
 DrawSteelBaseEnclosure:
@@ -332,13 +336,13 @@ LCB9E:  lda     #>BlankSteelBaseRow
         sta     PpuUpdateBuffer,x
         inx
         lda     #$3F
-        sta     $07F3
+        sta     BaseAttributeUpper
         sta     PpuUpdateBuffer,x
         inx
-        lda     $07F4
+        lda     BaseAttributeLower
         and     #$CC
         ora     #$33
-        sta     $07F4
+        sta     BaseAttributeLower
         sta     PpuUpdateBuffer,x
         inx
         lda     #$FF
@@ -366,7 +370,7 @@ LCC08:  lda     #>DestroyedBaseUpperTiles
         jsr     QueueTileAtCoordinates
         rts
 
-; За 64 кадра переносит shadow attribute table $07C0-$07FF в PPU $23C0-$23FF,
+; За 64 кадра переносит NametableAttributes в PPU $23C0-$23FF,
 ; по одному байту за кадр. Меняет A/X/Y, ScratchPtr и PPU-очередь.
 UploadAttributesGradually:
 LCC27:  ldy     #$00
@@ -382,7 +386,7 @@ LCC31:  jsr     WaitForNextFrame
         lda     ScratchPtrLo
         sta     PpuUpdateBuffer,x
         inx
-        lda     $07C0,y
+        lda     NametableAttributes,y
         iny
         sta     PpuUpdateBuffer,x
         inx
@@ -397,8 +401,9 @@ LCC31:  jsr     WaitForNextFrame
         rts
 
 ; Ставит в PPU-очередь полную 32-тайловую строку nametable.
-; Вход: Y — номер строки; если $63=0, данные берутся из shadow, иначе вся строка
-; заполняется тайлом $63. Меняет A/X/Y, ScratchPtr, $00 и PPU-очередь.
+; Вход: Y — номер строки; если NametableRowFillTile=0, данные берутся из
+; shadow, иначе вся строка заполняется этим тайлом. Меняет A/X/Y, ScratchPtr,
+; scratch $00 и PPU-очередь.
 QueueNametableRow:
 LCC5C:  ldx     #$00
         jsr     TileCoordinatesToShadowAddress
@@ -414,7 +419,7 @@ LCC5C:  ldx     #$00
         sta     PpuUpdateBuffer,x
         inx
         ldy     #$00
-LCC78:  lda     $63
+LCC78:  lda     NametableRowFillTile
         bne     LCC7E
         lda     (ScratchPtrLo),y
 LCC7E:  sta     PpuUpdateBuffer,x
@@ -429,51 +434,52 @@ LCC7E:  sta     PpuUpdateBuffer,x
         rts
 
 ; Шторка перед выбором этапа: за 16 кадров заполняет тайлом $11 парные строки,
-; двигаясь от верхнего/нижнего краёв к центру. Меняет $57/$63 и PPU-очередь.
+; двигаясь от верхнего/нижнего краёв к центру. Меняет
+; CurtainRowIndex/NametableRowFillTile и PPU-очередь.
 CloseNametableCurtain:
 LCC90:  lda     #$11
-        sta     $63
+        sta     NametableRowFillTile
         lda     #$00
-        sta     $57
+        sta     CurtainRowIndex
 LCC98:  jsr     WaitForNextFrame
-        ldy     $57
+        ldy     CurtainRowIndex
         jsr     QueueNametableRow
         lda     #$1D
         sec
-        sbc     $57
+        sbc     CurtainRowIndex
         tay
         jsr     QueueNametableRow
-        inc     $57
-        lda     $57
+        inc     CurtainRowIndex
+        lda     CurtainRowIndex
         cmp     #$10
         bne     LCC98
         rts
 
 ; Обратная шторка: восстанавливает пары строк из shadow, двигаясь от центра
 ; к краям. Центральная пара при первых двух проходах записывается дважды.
-; Меняет $57/$63 и PPU-очередь.
+; Меняет CurtainRowIndex/NametableRowFillTile и PPU-очередь.
 OpenNametableCurtain:
 LCCB2:  lda     #$00
-        sta     $63
+        sta     NametableRowFillTile
         lda     #$0F
-        sta     $57
+        sta     CurtainRowIndex
 LCCBA:  jsr     WaitForNextFrame
-        ldy     $57
+        ldy     CurtainRowIndex
         jsr     QueueNametableRow
         lda     #$1D
         sec
-        sbc     $57
+        sbc     CurtainRowIndex
         tay
         jsr     QueueNametableRow
-        dec     $57
-        lda     $57
+        dec     CurtainRowIndex
+        lda     CurtainRowIndex
         cmp     #$FF
         bne     LCCBA
         rts
 
 ; Показывает и анимирует послеэтапную статистику.
-; $73-$76 и $77-$7A — четыре счётчика уничтоженных типов для игроков 1 и 2;
-; их суммы сохраняются в $7D/$7E. Для каждой категории процедура по одному
+; Player1KillCounts/Player2KillCounts — четыре счётчика уничтоженных типов;
+; их суммы сохраняются в Player1/Player2StageKillTotal. Для каждой категории процедура по одному
 ; уменьшает исходные счётчики, увеличивает сценические счётчики $5D/$5E,
 ; прибавляет награду ScoreAwardsByEnemyType к записям $25/$2D и обновляет UI.
 ; После четырёх категорий выводит суммы. При $68!=0, режиме двух игроков и
@@ -481,7 +487,7 @@ LCCBA:  jsr     WaitForNextFrame
 ; награду PreparePackedScoreIncrement(0), то есть 1000 очков.
 ; Побочно уничтожает исходные счётчики $73-$7A, меняет записи счёта $15-$32,
 ; жизни/флаги награды, PPU/OAM, состояния аудиопотоков и рабочие
-; $5A/$5D/$5E/$7C-$7E.
+; StatisticsEnemyType/StatisticsPlayer*Count/StatisticsRowActive и итоговые счётчики.
 ; A/X/Y не сохраняются; работа занимает много кадров и завершается с
 ; NametableBits=0, $4D=$60=$6B=0.
 ShowStageStatistics:
@@ -490,22 +496,22 @@ LCCD4:  jsr     BuildStageStatisticsScreen
         jsr     DelayWithStatisticsIcons
         lda     Player1KillCounts
         clc
-        adc     $74
+        adc     Player1KillCounts+1
         clc
-        adc     $75
+        adc     Player1KillCounts+2
         clc
-        adc     $76
+        adc     Player1KillCounts+3
         sta     Player1StageKillTotal
         lda     Player2KillCounts
         clc
-        adc     $78
+        adc     Player2KillCounts+1
         clc
-        adc     $79
+        adc     Player2KillCounts+2
         clc
-        adc     $7A
+        adc     Player2KillCounts+3
         sta     Player2StageKillTotal
         lda     #$00
-        sta     $5A
+        sta     StatisticsEnemyType
 NextEnemyStatisticsRow:
 LCCFA:  jsr     WaitForNextFrame
         jsr     DrawStatisticsEnemyIcons
@@ -521,13 +527,13 @@ LCD10:  jsr     WaitForNextFrame
         jsr     DrawStatisticsEnemyIcons
         lda     #$00
         sta     StatisticsRowActive
-        ldx     $5A
+        ldx     StatisticsEnemyType
         lda     ScoreAwardsByEnemyType,x
         jsr     PreparePackedScoreIncrement
-        ldx     $5A
+        ldx     StatisticsEnemyType
         lda     Player1KillCounts,x
-        beq     LCD40
-        lda     #$01
+        beq     ProcessPlayer2StatisticsCount
+        lda     #AudioStateStartRequested
         sta     StatisticsCountPulseAudioState
         sta     StatisticsCountNoiseAudioState
         dec     Player1KillCounts,x
@@ -537,10 +543,11 @@ LCD10:  jsr     WaitForNextFrame
         lda     #$01
         sta     StatisticsRowActive
         jsr     AwardScoreThresholdLives
-LCD40:  ldx     $5A
+ProcessPlayer2StatisticsCount:
+LCD40:  ldx     StatisticsEnemyType
         lda     Player2KillCounts,x
-        beq     LCD5E
-        lda     #$01
+        beq     RenderStatisticsRowValues
+        lda     #AudioStateStartRequested
         sta     StatisticsCountPulseAudioState
         sta     StatisticsCountNoiseAudioState
         dec     Player2KillCounts,x
@@ -550,6 +557,7 @@ LCD40:  ldx     $5A
         lda     #$01
         sta     StatisticsRowActive
         jsr     AwardScoreThresholdLives
+RenderStatisticsRowValues:
 LCD5E:  ldy     #$16
         ldx     #$05
         jsr     SelectVisibleDigits
@@ -558,24 +566,24 @@ LCD5E:  ldy     #$16
         ldx     #$01
         ldy     #$26
         jsr     SelectVisibleDigits
-        lda     $5A
+        lda     StatisticsEnemyType
         asl     a
         clc
-        adc     $5A
+        adc     StatisticsEnemyType
         clc
         adc     #$0C
         tay
         jsr     QueueTranslatedTileString
-        ldx     $5A
+        ldx     StatisticsEnemyType
         lda     StatisticsPlayer1Count
         jsr     ByteToDisplayDigits
         ldx     #$08
         ldy     #$36
         jsr     SelectVisibleDigits
-        lda     $5A
+        lda     StatisticsEnemyType
         asl     a
         clc
-        adc     $5A
+        adc     StatisticsEnemyType
         clc
         adc     #$0C
         tay
@@ -590,24 +598,24 @@ LCD5E:  ldy     #$16
         ldx     #$13
         ldy     #$2E
         jsr     SelectVisibleDigits
-        lda     $5A
+        lda     StatisticsEnemyType
         asl     a
         clc
-        adc     $5A
+        adc     StatisticsEnemyType
         clc
         adc     #$0C
         tay
         jsr     QueueTranslatedTileString
-        ldx     $5A
+        ldx     StatisticsEnemyType
         lda     StatisticsPlayer2Count
         jsr     ByteToDisplayDigits
         ldx     #$0E
         ldy     #$36
         jsr     SelectVisibleDigits
-        lda     $5A
+        lda     StatisticsEnemyType
         asl     a
         clc
-        adc     $5A
+        adc     StatisticsEnemyType
         clc
         adc     #$0C
         tay
@@ -615,16 +623,17 @@ LCD5E:  ldy     #$16
 LCDD8:  ldx     #$08
         jsr     DelayWithStatisticsIcons
         lda     StatisticsRowActive
-        beq     LCDE4
-        jmp     LCD10
+        beq     FinishEnemyStatisticsRow
+        jmp     AnimateEnemyStatisticsRow
 
-LCDE4:  inc     $5A
-        lda     $5A
+FinishEnemyStatisticsRow:
+LCDE4:  inc     StatisticsEnemyType
+        lda     StatisticsEnemyType
         cmp     #$04
-        beq     LCDF4
+        beq     ShowStatisticsTotals
         ldx     #$14
         jsr     DelayWithStatisticsIcons
-        jmp     LCCFA
+        jmp     NextEnemyStatisticsRow
 
 ShowStatisticsTotals:
 LCDF4:  ldx     #$1E
@@ -637,7 +646,7 @@ LCDF4:  ldx     #$1E
         ldy     #$17
         jsr     QueueTranslatedTileString
         lda     MenuSelection
-        beq     LCE1F
+        beq     DelayBeforeStatisticsBonus
         lda     Player2StageKillTotal
         jsr     ByteToDisplayDigits
         ldy     #$36
@@ -645,24 +654,25 @@ LCDF4:  ldx     #$1E
         jsr     SelectVisibleDigits
         ldy     #$17
         jsr     QueueTranslatedTileString
+DelayBeforeStatisticsBonus:
 LCE1F:  ldx     #$0F
         jsr     DelayWithStatisticsIcons
         lda     MenuSelection
-        bne     LCE2B
-        jmp     LCEE5
+        bne     AwardStatisticsWinnerBonus
+        jmp     FinishStageStatistics
 
 ; Бонус сравнивается только для двух игроков и только при ненулевом $68.
 AwardStatisticsWinnerBonus:
 LCE2B:  lda     BattleState
-        bne     LCE32
-        jmp     LCEE5
+        bne     AwardPlayerOneStatisticsBonus
+        jmp     FinishStageStatistics
 
 AwardPlayerOneStatisticsBonus:
 LCE32:  lda     Player2StageKillTotal
         cmp     Player1StageKillTotal
-        bcs     LCE8D
+        bcs     AwardPlayerTwoStatisticsBonus
         lda     Player1Lives
-        beq     LCE8D
+        beq     AwardPlayerTwoStatisticsBonus
         lda     #$00
         jsr     PreparePackedScoreIncrement
         ldx     #$00
@@ -677,9 +687,9 @@ LCE32:  lda     Player2StageKillTotal
         jsr     SelectVisibleDigits
         ldy     #$1A
         jsr     QueueTranslatedTileString
-        lda     #$D3
+        lda     #>StatisticsBonusText
         sta     ScratchPtrHi
-        lda     #$C4
+        lda     #<StatisticsBonusText
         sta     ScratchPtrLo
         ldx     #$03
         ldy     #$19
@@ -691,19 +701,19 @@ LCE32:  lda     Player2StageKillTotal
         ldx     #$08
         ldy     #$1A
         jsr     QueueTileAtCoordinates
-        lda     #$01
+        lda     #AudioStateStartRequested
         sta     StatisticsWinnerBonusAudioState
-        sta     $031C
-        sta     $031D
+        sta     AudioStreamRecords
+        sta     AudioStreamRecords+1
         jsr     AwardScoreThresholdLives
-        jmp     LCEE5
+        jmp     FinishStageStatistics
 
 AwardPlayerTwoStatisticsBonus:
 LCE8D:  lda     Player1StageKillTotal
         cmp     Player2StageKillTotal
-        bcs     LCEE5
+        bcs     FinishStageStatistics
         lda     Player2Lives
-        beq     LCEE5
+        beq     FinishStageStatistics
         lda     #$00
         jsr     PreparePackedScoreIncrement
         ldx     #$01
@@ -718,9 +728,9 @@ LCE8D:  lda     Player1StageKillTotal
         jsr     SelectVisibleDigits
         ldy     #$1A
         jsr     QueueTranslatedTileString
-        lda     #$D3
+        lda     #>StatisticsBonusText
         sta     ScratchPtrHi
-        lda     #$C4
+        lda     #<StatisticsBonusText
         sta     ScratchPtrLo
         ldx     #$16
         ldy     #$19
@@ -732,11 +742,12 @@ LCE8D:  lda     Player1StageKillTotal
         ldx     #$1B
         ldy     #$1A
         jsr     QueueTileAtCoordinates
-        lda     #$01
+        lda     #AudioStateStartRequested
         sta     StatisticsWinnerBonusAudioState
-        sta     $031C
-        sta     $031D
+        sta     AudioStreamRecords
+        sta     AudioStreamRecords+1
         jsr     AwardScoreThresholdLives
+FinishStageStatistics:
 LCEE5:  ldx     #$78
         jsr     DelayWithStatisticsIcons
         lda     #$00
@@ -814,30 +825,30 @@ LCEF7:  jsr     WaitForNextFrame
         jsr     SelectVisibleDigits
         ldy     #$09
         jsr     QueueTranslatedTileString
-        lda     #$D3
+        lda     #>PlayerOneStatisticsMarker
         sta     ScratchPtrHi
-        lda     #$B1
+        lda     #<PlayerOneStatisticsMarker
         sta     ScratchPtrLo
         ldx     #$0E
         ldy     #$0C
         jsr     QueueTileAtCoordinates
-        lda     #$D3
+        lda     #>PlayerOneStatisticsMarker
         sta     ScratchPtrHi
-        lda     #$B1
+        lda     #<PlayerOneStatisticsMarker
         sta     ScratchPtrLo
         ldx     #$0E
         ldy     #$0F
         jsr     QueueTileAtCoordinates
-        lda     #$D3
+        lda     #>PlayerOneStatisticsMarker
         sta     ScratchPtrHi
-        lda     #$B1
+        lda     #<PlayerOneStatisticsMarker
         sta     ScratchPtrLo
         ldx     #$0E
         ldy     #$12
         jsr     QueueTileAtCoordinates
-        lda     #$D3
+        lda     #>PlayerOneStatisticsMarker
         sta     ScratchPtrHi
-        lda     #$B1
+        lda     #<PlayerOneStatisticsMarker
         sta     ScratchPtrLo
         ldx     #$0E
         ldy     #$15
@@ -857,30 +868,30 @@ LCEF7:  jsr     WaitForNextFrame
         jsr     SelectVisibleDigits
         ldy     #$09
         jsr     QueueTranslatedTileString
-        lda     #$D3
+        lda     #>PlayerTwoStatisticsMarker
         sta     ScratchPtrHi
-        lda     #$B3
+        lda     #<PlayerTwoStatisticsMarker
         sta     ScratchPtrLo
         ldx     #$11
         ldy     #$0C
         jsr     QueueTileAtCoordinates
-        lda     #$D3
+        lda     #>PlayerTwoStatisticsMarker
         sta     ScratchPtrHi
-        lda     #$B3
+        lda     #<PlayerTwoStatisticsMarker
         sta     ScratchPtrLo
         ldx     #$11
         ldy     #$0F
         jsr     QueueTileAtCoordinates
-        lda     #$D3
+        lda     #>PlayerTwoStatisticsMarker
         sta     ScratchPtrHi
-        lda     #$B3
+        lda     #<PlayerTwoStatisticsMarker
         sta     ScratchPtrLo
         ldx     #$11
         ldy     #$12
         jsr     QueueTileAtCoordinates
-        lda     #$D3
+        lda     #>PlayerTwoStatisticsMarker
         sta     ScratchPtrHi
-        lda     #$B3
+        lda     #<PlayerTwoStatisticsMarker
         sta     ScratchPtrLo
         ldx     #$11
         ldy     #$15
@@ -971,7 +982,7 @@ LD096:  jsr     WaitForNextFrame
 ; $80,$A0,$C0,$E0; атрибуты $02. Меняет A/X/Y, $04/$53-$55 и OAM.
 DrawStatisticsEnemyIcons:
 LD0B8:  lda     #$02
-        sta     $04
+        sta     RenderAttributes
         ldy     #$64
         lda     #$80
         jsr     DrawStatisticsEnemyIcon
@@ -991,35 +1002,35 @@ LD0B8:  lda     #$02
 ; Выход A=$05; X/Y не меняются.
 InitializeStatisticsAttributes:
 LD0D9:  lda     #$50
-        sta     $07C0
-        sta     $07C1
-        sta     $07C2
-        sta     $07C3
-        sta     $07C8
-        sta     $07C9
-        sta     $07CA
-        sta     $07CD
-        sta     $07CE
-        sta     $07CF
+        sta     NametableAttributes+$00
+        sta     NametableAttributes+$01
+        sta     NametableAttributes+$02
+        sta     NametableAttributes+$03
+        sta     NametableAttributes+$08
+        sta     NametableAttributes+$09
+        sta     NametableAttributes+$0A
+        sta     NametableAttributes+$0D
+        sta     NametableAttributes+$0E
+        sta     NametableAttributes+$0F
         lda     #$A0
-        sta     $07C4
-        sta     $07C5
-        sta     $07C6
-        sta     $07C7
+        sta     NametableAttributes+$04
+        sta     NametableAttributes+$05
+        sta     NametableAttributes+$06
+        sta     NametableAttributes+$07
         lda     #$0A
-        sta     $07D0
-        sta     $07D1
-        sta     $07D2
-        sta     $07D5
-        sta     $07D6
-        sta     $07D7
+        sta     NametableAttributes+$10
+        sta     NametableAttributes+$11
+        sta     NametableAttributes+$12
+        sta     NametableAttributes+$15
+        sta     NametableAttributes+$16
+        sta     NametableAttributes+$17
         lda     #$05
-        sta     $07F0
-        sta     $07F1
-        sta     $07F2
-        sta     $07F5
-        sta     $07F6
-        sta     $07F7
+        sta     NametableAttributes+$30
+        sta     NametableAttributes+$31
+        sta     NametableAttributes+$32
+        sta     NametableAttributes+$35
+        sta     NametableAttributes+$36
+        sta     NametableAttributes+$37
         rts
 
 ; Адаптер вывода одного двухтайлового значка статистики.
@@ -1033,9 +1044,9 @@ LD130:  sta     OamTile
 
 ; Однократно выдаёт дополнительную жизнь, когда десятитысячная цифра счёта
 ; достигает как минимум 2 (обычный первый порог — 20000 очков).
-; Работает только при $68=$80. Для P1 проверяет цифру $17
-; и guard $66; для P2 дополнительно требует MenuSelection!=0 и использует
-; $1F/$67. При награде увеличивает соответствующий PlayerLives и ставит
+; Работает только при BattleStateActive. Для P1 проверяет Player1Score+2
+; и PlayerExtraLifeAwarded; для P2 дополнительно требует MenuSelection!=0 и
+; использует Player2Score+2/PlayerExtraLifeAwarded+1. При награде увеличивает соответствующий PlayerLives и ставит
 ; запрашивает два аудиопотока звука дополнительной жизни. Меняет A и флаги;
 ; X/Y сохраняются.
 AwardScoreThresholdLives:
@@ -1044,7 +1055,7 @@ LD138:  lda     BattleState
         bne     LD169
         lda     PlayerExtraLifeAwarded
         bne     LD14F
-        lda     $17
+        lda     Player1Score+2
         cmp     #$02
         bcc     LD14F
         inc     Player1Lives
@@ -1055,12 +1066,12 @@ LD14F:  lda     MenuSelection
         beq     LD169
         lda     PlayerExtraLifeAwarded+1
         bne     LD169
-        lda     $1F
+        lda     Player2Score+2
         cmp     #$02
         bcc     LD169
         inc     Player2Lives
         inc     PlayerExtraLifeAwarded+1
-LD161:  lda     #$01
+LD161:  lda     #AudioStateStartRequested
         sta     ExtraLifePulse1AudioState
         sta     ExtraLifePulse2AudioState
 LD169:  rts
@@ -1093,9 +1104,9 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         sta     NametablePpuOffset
         jsr     ClearNametableBuffer
         ldx     #$1A
-        stx     $56
+        stx     RasterStringX
         ldy     #$2E
-        sty     $57
+        sty     RasterStringY
         jsr     DrawVariantTitleData
         nop
         nop
@@ -1106,9 +1117,9 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         nop
         nop
         ldx     #$3C
-        stx     $56
+        stx     RasterStringX
         ldy     #$56
-        sty     $57
+        sty     RasterStringY
         lda     #$E5
         sta     AuxPtrHi
         lda     #$E0

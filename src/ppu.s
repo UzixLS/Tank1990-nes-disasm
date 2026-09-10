@@ -5,6 +5,28 @@
 ; маской четырёх подобластей 4x4 пикселя. Это позволяет одним байтом
 ; обслуживать и коллизии, и частичное разрушение кирпича.
 
+MetatileIndex       = $00
+MetatileTileX       = $47
+MetatileTileY       = $48
+
+; Те же scratch-байты имеют разные непересекающиеся времена жизни.
+PpuTileRowBits            = $00
+PpuAttributeRowOffset     = $00
+PpuAttributePreserveMask  = $01
+PpuAttributePaletteBits   = $02
+PpuControllerBits         = $00
+PpuQueueSavedX            = $47
+RasterPixelX              = $5D
+RasterPixelY              = $5E
+RasterRowCount            = $5A
+RasterPlaneByte           = $02
+RasterBitMask             = $03
+RasterStringIndex         = $5F
+OamSavedX                 = $47
+OamSavedY                 = $48
+OamPairX                  = $54
+OamPairY                  = $55
+
 ; Кадровый NMI:
 ;   1. копирует OAM shadow страницы $02 через DMA;
 ;   2. исполняет накопленную PPU-очередь и, если $4D >= 0, меняет фоновую палитру;
@@ -98,9 +120,9 @@ LD470:  jsr     WaitForNextFrame
 ClearNametableBuffer:  lda     #$00
         tax
 LD481:  sta     NametableShadow,x
-        sta     $0500,x
-        sta     $0600,x
-        sta     $0700,x
+        sta     NametableShadowPage1,x
+        sta     NametableShadowPage2,x
+        sta     NametableShadowPage3,x
         inx
         bne     LD481
         rts
@@ -136,7 +158,7 @@ LD491:
         ldx     #$3D
         jsr     BootHook
         lda     #$02
-        sta     $3F
+        sta     HighScore+2
         lda     #$00
         sta     MenuSelection
 LD4CE:  lda     #$1C
@@ -149,21 +171,21 @@ LD4CE:  lda     #$1C
         jsr     ResetAudioEngine
         rts
 
-; Копирует 16-байтный ROM-маркер LC040 в $0110-$011F.
+; Копирует 16-байтный ROM-маркер LC040 в RestartSignature.
 ; Выход: X=$FF; A=первый байт маркера.
 StoreRestartSignature:
 LD4E3:  ldx     #$0F
 LD4E5:  lda     LC040,x
-        sta     $0110,x
+        sta     RestartSignature,x
         dex
         bpl     LD4E5
         rts
 
-; Сравнивает $0110-$011F с ROM-маркером LC040.
+; Сравнивает RestartSignature с ROM-маркером LC040.
 ; Возвращает A=1 при полном совпадении, иначе A=0; X указывает на место расхождения.
 HasRestartSignature:
 LD4EF:  ldx     #$0F
-LD4F1:  lda     $0110,x
+LD4F1:  lda     RestartSignature,x
         cmp     LC040,x
         bne     LD4FF
         dex
@@ -241,28 +263,30 @@ LD5F5:  lda     PPU_STATUS
 
 ; Преобразует координаты тайла X=0..31, Y=0..31 в адрес shadow nametable:
 ;   A = $04 + Y / 8, Y = X + (Y & 7) * 32.
-; Меняет A/Y и scratch $00; X сохраняет.
+; Меняет A/Y и PpuTileRowBits; X сохраняет.
 TileCoordinatesToShadowAddress:
 LD5FB:  lda     #$00
-        sta     $00
+        sta     PpuTileRowBits
         tya
         lsr     a
-        ror     $00
+        ror     PpuTileRowBits
         lsr     a
-        ror     $00
+        ror     PpuTileRowBits
         lsr     a
-        ror     $00
+        ror     PpuTileRowBits
         pha
         txa
-        ora     $00
+        ora     PpuTileRowBits
         tay
         pla
         ora     #$04
         rts
 
 ; Обновляет атрибут палитры для тайла X/Y и добавляет однобайтовую
-; запись $23C0+index в PPU-очередь. Вход: X/Y -- координаты 8x8-тайла, $04 -- палитра 0..3.
-; Побочно: меняет $00-$02, $07C0-$07FF, PpuUpdateBuffer/PpuBufferPos; A/X/Y изменены.
+; запись $23C0+index в PPU-очередь. Вход: X/Y -- координаты 8x8-тайла,
+; RenderAttributes -- палитра 0..3.
+; Побочно: меняет attribute scratch, NametableAttributes,
+; PpuUpdateBuffer/PpuBufferPos; A/X/Y изменены.
 QueueAttributeByteForTile:
 LD612:  jsr     UpdateAttributeShadow
         ldx     PpuBufferPos
@@ -274,7 +298,7 @@ LD612:  jsr     UpdateAttributeShadow
         adc     #$C0
         sta     PpuUpdateBuffer,x
         inx
-        lda     $07C0,y
+        lda     NametableAttributes,y
         sta     PpuUpdateBuffer,x
         inx
         lda     #$FF
@@ -283,85 +307,92 @@ LD612:  jsr     UpdateAttributeShadow
         stx     PpuBufferPos
         rts
 
-; Вставляет два бита палитры $04 в нужный квадрант attribute byte.
+; Вставляет два бита RenderAttributes в нужный квадрант attribute byte.
 ; Вход: X/Y -- координаты 8x8-тайла. Выход: Y -- индекс attribute table, A -- новый байт.
 UpdateAttributeShadow:
-LD635:  lda     $04
+LD635:  lda     RenderAttributes
         jsr     ExpandPaletteBits
         jsr     ExpandPaletteBits
         jsr     ExpandPaletteBits
-        sta     $02
+        sta     PpuAttributePaletteBits
         tya
         and     #$02
-        bne     LD656
+        bne     SelectBottomAttributeQuadrant
         txa
         and     #$02
-        beq     LD651
+        beq     SelectTopLeftAttributeQuadrant
         lda     #$F3
-        jmp     LD662
+        jmp     ApplyAttributeQuadrant
 
+SelectTopLeftAttributeQuadrant:
 LD651:  lda     #$FC
-        jmp     LD662
+        jmp     ApplyAttributeQuadrant
 
+SelectBottomAttributeQuadrant:
 LD656:  txa
         and     #$02
-        beq     LD660
+        beq     SelectBottomLeftAttributeQuadrant
         lda     #$3F
-        jmp     LD662
+        jmp     ApplyAttributeQuadrant
 
+SelectBottomLeftAttributeQuadrant:
 LD660:  lda     #$CF
-LD662:  sta     $01
+ApplyAttributeQuadrant:
+LD662:  sta     PpuAttributePreserveMask
         tya
         asl     a
         and     #$F8
-        sta     $00
+        sta     PpuAttributeRowOffset
         txa
         lsr     a
         lsr     a
         clc
-        adc     $00
+        adc     PpuAttributeRowOffset
         tay
-        lda     $01
+        lda     PpuAttributePreserveMask
         eor     #$FF
-        and     $02
-        sta     $02
-        lda     $07C0,y
-        and     $01
-        ora     $02
-        sta     $07C0,y
+        and     PpuAttributePaletteBits
+        sta     PpuAttributePaletteBits
+        lda     NametableAttributes,y
+        and     PpuAttributePreserveMask
+        ora     PpuAttributePaletteBits
+        sta     NametableAttributes,y
         rts
 
-; Один шаг A=(A*4)|$04. Три вызова размножают двухбитовую палитру $04
+; Один шаг A=(A*4)|RenderAttributes. Три вызова размножают двухбитовую палитру
 ; по всем четырём квадрантам attribute byte. Меняет A/флаги.
 ExpandPaletteBits:
 LD684:  asl     a
         asl     a
-        ora     $04
+        ora     RenderAttributes
         rts
 
 ; Последовательно читает оба контроллера. $06/$07 -- текущее состояние,
 ; $08/$09 -- фронты вновь нажатых кнопок. Биты собираются в NES-порядке A..Right через ROR.
-; Меняет A/X/Y, scratch $00 и strobes JOY1; по выходу X=$FF, Y=0.
+; Меняет A/X/Y, PpuControllerBits и strobes JOY1;
+; по выходу X=$FF, Y=0.
 ReadControllers:  ldx     #$01
         stx     JOY1
         ldy     #$00
         sty     JOY1
-LD693:  sty     $00
+ReadNextController:
+LD693:  sty     PpuControllerBits
         ldy     #$08
+ReadNextControllerBit:
 LD697:  lda     JOY1,x
         and     #$03
         cmp     #$01
-        ror     $00
+        ror     PpuControllerBits
         dey
-        bne     LD697
+        bne     ReadNextControllerBit
         lda     Joy1Held,x
         eor     #$FF
-        and     $00
+        and     PpuControllerBits
         sta     Joy1Pressed,x
-        lda     $00
+        lda     PpuControllerBits
         sta     Joy1Held,x
         dex
-        bpl     LD693
+        bpl     ReadNextController
         rts
 
 ; Копирует $FF-терминированную строку тайлов в PPU-очередь и зеркалит её
@@ -450,31 +481,34 @@ LD713:  tya
         rts
 
 ; Вычисляет shadow-адрес и один из битов $01/$02/$04/$08 для 4x4-подобласти
-; вокруг пиксельной точки X/Y. Вход: X/Y пиксели. Выход: ScratchPtr, Y=0, $00=маска;
-; исходные координаты сохранены в $47/$48. A/X изменены.
+; вокруг пиксельной точки X/Y. Вход: X/Y пиксели. Выход: ScratchPtr, Y=0,
+; TerrainSubcellMask; исходные координаты сохранены в CollisionPointX/Y. A/X изменены.
 SelectTerrainSubcell:
-LD71E:  stx     $47
-        sty     $48
+LD71E:  stx     CollisionPointX
+        sty     CollisionPointY
         jsr     PixelCoordinatesToShadowPointer
-; Вход после SelectTerrainSubcell или прямой: пересчитывает $00 из сохранённых $47/$48.
+; Вход после SelectTerrainSubcell или прямой: пересчитывает TerrainSubcellMask
+; из сохранённых CollisionPointX/Y. ScratchPtr не меняет; портит A и флаги.
 RecomputeTerrainSubcellMask:
 LD725:  lda     #$01
-        sta     $00
-        lda     $48
+        sta     TerrainSubcellMask
+        lda     CollisionPointY
         and     #$04
-        beq     LD733
-        asl     $00
-        asl     $00
-LD733:  lda     $47
+        beq     SelectTerrainSubcellXHalf
+        asl     TerrainSubcellMask
+        asl     TerrainSubcellMask
+SelectTerrainSubcellXHalf:
+LD733:  lda     CollisionPointX
         and     #$04
-        beq     LD73B
-        asl     $00
+        beq     FinishTerrainSubcellMask
+        asl     TerrainSubcellMask
+FinishTerrainSubcellMask:
 LD73B:  rts
 
 ; Проверяет выбранную подобласть. Возвращает A=(shadow & ($F0|$00)); Z=1 только
-; для пустого низкобитного тайла. ScratchPtr, Y и $00 заданы ранее.
+; для пустого низкобитного тайла. ScratchPtr, Y и TerrainSubcellMask заданы ранее.
 TestTerrainSubcell:
-LD73C:  lda     $00
+LD73C:  lda     TerrainSubcellMask
         ora     #$F0
         and     (ScratchPtrLo),y
         rts
@@ -482,7 +516,7 @@ LD73C:  lda     $00
 ; Сбрасывает выбранный бит в shadow и ставит изменённый тайл в PPU-очередь.
 ; Меняет A и PpuUpdateBuffer/PpuBufferPos; X сохраняется.
 ClearTerrainSubcellQueued:
-LD743:  lda     $00
+LD743:  lda     TerrainSubcellMask
         eor     #$FF
         and     (ScratchPtrLo),y
         jsr     StoreAndQueueShadowTile
@@ -494,7 +528,7 @@ ClearTerrainSubcellShadow:
 LD74D:  lda     (ScratchPtrLo),y
         and     #$F0
         bne     LD75B
-        lda     $00
+        lda     TerrainSubcellMask
         eor     #$FF
         and     (ScratchPtrLo),y
         sta     (ScratchPtrLo),y
@@ -502,7 +536,7 @@ LD75B:  rts
 
 ; Устанавливает выбранный бит в shadow и ставит изменённый тайл в PPU-очередь.
 SetTerrainSubcellQueued:
-LD75C:  lda     $00
+LD75C:  lda     TerrainSubcellMask
         ora     (ScratchPtrLo),y
         jsr     StoreAndQueueShadowTile
         rts
@@ -512,7 +546,7 @@ SetTerrainSubcellShadow:
 LD764:  lda     (ScratchPtrLo),y
         and     #$F0
         bne     LD770
-        lda     $00
+        lda     TerrainSubcellMask
         ora     (ScratchPtrLo),y
         sta     (ScratchPtrLo),y
 LD770:  rts
@@ -533,10 +567,11 @@ LD771:  lda     ScratchPtrHi
 
 ; Пишет A в (ScratchPtr),Y и ставит тот же байт в PPU-очередь. Адрес PPU получается
 ; из shadow-адреса прибавлением $1C к старшему байту. Формат команды: hi, lo, data, $FF.
-; Сохраняет X; меняет A, $47 и PpuUpdateBuffer/PpuBufferPos.
+; Сохраняет X через PpuQueueSavedX; меняет A и
+; PpuUpdateBuffer/PpuBufferPos. Y, ScratchPtr и shadow-байт не меняет.
 StoreAndQueueShadowTile:
 LD784:  sta     (ScratchPtrLo),y
-        stx     $47
+        stx     PpuQueueSavedX
         ldx     PpuBufferPos
         lda     ScratchPtrHi
         clc
@@ -553,7 +588,7 @@ LD784:  sta     (ScratchPtrLo),y
         sta     PpuUpdateBuffer,x
         inx
         stx     PpuBufferPos
-        ldx     $47
+        ldx     PpuQueueSavedX
         rts
 
 ; Прибавляет беззнаковый A к 16-битному ScratchPtrHi:ScratchPtrLo.
@@ -582,39 +617,41 @@ LD7BD:  jsr     UploadShadowByteDirect
         rts
 
 ; Готовит shadow nametable для игрового поля: заполняет её тайлом $11,
-; обнуляет attribute table $07C0-$07FF и затем очищает прямоугольник по нулевым тайлам.
-; Вход: $56/$57 -- X/Y в тайлах, $5A -- высота, $5B -- ширина. Нулевая высота
-; или ширина не поддерживаются. Меняет A/X/Y, ScratchPtr, $00, $5A.
+; обнуляет NametableAttributes и затем очищает прямоугольник по нулевым тайлам.
+; Вход: NametableRectX/Y -- начало в тайлах, NametableRectHeight/Width -- размер.
+; Нулевая высота или ширина не поддерживаются. Меняет A/X/Y, ScratchPtr,
+; MetatileIndex и NametableRectHeight.
 InitializePlayfieldShadow:
 LD7CC:  ldx     #$00
         lda     #$11
 LD7D0:  sta     NametableShadow,x
-        sta     $0500,x
-        sta     $0600,x
-        sta     $0700,x
+        sta     NametableShadowPage1,x
+        sta     NametableShadowPage2,x
+        sta     NametableShadowPage3,x
         inx
         bne     LD7D0
         lda     #$00
         ldx     #$C0
-LD7E3:  sta     $0700,x
+LD7E3:  sta     NametableShadowPage3,x
         inx
         bne     LD7E3
-        ldx     $56
-        ldy     $57
+        ldx     NametableRectX
+        ldy     NametableRectY
         jsr     TileCoordinatesToShadowAddress
         sta     ScratchPtrHi
         sty     ScratchPtrLo
-LD7F4:  ldy     $5B
+ClearNextNametableRectangleRow:
+LD7F4:  ldy     NametableRectWidth
         dey
 LD7F7:  lda     #$00
         sta     (ScratchPtrLo),y
         dey
         bpl     LD7F7
-        dec     $5A
+        dec     NametableRectHeight
         beq     LD80A
         lda     #$20
         jsr     AddAToPointer
-        jmp     LD7F4
+        jmp     ClearNextNametableRectangleRow
 
 LD80A:  rts
 
@@ -622,21 +659,22 @@ LD80A:  rts
 ; Вход: A -- индекс метатайла 0..15, X/Y -- пиксельные координаты. Процедура
 ; сама выравнивает полученные тайловые координаты на ячейку 16x16 пикселей.
 ; Пишет четыре тайла в shadow и четыре PPU-команды, а также одну команду атрибута.
-; Меняет A/X/Y, ScratchPtr, $00-$04, $47/$48, attribute shadow и PPU-очередь.
+; Меняет A/X/Y, ScratchPtr, MetatileIndex/MetatileTileX/Y, RenderAttributes,
+; прочую scratch-RAM $01-$03, attribute shadow и PPU-очередь.
 DrawMetatile:  pha
-        sta     $00
+        sta     MetatileIndex
         jsr     PixelToTileCoordinates
-        stx     $47
-        sty     $48
-        ldy     $00
+        stx     MetatileTileX
+        sty     MetatileTileY
+        ldy     MetatileIndex
         lda     MetatilePalettes,y
-        sta     $04
-        ldy     $48
+        sta     RenderAttributes
+        ldy     MetatileTileY
         jsr     QueueAttributeByteForTile
-        lda     $48
+        lda     MetatileTileY
         and     #$FE
         tay
-        lda     $47
+        lda     MetatileTileX
         and     #$FE
         tax
         jsr     TileCoordinatesToShadowPointer
@@ -667,15 +705,16 @@ DrawMetatile:  pha
 ; Растрирует первую bitplane 8x8 CHR-тайла в маску низкого ниббла shadow nametable.
 ; Каждый CHR-пиксель превращается в подобласть 4x4 в shadow; строки обрабатываются
 ; в обратном порядке из-за временного стека. Вход: A -- номер CHR-тайла в pattern table $1000,
-; X/Y -- пиксельная позиция. Читает PPU_DATA напрямую; меняет A/X/Y, ScratchPtr, $00/$02/$03,
-; $47/$48, $5A/$5D/$5E и shadow. PPU-очередь не меняет.
+; X/Y -- пиксельная позиция. Читает только first bitplane через
+; PPU_DATA; вызывать при отключённом рендеринге. Меняет A/X/Y, ScratchPtr,
+; raster/collision scratch и shadow. PPU-очередь не меняет.
 RasterizeChrTileToShadow:
-LD85E:  stx     $5D
+LD85E:  stx     RasterPixelX
         tax
         tya
         clc
         adc     #$20
-        sta     $5E
+        sta     RasterPixelY
         lda     #$00
         sta     ScratchPtrLo
         lda     #$10
@@ -692,68 +731,76 @@ LD87A:  lda     ScratchPtrHi
         sta     PPU_ADDR
         lda     PPU_DATA
         lda     #$08
-        sta     $5A
+        sta     RasterRowCount
+ReadChrPlaneRow:
 LD88B:  lda     PPU_DATA
         pha
-        dec     $5A
-        bne     LD88B
+        dec     RasterRowCount
+        bne     ReadChrPlaneRow
         lda     #$08
-        sta     $5A
+        sta     RasterRowCount
+RasterizeNextChrRow:
 LD897:  pla
-        sta     $02
+        sta     RasterPlaneByte
         lda     #$80
-        sta     $03
-LD89E:  ldx     $5D
-        ldy     $5E
+        sta     RasterBitMask
+RasterizeNextChrPixel:
+LD89E:  ldx     RasterPixelX
+        ldy     RasterPixelY
         jsr     SelectTerrainSubcell
-        lda     $02
-        and     $03
-        beq     LD8B1
+        lda     RasterPlaneByte
+        and     RasterBitMask
+        beq     ClearRasterizedSubcell
         jsr     SetTerrainSubcellShadow
-        jmp     LD8B4
+        jmp     AdvanceRasterizedPixel
 
+ClearRasterizedSubcell:
 LD8B1:  jsr     ClearTerrainSubcellShadow
-LD8B4:  lda     $5D
+AdvanceRasterizedPixel:
+LD8B4:  lda     RasterPixelX
         clc
         adc     #$04
-        sta     $5D
-        lsr     $03
-        bcc     LD89E
-        lda     $5D
+        sta     RasterPixelX
+        lsr     RasterBitMask
+        bcc     RasterizeNextChrPixel
+        lda     RasterPixelX
         sec
         sbc     #$20
-        sta     $5D
-        lda     $5E
+        sta     RasterPixelX
+        lda     RasterPixelY
         sec
         sbc     #$04
-        sta     $5E
-        dec     $5A
-        bne     LD897
+        sta     RasterPixelY
+        dec     RasterRowCount
+        bne     RasterizeNextChrRow
         rts
 
 ; Рисует в shadow строку крупных 32x32-знаков, растрируя CHR-тайлы.
-; Вход: AuxPtr -> $FF-терминированная строка номеров, $56/$57 -- позиция, $60 -- смещение
-; номера CHR-тайла. Каждый знак сдвигает $56 на $20. Меняет A/X/Y, $56, $5F и все
+; Вход: AuxPtr -> $FF-терминированная строка номеров,
+; RasterStringX/Y -- позиция, TileTranslationOffset -- смещение номера CHR-тайла.
+; Каждый знак сдвигает RasterStringX на $20. Меняет A/X/Y,
+; RasterStringX/RasterStringIndex и все
 ; побочные области RasterizeChrTileToShadow.
 RasterizeTileStringToShadow:
 LD8D2:  ldy     #$00
-        sty     $5F
+        sty     RasterStringIndex
+RasterizeNextStringTile:
 LD8D6:  lda     (AuxPtrLo),y
         cmp     #$FF
         beq     LD8F5
         iny
-        sty     $5F
-        ldx     $56
-        ldy     $57
+        sty     RasterStringIndex
+        ldx     RasterStringX
+        ldy     RasterStringY
         clc
         adc     TileTranslationOffset
         jsr     RasterizeChrTileToShadow
-        lda     $56
+        lda     RasterStringX
         clc
         adc     #$20
-        sta     $56
-        ldy     $5F
-        jmp     LD8D6
+        sta     RasterStringX
+        ldy     RasterStringIndex
+        jmp     RasterizeNextStringTile
 
 LD8F5:  rts
 
@@ -821,22 +868,22 @@ LD94A:  lda     #$00
 
 ; Рисует текущую семизначную запись $3D-$43 крупными CHR-знаками.
 ; Ведущие нули смещают начало на $20 пикселей. Использует CHR bias $30 и позицию ($10,$64).
-; Меняет A/X/Y, AuxPtr, $56/$57/$60 и области RasterizeTileStringToShadow.
+; Меняет A/X/Y, AuxPtr, RasterStringX/Y, TileTranslationOffset и области RasterizeTileStringToShadow.
 RenderLargeScoreRecord:
 LD951:  lda     #$10
-        sta     $56
+        sta     RasterStringX
         lda     #$64
-        sta     $57
+        sta     RasterStringY
         lda     #$30
         sta     TileTranslationOffset
         ldy     #$3D
 LD95F:  lda     $00,y
         bne     LD96F
         iny
-        lda     $56
+        lda     RasterStringX
         clc
         adc     #$20
-        sta     $56
+        sta     RasterStringX
         jmp     LD95F
 
 LD96F:  lda     #$00
@@ -889,7 +936,7 @@ LD9B2:  lda     Player2Score,x
         ldy     #$FF
 LD9BD:  rts
 
-; Прибавляет семизначное десятичное число $35-$3B к записи игрока.
+; Прибавляет семизначное десятичное число ScoreIncrementDigits к записи игрока.
 ; Вход: X -- индекс записи (0 -> $15, 1 -> $1D и т. д.). Сложение идёт от младшей цифры
 ; с переносом по основанию 10; переполнение за семь цифр теряется. Выход X указывает
 ; на байт перед записью, Y=$FF; A/флаги изменены.
@@ -903,7 +950,7 @@ LD9BE:  txa
         tax
         ldy     #$06
         clc
-LD9C9:  lda     $35,y
+LD9C9:  lda     ScoreIncrementDigits,y
         adc     Player1Score,x
         cmp     #$0A
         bmi     LD9D9
@@ -919,18 +966,19 @@ LD9DA:  sta     Player1Score,x
         bpl     LD9C9
         rts
 
-; Готовит в $35-$3C приращение счёта из упакованного десятичного A:
-; старший ниббл -> $39, младший -> $3A. Для A=0 специально записывает 1 в $38.
-; Меняет A/X, $00, $35-$3C; Y не меняет.
+; Готовит в ScoreIncrementDigits приращение счёта из упакованного десятичного A:
+; старший ниббл -> DecimalHundreds, младший -> DecimalTens. Для A=0 специально
+; записывает 1 в ScoreIncrementThousands. Меняет A/X, ByteToDecimalInput и
+; ScoreIncrementDigits; Y не меняет.
 PreparePackedScoreIncrement:
-LD9E1:  sta     $00
-        ldx     #$35
+LD9E1:  sta     ByteToDecimalInput
+        ldx     #ScoreIncrementDigits
         jsr     ResetEightByteRecord
-        lda     $00
+        lda     ByteToDecimalInput
         beq     LD9F9
         and     #$0F
         sta     DecimalTens
-        lda     $00
+        lda     ByteToDecimalInput
         lsr     a
         lsr     a
         lsr     a
@@ -939,7 +987,7 @@ LD9E1:  sta     $00
         rts
 
 LD9F9:  lda     #$01
-        sta     $38
+        sta     ScoreIncrementThousands
         rts
 
 ; Инициализирует восьмибайтовую запись: семь нулей и завершающий $FF.
@@ -957,10 +1005,11 @@ ResetEightByteRecord:  lda     #$00
         rts
 
 ; Преобразует беззнаковый байт A в десятичные сотни/$39, десятки/$3A и единицы/$3B,
-; предварительно обнуляя запись $35-$3C. Выход A=единицы, X=$35; Y не меняется.
+; предварительно обнуляя ScoreIncrementDigits. Выход A=единицы,
+; X=ScoreIncrementDigits; Y не меняется.
 ByteToDisplayDigits:
-LDA13:  sta     $00
-        ldx     #$35
+LDA13:  sta     ByteToDecimalInput
+        ldx     #ScoreIncrementDigits
         jsr     ResetEightByteRecord
         jmp     ByteToDecimalDigits
 
@@ -976,36 +1025,37 @@ LDA1D:  asl     a
 LDA28:  sta     DecimalOnes
         rts
 ; Добавляет один 8x8-спрайт в OamShadow через курсор $0D и шаг $0E.
-; Вход: X/Y -- экранные X и базовый Y, OamTile -- tile, $04 -- attributes,
+; Вход: X/Y -- экранные X и базовый Y, OamTile -- tile, RenderAttributes -- attributes,
 ; SpriteBehindTerrainMask -- добавочные
 ; attributes для тайла $22 в shadow под спрайтом. В OAM пишутся (Y-8, tile, attributes, X).
-; Побочно: $47/$48, ScratchPtr, $00, $0D; для shadow-тайла $22 также меняет
-; $04. A/X/Y изменены.
+; Побочно: OamSavedX/Y, ScratchPtr, TerrainSubcellMask,
+; OamBufferPos; для shadow-тайла $22 также меняет RenderAttributes.
+; A/X/Y изменены.
 EmitOamSprite:
 LDA2B:  txa
-        sta     $47
+        sta     OamSavedX
         clc
         adc     #$03
         tax
         tya
         sec
         sbc     #$08
-        sta     $48
+        sta     OamSavedY
         jsr     PixelCoordinatesToShadowPointer
         lda     (ScratchPtrLo),y
         cmp     #$22
         bne     LDA47
-        lda     $04
+        lda     RenderAttributes
         ora     SpriteBehindTerrainMask
-        sta     $04
+        sta     RenderAttributes
 LDA47:  ldx     OamBufferPos
-        lda     $48
+        lda     OamSavedY
         sta     OamShadow,x
         lda     OamTile
         sta     OamShadow+1,x
-        lda     $04
+        lda     RenderAttributes
         sta     OamShadow+2,x
-        lda     $47
+        lda     OamSavedX
         sta     OamShadow+3,x
         txa
         clc
@@ -1029,8 +1079,9 @@ LDA64:  asl     a
 
 ; Выбирает двухтайловый кадр $53 + 8*A и выводит два соседних по X спрайта
 ; с тайлами base и base+2. Вход: A -- кадр, X/Y -- позиция;
-; OamTile/$04/SpriteBehindTerrainMask как EmitOamSprite.
-; Сохраняет исходные X/Y в $54/$55, но по выходу регистры изменены вторым вызовом.
+; OamTile/RenderAttributes/SpriteBehindTerrainMask как EmitOamSprite.
+; Сохраняет исходные X/Y в OamPairX/Y, но по выходу регистры
+; изменены вторым вызовом; дважды применяются все side effects EmitOamSprite.
 EmitTwoTileOamObject:
 LDA73:  asl     a
         asl     a
@@ -1040,8 +1091,8 @@ LDA73:  asl     a
         sta     OamTile
 ; Альтернативный вход: $53 уже содержит tile-base, X/Y -- позицию пары.
 EmitTwoTileOamPair:
-LDA7B:  stx     $54
-        sty     $55
+LDA7B:  stx     OamPairX
+        sty     OamPairY
         txa
         sec
         sbc     #$08
@@ -1049,8 +1100,8 @@ LDA7B:  stx     $54
         jsr     EmitOamSprite
         inc     OamTile
         inc     OamTile
-        ldx     $54
-        ldy     $55
+        ldx     OamPairX
+        ldy     OamPairY
         jsr     EmitOamSprite
         rts
 
