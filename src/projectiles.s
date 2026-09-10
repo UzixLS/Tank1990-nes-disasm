@@ -229,6 +229,7 @@ LE136:  lda     ObjectAttributes,x
         lda     #$00
         sta     ProjectileState,x
 LE15A:  jsr     InitializeProjectileForTank
+AdvancePlayerFiringLoop:
 LE15D:  dec     $5A
         bpl     LE126
         rts

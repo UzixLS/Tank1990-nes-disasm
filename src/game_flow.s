@@ -17,7 +17,8 @@ LC010:  jsr     EnableNmiAfterVblank
         jsr     HandleBootVariantMarker
         rts
 
-; Маршрутизирует ввод огня игрока X в обработчики LE136/LE15D.
+; Маршрутизирует ввод огня игрока X в FirePlayerProjectile либо
+; AdvancePlayerFiringLoop.
 ; В обычных режимах A срабатывает по фронту, B — по удержанию; в GameMode=6 любая из A/B — по фронту.
 ; Не возвращается; портит A и флаги, X остаётся индексом игрока.
 DispatchPlayerFireInput:
@@ -30,14 +31,14 @@ LC019:  lda     GameMode
         lda     Joy1Held,x
         and     #BUTTON_B
         beq     LC02E
-LC02B:  jmp     LE136
+LC02B:  jmp     FirePlayerProjectile
 
-LC02E:  jmp     LE15D
+LC02E:  jmp     AdvancePlayerFiringLoop
 
 LC031:  lda     Joy1Pressed,x
         and     #(BUTTON_A | BUTTON_B)
         beq     LC02E
-        jmp     LE136
+        jmp     FirePlayerProjectile
 
 ByteToDecimalDigits:
 ; Вход: $00 — байт 0..255, $39/$3A заранее обнулены. Выход: $39/$3A/$3B — сотни/десятки/единицы.
@@ -331,7 +332,7 @@ LC265:  lda     Player1Lives
         lda     BattleState
         cmp     #BattleStateActive
         bne     LC283
-        jmp     LFD64
+        jmp     HandleSecretContinueChord
 
 ; Альтернативный хвост продолжения: ожидает в A жизни P1, добавляет Player2Lives и при $68=$80 переходит в SelectStage.
 ; Прямых ссылок на LC275 нет; при неуспехе проваливается в общий возврат к главному меню.

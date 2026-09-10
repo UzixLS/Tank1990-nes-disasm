@@ -38,7 +38,7 @@ LD41D:  lda     NametableBits
         lda     #$1E
         sta     PPU_MASK
         jsr     ReadControllers
-        jsr     LDA93
+        jsr     FinishAlternatingOamFrame
         jsr     UpdateAudioEngine
         inc     FrameCounter
         lda     FrameCounter
@@ -126,7 +126,7 @@ LD491:
         lda     #$20
         sta     SpriteBehindTerrainMask
         jsr     ClearNametableBuffer
-        jsr     LDA93
+        jsr     FinishAlternatingOamFrame
         ldx     #$15
         jsr     ResetEightByteRecord
         ldx     #$1D
