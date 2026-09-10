@@ -40,61 +40,68 @@ TitleMenuLoop:
 LC9E6:  jsr     WaitForNextFrame
         lda     FrameCounter
         and     #$03
-        bne     LC9F5
+        bne     DrawTitleCursorAndReadInput
         lda     ObjectFrame
         eor     #$04
         sta     ObjectFrame
+DrawTitleCursorAndReadInput:
 LC9F5:  jsr     DrawTanks
         lda     Joy1Pressed
         and     #BUTTON_SELECT
-        beq     LCA04
+        beq     CheckTitleSecretDownA
         inc     MenuSelection
         lda     #$00
         sta     SlowFrameCounter
+CheckTitleSecretDownA:
 LCA04:  lda     Joy1Held
         and     #BUTTON_DOWN
-        beq     LCA17
+        beq     CheckTitleSecretRightB
         lda     Joy1Pressed
         and     #BUTTON_A
-        beq     LCA17
+        beq     CheckTitleSecretRightB
         ; Down удерживается, A нажата в этом кадре: старший ниббл TitleSecretInputCode растёт.
         lda     #$10
         clc
         adc     TitleSecretInputCode
         sta     TitleSecretInputCode
+CheckTitleSecretRightB:
 LCA17:  lda     Joy1Held
         and     #BUTTON_RIGHT
-        beq     LCA25
+        beq     NormalizeTitleMenuSelection
         lda     Joy1Pressed
         and     #BUTTON_B
-        beq     LCA25
+        beq     NormalizeTitleMenuSelection
         ; Right удерживается, B нажата в этом кадре: TitleSecretInputCode уменьшается на единицу.
         dec     TitleSecretInputCode
+NormalizeTitleMenuSelection:
 LCA25:  lda     MenuSelection
         cmp     #$03
-        bcc     LCA2F
+        bcc     UpdateTitleMenuCursor
         lda     #$00
         sta     MenuSelection
+UpdateTitleMenuCursor:
 LCA2F:  jsr     UpdateTitleCursor
         lda     SlowFrameCounter
         cmp     #$0A
-        bne     LCA3D
+        bne     CheckTitleStartInput
         lda     ConstructionMapFlag
-        bne     LCA3D
+        bne     CheckTitleStartInput
         rts
 
+CheckTitleStartInput:
 LCA3D:  lda     Joy1Pressed
         and     #BUTTON_START
-        beq     LC9E6
+        beq     TitleMenuLoop
         lda     TitleSecretInputCode
         cmp     #$2E
-        bne     LCA52
+        bne     DispatchTitleMenuSelection
         jsr     RunVariantSelectionMenu
         pla
         pla
         jmp     MainFrontendLoop
 
         .byte   $EA
+DispatchTitleMenuSelection:
 LCA52:  lda     #$00
         sta     BackgroundPaletteIndex
         ; Удалить адрес возврата TitleScreen: выбранный обработчик продолжает
@@ -378,6 +385,7 @@ LCC27:  ldy     #$00
         sta     ScratchPtrHi
         lda     #$C0
         sta     ScratchPtrLo
+UploadNextAttributeByte:
 LCC31:  jsr     WaitForNextFrame
         ldx     PpuBufferPos
         lda     ScratchPtrHi
@@ -397,7 +405,7 @@ LCC31:  jsr     WaitForNextFrame
         lda     #$01
         jsr     AddAToPointer
         cpy     #$40
-        bne     LCC31
+        bne     UploadNextAttributeByte
         rts
 
 ; Ставит в PPU-очередь полную 32-тайловую строку nametable.
@@ -419,14 +427,16 @@ LCC5C:  ldx     #$00
         sta     PpuUpdateBuffer,x
         inx
         ldy     #$00
+QueueNextNametableTile:
 LCC78:  lda     NametableRowFillTile
-        bne     LCC7E
+        bne     StoreNametableTile
         lda     (ScratchPtrLo),y
+StoreNametableTile:
 LCC7E:  sta     PpuUpdateBuffer,x
         inx
         iny
         cpy     #$20
-        bne     LCC78
+        bne     QueueNextNametableTile
         lda     #$FF
         sta     PpuUpdateBuffer,x
         inx
@@ -441,6 +451,7 @@ LCC90:  lda     #$11
         sta     NametableRowFillTile
         lda     #$00
         sta     CurtainRowIndex
+CloseCurtainNextRowPair:
 LCC98:  jsr     WaitForNextFrame
         ldy     CurtainRowIndex
         jsr     QueueNametableRow
@@ -452,7 +463,7 @@ LCC98:  jsr     WaitForNextFrame
         inc     CurtainRowIndex
         lda     CurtainRowIndex
         cmp     #$10
-        bne     LCC98
+        bne     CloseCurtainNextRowPair
         rts
 
 ; Обратная шторка: восстанавливает пары строк из shadow, двигаясь от центра
@@ -463,6 +474,7 @@ LCCB2:  lda     #$00
         sta     NametableRowFillTile
         lda     #$0F
         sta     CurtainRowIndex
+OpenCurtainNextRowPair:
 LCCBA:  jsr     WaitForNextFrame
         ldy     CurtainRowIndex
         jsr     QueueNametableRow
@@ -474,7 +486,7 @@ LCCBA:  jsr     WaitForNextFrame
         dec     CurtainRowIndex
         lda     CurtainRowIndex
         cmp     #$FF
-        bne     LCCBA
+        bne     OpenCurtainNextRowPair
         rts
 
 ; Показывает и анимирует послеэтапную статистику.
@@ -589,7 +601,7 @@ LCD5E:  ldy     #$16
         tay
         jsr     QueueTranslatedTileString
         lda     MenuSelection
-        beq     LCDD8
+        beq     DelayAfterStatisticsUpdate
         ldy     #$1E
         ldx     #$17
         jsr     SelectVisibleDigits
@@ -620,6 +632,7 @@ LCD5E:  ldy     #$16
         adc     #$0C
         tay
         jsr     QueueTranslatedTileString
+DelayAfterStatisticsUpdate:
 LCDD8:  ldx     #$08
         jsr     DelayWithStatisticsIcons
         lda     StatisticsRowActive
@@ -854,7 +867,7 @@ LCEF7:  jsr     WaitForNextFrame
         ldy     #$15
         jsr     QueueTileAtCoordinates
         lda     MenuSelection
-        beq     LD014
+        beq     QueueStatisticsCountFields
         jsr     WaitForNextFrame
         lda     #>PlayerTwoStatisticsHeader
         sta     ScratchPtrHi
@@ -929,7 +942,7 @@ LD014:  jsr     WaitForNextFrame
         ldy     #$15
         jsr     QueueTileAtCoordinates
         lda     MenuSelection
-        beq     LD096
+        beq     QueueStatisticsFooter
         jsr     WaitForNextFrame
         lda     #>PointsText
         sta     ScratchPtrHi
@@ -1046,34 +1059,37 @@ LD130:  sta     OamTile
 ; достигает как минимум 2 (обычный первый порог — 20000 очков).
 ; Работает только при BattleStateActive. Для P1 проверяет Player1Score+2
 ; и PlayerExtraLifeAwarded; для P2 дополнительно требует MenuSelection!=0 и
-; использует Player2Score+2/PlayerExtraLifeAwarded+1. При награде увеличивает соответствующий PlayerLives и ставит
-; запрашивает два аудиопотока звука дополнительной жизни. Меняет A и флаги;
+; использует Player2Score+2/PlayerExtraLifeAwarded+1. При награде увеличивает
+; соответствующий PlayerLives и запрашивает два аудиопотока дополнительной жизни. Меняет A и флаги;
 ; X/Y сохраняются.
 AwardScoreThresholdLives:
 LD138:  lda     BattleState
         cmp     #BattleStateActive
-        bne     LD169
+        bne     ReturnFromExtraLifeCheck
         lda     PlayerExtraLifeAwarded
-        bne     LD14F
+        bne     CheckPlayerTwoExtraLife
         lda     Player1Score+2
         cmp     #$02
-        bcc     LD14F
+        bcc     CheckPlayerTwoExtraLife
         inc     Player1Lives
         inc     PlayerExtraLifeAwarded
-        jmp     LD161
+        jmp     RequestExtraLifeAudio
 
+CheckPlayerTwoExtraLife:
 LD14F:  lda     MenuSelection
-        beq     LD169
+        beq     ReturnFromExtraLifeCheck
         lda     PlayerExtraLifeAwarded+1
-        bne     LD169
+        bne     ReturnFromExtraLifeCheck
         lda     Player2Score+2
         cmp     #$02
-        bcc     LD169
+        bcc     ReturnFromExtraLifeCheck
         inc     Player2Lives
         inc     PlayerExtraLifeAwarded+1
+RequestExtraLifeAudio:
 LD161:  lda     #AudioStateStartRequested
         sta     ExtraLifePulse1AudioState
         sta     ExtraLifePulse2AudioState
+ReturnFromExtraLifeCheck:
 LD169:  rts
 
 ; Очищает основную nametable $2000: отключает рендеринг/NMI, обнуляет shadow,
@@ -1154,7 +1170,7 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         ldy     #$03
         jsr     QueueTranslatedTileString
         lda     MenuSelection
-        beq     LD20E
+        beq     QueueTitleMenuText
         lda     #>PlayerTwoScorePrefix
         sta     ScratchPtrHi
         lda     #<PlayerTwoScorePrefix
@@ -1167,6 +1183,7 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         jsr     SelectVisibleDigits
         ldy     #$03
         jsr     QueueTranslatedTileString
+QueueTitleMenuText:
 LD20E:  lda     #$00
         sta     TileTranslationOffset
         jsr     WaitForNextFrame
@@ -1237,7 +1254,7 @@ LD276:  jsr     WaitForNextFrame
         pla
         tax
         dex
-        bne     LD276
+        bne     DelayWithStatisticsIcons
         rts
 
 ; $FF-терминированные строки экранного шрифта. ASCII-подобные байты совпадают
@@ -1343,10 +1360,12 @@ LD348:  .byte   $4F,$56,$45,$52,$FF
 ; Входное $00 не меняет; X/Y сохраняет. C=0 на выходе, кроме теоретического
 ; случая переполнения промежуточного вычитания, недостижимого для байта.
 RemainderBySix:  lda     $00
+SubtractSixUntilBelowDivisor:
 LD34F:  cmp     #$06
-        bcc     LD357
+        bcc     ReturnRemainderBySix
         sbc     #$06
-        bcs     LD34F
+        bcs     SubtractSixUntilBelowDivisor
+ReturnRemainderBySix:
 LD357:  rts
 
 ; Литеральная строка ORIKO; статических ссылок нет.
@@ -1429,21 +1448,23 @@ PowerUpEffect0:
 ; слоты танков 7..2, устанавливая младшие биты атрибутов и инвертируя бит $04:
 ; ObjectAttributes=(old|$03)^$04. Возвращает исходный X; A и флаги меняются.
 LD3E0:  cpx     #$02
-        bcc     LD3F8
+        bcc     ApplyPlayerPowerUpEffect0
         txa
         pha
         ldx     #$07
+ApplyPowerUpEffect0ToNextEnemy:
 LD3E8:  lda     ObjectAttributes,x
         ora     #$03
         eor     #$04
         sta     ObjectAttributes,x
         dex
         cpx     #$01
-        bne     LD3E8
+        bne     ApplyPowerUpEffect0ToNextEnemy
         pla
         tax
         rts
 
+ApplyPlayerPowerUpEffect0:
 LD3F8:  lda     #$0A
         sta     PlayerShieldTimer,x
         rts

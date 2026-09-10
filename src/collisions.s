@@ -34,7 +34,7 @@ LE608:  ldx     TerrainProjectileSlot
         cmp     #ProjectileStateActive
         bne     AdvanceTerrainProjectile
         lda     ProjectileFlags,x
-        bne     LE61D
+        bne     PrepareProjectileTerrainOffsets
         txa
         eor     FrameCounter
         and     #$01
@@ -47,19 +47,21 @@ LE61D:  lda     ProjectileState,x
         and     #DirectionMask
         tay
         lda     ProjectileDirectionStepX,y
-        bpl     LE62C
+        bpl     StoreTerrainAxisXMagnitude
         eor     #$FF
         clc
         adc     #$01
+StoreTerrainAxisXMagnitude:
 LE62C:  sta     TerrainAxisXMagnitude
         asl     a
         asl     a
         sta     TerrainFarYOffset
         lda     ProjectileDirectionStepY,y
-        bpl     LE63C
+        bpl     StoreTerrainAxisYMagnitude
         eor     #$FF
         clc
         adc     #$01
+StoreTerrainAxisYMagnitude:
 LE63C:  sta     TerrainAxisYMagnitude
         asl     a
         asl     a
@@ -107,9 +109,10 @@ LE65F:  ldx     TerrainProjectileSlot
         jsr     ResolveProjectileTerrainHit
 AdvanceTerrainProjectile:
 LE68B:  dec     TerrainProjectileSlot
-        bmi     LE692
+        bmi     FinishProjectileTerrainCollisions
         jmp     CheckNextProjectileTerrain
 
+FinishProjectileTerrainCollisions:
 LE692:  rts
 
 ; Проверяет terrain в пиксельной точке X/Y.
@@ -232,19 +235,21 @@ LE721:  ldy     ProjectileCollisionSlot
         lda     ProjectileX,y
         sec
         sbc     ObjectX,x
-        bpl     LE739
+        bpl     PlayerHitXDistanceReady
         eor     #$FF
         clc
         adc     #$01
+PlayerHitXDistanceReady:
 LE739:  cmp     #$0A
         bcs     AdvanceEnemyProjectileCollision
         lda     ProjectileY,y
         sec
         sbc     ObjectY,x
-        bpl     LE74A
+        bpl     PlayerHitYDistanceReady
         eor     #$FF
         clc
         adc     #$01
+PlayerHitYDistanceReady:
 LE74A:  cmp     #$0A
         bcs     AdvanceEnemyProjectileCollision
         lda     #ProjectileStateImpact
@@ -319,19 +324,21 @@ MeasurePlayerProjectileTankDistance:
 LE7AA:  lda     ProjectileX,y
         sec
         sbc     ObjectX,x
-        bpl     LE7B7
+        bpl     EnemyHitXDistanceReady
         eor     #$FF
         clc
         adc     #$01
+EnemyHitXDistanceReady:
 LE7B7:  cmp     #$0A
         bcs     AdvancePlayerProjectileCollision
         lda     ProjectileY,y
         sec
         sbc     ObjectY,x
-        bpl     LE7C8
+        bpl     EnemyHitYDistanceReady
         eor     #$FF
         clc
         adc     #$01
+EnemyHitYDistanceReady:
 LE7C8:  cmp     #$0A
         bcs     AdvancePlayerProjectileCollision
         lda     #ProjectileStateImpact
@@ -535,19 +542,21 @@ LE928:  lda     ProjectilePairInnerSlot
         lda     ProjectileX,y
         sec
         sbc     ProjectileX,x
-        bpl     LE94D
+        bpl     ProjectilePairXDistanceReady
         eor     #$FF
         clc
         adc     #$01
+ProjectilePairXDistanceReady:
 LE94D:  cmp     #$06
         bcs     AdvanceProjectilePairInner
         lda     ProjectileY,y
         sec
         sbc     ProjectileY,x
-        bpl     LE95E
+        bpl     ProjectilePairYDistanceReady
         eor     #$FF
         clc
         adc     #$01
+ProjectilePairYDistanceReady:
 LE95E:  cmp     #$06
         bcs     AdvanceProjectilePairInner
         lda     #$00
@@ -597,19 +606,21 @@ LE97E:  ldx     PowerUpCollectorSlot
         lda     ObjectX,x
         sec
         sbc     PowerUpX
-        bpl     LE994
+        bpl     PowerUpXDistanceReady
         eor     #$FF
         clc
         adc     #$01
+PowerUpXDistanceReady:
 LE994:  cmp     #$0C
         bcs     AdvancePowerUpCollectorScan
         lda     ObjectY,x
         sec
         sbc     PowerUpY
-        bpl     LE9A4
+        bpl     PowerUpYDistanceReady
         eor     #$FF
         clc
         adc     #$01
+PowerUpYDistanceReady:
 LE9A4:  cmp     #$0C
         bcs     AdvancePowerUpCollectorScan
         lda     #$32
@@ -667,15 +678,17 @@ LE9F2:  inc     StageNumber
         lda     GameVariant
         and     #$0F
         cmp     #$06
-        beq     LE9FF
+        beq     WrapExtendedStageRange
         lda     StageNumber
         rts
 
+WrapExtendedStageRange:
 LE9FF:  lda     StageNumber
         cmp     #$77
-        bne     LEA09
+        bne     ResumeStageSelectionAfterIncrement
         lda     #$01
         sta     StageNumber
+ResumeStageSelectionAfterIncrement:
 LEA09:  pla
         pla
         jmp     StageSelectionInputLoop
@@ -699,24 +712,27 @@ ClassifyTerrainForProjectile:
 LEA12:  pha
         lda     TerrainProjectileSlot
         and     #$06
-        bne     LEA2E
+        bne     RestoreTerrainTileForClassification
         lda     TerrainProjectileSlot
         and     #$01
         tax
         lda     PlayerExtendedUpgrade,x
         cmp     #$A0
-        bcc     LEA2E
+        bcc     RestoreTerrainTileForClassification
         nop
         pla
         cmp     #$22
-        bne     LEA2F
+        bne     ClassifyTerrainTileRange
         jmp     DestroyWholeTerrainTile
 
+RestoreTerrainTileForClassification:
 LEA2E:  pla
+ClassifyTerrainTileRange:
 LEA2F:  cmp     #$12
-        bcc     LEA36
+        bcc     DispatchDestructibleTerrainHit
         jmp     FinishTerrainProbeWithoutPartialDamage
 
+DispatchDestructibleTerrainHit:
 LEA36:  jmp     DestroyProjectileOnTerrain
 
 ; Неиспользуемый напрямую адаптер: очищает $0178,X, загружает $0101,X

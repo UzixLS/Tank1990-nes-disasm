@@ -48,8 +48,9 @@ NmiHandler:
         lda     PPU_STATUS
         jsr     FlushPpuUpdateBuffer
         lda     BackgroundPaletteIndex
-        bmi     LD41D
+        bmi     RestoreNmiDisplayState
         jsr     UploadBackgroundPalette
+RestoreNmiDisplayState:
 LD41D:  lda     NametableBits
         ora     #$B0
         sta     PPU_CTRL
@@ -65,8 +66,9 @@ LD41D:  lda     NametableBits
         inc     FrameCounter
         lda     FrameCounter
         and     #$3F
-        bne     LD446
+        bne     RestoreNmiRegisters
         inc     SlowFrameCounter
+RestoreNmiRegisters:
 LD446:  plp
         pla
         tay
@@ -119,12 +121,13 @@ LD470:  jsr     WaitForNextFrame
 ; Выход: A=0, X=0; Y не меняет.
 ClearNametableBuffer:  lda     #$00
         tax
+ClearNextNametableShadowByte:
 LD481:  sta     NametableShadow,x
         sta     NametableShadowPage1,x
         sta     NametableShadowPage2,x
         sta     NametableShadowPage3,x
         inx
-        bne     LD481
+        bne     ClearNextNametableShadowByte
         rts
 
 ; Общая инициализация PPU/OAM-очереди, счётчиков, записей счёта и звука.
@@ -154,13 +157,14 @@ LD491:
         ldx     #$1D
         jsr     ResetEightByteRecord
         jsr     HasRestartSignature
-        bne     LD4CE
+        bne     UploadInitialNametables
         ldx     #$3D
         jsr     BootHook
         lda     #$02
         sta     HighScore+2
         lda     #$00
         sta     MenuSelection
+UploadInitialNametables:
 LD4CE:  lda     #$1C
         sta     NametablePpuOffset
         jsr     UploadNametableBuffer
@@ -175,24 +179,27 @@ LD4CE:  lda     #$1C
 ; Выход: X=$FF; A=первый байт маркера.
 StoreRestartSignature:
 LD4E3:  ldx     #$0F
+StoreNextRestartSignatureByte:
 LD4E5:  lda     LC040,x
         sta     RestartSignature,x
         dex
-        bpl     LD4E5
+        bpl     StoreNextRestartSignatureByte
         rts
 
 ; Сравнивает RestartSignature с ROM-маркером LC040.
 ; Возвращает A=1 при полном совпадении, иначе A=0; X указывает на место расхождения.
 HasRestartSignature:
 LD4EF:  ldx     #$0F
+CompareNextRestartSignatureByte:
 LD4F1:  lda     RestartSignature,x
         cmp     LC040,x
-        bne     LD4FF
+        bne     ReturnRestartSignatureMismatch
         dex
-        bpl     LD4F1
+        bpl     CompareNextRestartSignatureByte
         lda     #$01
         rts
 
+ReturnRestartSignatureMismatch:
 LD4FF:  lda     #$00
         rts
 
@@ -220,11 +227,12 @@ LD50E:  asl     a
         sta     PPU_ADDR
         lda     #$00
         sta     PPU_ADDR
+UploadNextBackgroundPaletteByte:
 LD51F:  lda     BackgroundPaletteSets,x
         sta     PPU_DATA
         inx
         dey
-        bne     LD51F
+        bne     UploadNextBackgroundPaletteByte
         lda     #$FF
         sta     BackgroundPaletteIndex
         lda     #$3F
@@ -243,11 +251,12 @@ LD53E:  ldx     #$00
         lda     #$3F
         sta     PPU_ADDR
         sty     PPU_ADDR
+UploadNextSpritePaletteByte:
 LD54A:  lda     SpritePalette,x
         sta     PPU_DATA
         inx
         dey
-        bne     LD54A
+        bne     UploadNextSpritePaletteByte
         rts
 
 SpritePalette:
@@ -257,8 +266,9 @@ LD565:  .incbin "../build/background-palettes.bin"
 ; Активно ждёт установки vblank в PPU_STATUS.
 ; Выход: A с установленным битом 7; X/Y не меняются. Чтение сбрасывает vblank и latch.
 WaitForVblankStart:
+WaitForVblankPoll:
 LD5F5:  lda     PPU_STATUS
-        bpl     LD5F5
+        bpl     WaitForVblankPoll
         rts
 
 ; Преобразует координаты тайла X=0..31, Y=0..31 в адрес shadow nametable:
@@ -412,15 +422,17 @@ QueueTileAtCoordinates:  jsr     TileCoordinatesToShadowAddress
         inx
         sta     AuxPtrLo
         ldy     #$00
+QueueNextShadowedStringByte:
 LD6CA:  lda     (ScratchPtrLo),y
         sta     PpuUpdateBuffer,x
         inx
         cmp     #$FF
-        beq     LD6DA
+        beq     FinishShadowedStringQueue
         sta     (AuxPtrLo),y
         iny
-        jmp     LD6CA
+        jmp     QueueNextShadowedStringByte
 
+FinishShadowedStringQueue:
 LD6DA:  stx     PpuBufferPos
         rts
 
@@ -440,17 +452,20 @@ LD6DD:  jsr     TileCoordinatesToShadowAddress
         sta     PpuUpdateBuffer,x
         inx
         ldy     #$00
+QueueNextTranslatedStringByte:
 LD6F0:  lda     (ScratchPtrLo),y
-        bmi     LD6F7
+        bmi     StoreTranslatedStringByte
         clc
         adc     TileTranslationOffset
+StoreTranslatedStringByte:
 LD6F7:  sta     PpuUpdateBuffer,x
         inx
         cmp     #$FF
-        beq     LD703
+        beq     FinishTranslatedStringQueue
         iny
-        jmp     LD6F0
+        jmp     QueueNextTranslatedStringByte
 
+FinishTranslatedStringQueue:
 LD703:  stx     PpuBufferPos
         rts
 
@@ -527,11 +542,12 @@ LD743:  lda     TerrainSubcellMask
 ClearTerrainSubcellShadow:
 LD74D:  lda     (ScratchPtrLo),y
         and     #$F0
-        bne     LD75B
+        bne     FinishClearTerrainSubcellShadow
         lda     TerrainSubcellMask
         eor     #$FF
         and     (ScratchPtrLo),y
         sta     (ScratchPtrLo),y
+FinishClearTerrainSubcellShadow:
 LD75B:  rts
 
 ; Устанавливает выбранный бит в shadow и ставит изменённый тайл в PPU-очередь.
@@ -545,10 +561,11 @@ LD75C:  lda     TerrainSubcellMask
 SetTerrainSubcellShadow:
 LD764:  lda     (ScratchPtrLo),y
         and     #$F0
-        bne     LD770
+        bne     FinishSetTerrainSubcellShadow
         lda     TerrainSubcellMask
         ora     (ScratchPtrLo),y
         sta     (ScratchPtrLo),y
+FinishSetTerrainSubcellShadow:
 LD770:  rts
 
 ; Немедленно копирует один байт (ScratchPtr),Y в PPU-адрес
@@ -596,8 +613,9 @@ LD784:  sta     (ScratchPtrLo),y
 AddAToPointer:  clc
         adc     ScratchPtrLo
         sta     ScratchPtrLo
-        bcc     LD7B3
+        bcc     FinishAddAToPointer
         inc     ScratchPtrHi
+FinishAddAToPointer:
 LD7B3:  rts
 
 ; Передаёт всю теневую nametable $0400-$07FF в PPU. NametablePpuOffset задаёт
@@ -608,12 +626,13 @@ UploadNametableBuffer:  lda     #$00
         tay
         lda     #$04
         sta     ScratchPtrHi
+UploadNextNametableShadowByte:
 LD7BD:  jsr     UploadShadowByteDirect
         lda     #$01
         jsr     AddAToPointer
         lda     ScratchPtrHi
         cmp     #$08
-        bne     LD7BD
+        bne     UploadNextNametableShadowByte
         rts
 
 ; Готовит shadow nametable для игрового поля: заполняет её тайлом $11,
@@ -624,17 +643,19 @@ LD7BD:  jsr     UploadShadowByteDirect
 InitializePlayfieldShadow:
 LD7CC:  ldx     #$00
         lda     #$11
+FillNextPlayfieldShadowByte:
 LD7D0:  sta     NametableShadow,x
         sta     NametableShadowPage1,x
         sta     NametableShadowPage2,x
         sta     NametableShadowPage3,x
         inx
-        bne     LD7D0
+        bne     FillNextPlayfieldShadowByte
         lda     #$00
         ldx     #$C0
+ClearNextAttributeShadowByte:
 LD7E3:  sta     NametableShadowPage3,x
         inx
-        bne     LD7E3
+        bne     ClearNextAttributeShadowByte
         ldx     NametableRectX
         ldy     NametableRectY
         jsr     TileCoordinatesToShadowAddress
@@ -643,16 +664,18 @@ LD7E3:  sta     NametableShadowPage3,x
 ClearNextNametableRectangleRow:
 LD7F4:  ldy     NametableRectWidth
         dey
+ClearNextNametableRectangleByte:
 LD7F7:  lda     #$00
         sta     (ScratchPtrLo),y
         dey
-        bpl     LD7F7
+        bpl     ClearNextNametableRectangleByte
         dec     NametableRectHeight
-        beq     LD80A
+        beq     FinishPlayfieldShadowInitialization
         lda     #$20
         jsr     AddAToPointer
         jmp     ClearNextNametableRectangleRow
 
+FinishPlayfieldShadowInitialization:
 LD80A:  rts
 
 ; Рисует TSA-блок 2x2 тайла и обновляет его атрибут палитры.
@@ -719,12 +742,14 @@ LD85E:  stx     RasterPixelX
         sta     ScratchPtrLo
         lda     #$10
         sta     ScratchPtrHi
+SeekChrTileAddress:
 LD86F:  dex
-        bmi     LD87A
+        bmi     BeginChrTileRead
         lda     #$10
         jsr     AddAToPointer
-        jmp     LD86F
+        jmp     SeekChrTileAddress
 
+BeginChrTileRead:
 LD87A:  lda     ScratchPtrHi
         sta     PPU_ADDR
         lda     ScratchPtrLo
@@ -787,7 +812,7 @@ LD8D2:  ldy     #$00
 RasterizeNextStringTile:
 LD8D6:  lda     (AuxPtrLo),y
         cmp     #$FF
-        beq     LD8F5
+        beq     FinishRasterizedString
         iny
         sty     RasterStringIndex
         ldx     RasterStringX
@@ -802,13 +827,15 @@ LD8D6:  lda     (AuxPtrLo),y
         ldy     RasterStringIndex
         jmp     RasterizeNextStringTile
 
+FinishRasterizedString:
 LD8F5:  rts
 
 ; Ожидает изменения FrameCounter обработчиком NMI. Требует включённые NMI;
 ; иначе цикл не завершится. Выход: A=новое значение FrameCounter; X/Y не меняются.
 WaitForNextFrame:  lda     FrameCounter
+WaitForFrameCounterChange:
 LD8F8:  cmp     FrameCounter
-        beq     LD8F8
+        beq     WaitForFrameCounterChange
         rts
 
 ; Выполняет накопленные записи из PpuUpdateBuffer. Команда имеет вид
@@ -819,25 +846,29 @@ FlushPpuUpdateBuffer:  ldx     PpuBufferPos
         lda     #$00
         sta     PpuUpdateBuffer,x
         tax
+FlushNextPpuCommand:
 LD905:  cpx     PpuBufferPos
-        beq     LD92F
+        beq     FinishPpuBufferFlush
         lda     PpuUpdateBuffer,x
         inx
         sta     PPU_ADDR
         lda     PpuUpdateBuffer,x
         inx
         sta     PPU_ADDR
+FlushNextPpuDataByte:
 LD917:  lda     PpuUpdateBuffer,x
         inx
         cmp     #$FF
-        bne     LD929
+        bne     WritePpuDataByte
         lda     PpuUpdateBuffer,x
         cmp     #$FF
-        bne     LD905
+        bne     FlushNextPpuCommand
         lda     PpuUpdateBuffer-1,x
+WritePpuDataByte:
 LD929:  sta     PPU_DATA
-        jmp     LD917
+        jmp     FlushNextPpuDataByte
 
+FinishPpuBufferFlush:
 LD92F:  lda     #$00
         sta     PpuBufferPos
         rts
@@ -847,20 +878,24 @@ LD92F:  lda     #$00
 ; X -- начальная колонка, $6B -- режим сдвига пустого числа. Выход: ScratchPtr=$00:Y,
 ; X сдвинут на число пропущенных знаков, A=0. Саму запись не меняет.
 SelectVisibleDigits:
+SkipNextLeadingZero:
 LD934:  lda     $00,y
-        bne     LD93E
+        bne     HandleFirstVisibleDigit
         iny
         inx
-        jmp     LD934
+        jmp     SkipNextLeadingZero
 
+HandleFirstVisibleDigit:
 LD93E:  cmp     #$FF
-        bne     LD94A
+        bne     StoreVisibleDigitsPointer
         lda     DigitBlankMode
-        bne     LD948
+        bne     AdjustBlankDigitPosition
         dex
         dey
+AdjustBlankDigitPosition:
 LD948:  dex
         dey
+StoreVisibleDigitsPointer:
 LD94A:  lda     #$00
         sta     ScratchPtrHi
         sty     ScratchPtrLo
@@ -877,15 +912,17 @@ LD951:  lda     #$10
         lda     #$30
         sta     TileTranslationOffset
         ldy     #$3D
+SkipNextHighScoreLeadingZero:
 LD95F:  lda     $00,y
-        bne     LD96F
+        bne     RasterizeVisibleHighScore
         iny
         lda     RasterStringX
         clc
         adc     #$20
         sta     RasterStringX
-        jmp     LD95F
+        jmp     SkipNextHighScoreLeadingZero
 
+RasterizeVisibleHighScore:
 LD96F:  lda     #$00
         sta     AuxPtrHi
         sty     AuxPtrLo
@@ -901,39 +938,47 @@ LD96F:  lda     #$00
 UpdateHighScoreRecord:
 LD97D:  ldx     #$00
         ldy     #$00
+ComparePlayer1ScoreDigit:
 LD981:  lda     Player1Score,x
         cmp     HighScore,x
-        bne     LD98F
+        bne     EvaluatePlayer1ScoreDifference
         inx
         cpx     #$07
-        beq     LD99E
-        jmp     LD981
+        beq     ComparePlayer2Score
+        jmp     ComparePlayer1ScoreDigit
 
-LD98F:  bmi     LD99E
+EvaluatePlayer1ScoreDifference:
+LD98F:  bmi     ComparePlayer2Score
         ldx     #$00
+CopyNextPlayer1ScoreDigit:
 LD993:  lda     Player1Score,x
         sta     HighScore,x
         inx
         cpx     #$07
-        bne     LD993
+        bne     CopyNextPlayer1ScoreDigit
         ldy     #$01
+ComparePlayer2Score:
 LD99E:  ldx     #$00
+ComparePlayer2ScoreDigit:
 LD9A0:  lda     Player2Score,x
         cmp     HighScore,x
-        bne     LD9AE
+        bne     EvaluatePlayer2ScoreDifference
         inx
         cpx     #$07
-        beq     LD9BD
-        jmp     LD9A0
+        beq     FinishHighScoreUpdate
+        jmp     ComparePlayer2ScoreDigit
 
-LD9AE:  bmi     LD9BD
+EvaluatePlayer2ScoreDifference:
+LD9AE:  bmi     FinishHighScoreUpdate
         ldx     #$00
+CopyNextPlayer2ScoreDigit:
 LD9B2:  lda     Player2Score,x
         sta     HighScore,x
         inx
         cpx     #$07
-        bne     LD9B2
+        bne     CopyNextPlayer2ScoreDigit
         ldy     #$FF
+FinishHighScoreUpdate:
 LD9BD:  rts
 
 ; Прибавляет семизначное десятичное число ScoreIncrementDigits к записи игрока.
@@ -950,20 +995,23 @@ LD9BE:  txa
         tax
         ldy     #$06
         clc
+AddNextScoreDigit:
 LD9C9:  lda     ScoreIncrementDigits,y
         adc     Player1Score,x
         cmp     #$0A
-        bmi     LD9D9
+        bmi     ClearScoreDigitCarry
         sec
         sbc     #$0A
         sec
-        jmp     LD9DA
+        jmp     StoreScoreDigit
 
+ClearScoreDigitCarry:
 LD9D9:  clc
+StoreScoreDigit:
 LD9DA:  sta     Player1Score,x
         dex
         dey
-        bpl     LD9C9
+        bpl     AddNextScoreDigit
         rts
 
 ; Готовит в ScoreIncrementDigits приращение счёта из упакованного десятичного A:
@@ -975,7 +1023,7 @@ LD9E1:  sta     ByteToDecimalInput
         ldx     #ScoreIncrementDigits
         jsr     ResetEightByteRecord
         lda     ByteToDecimalInput
-        beq     LD9F9
+        beq     PrepareOneThousandPointIncrement
         and     #$0F
         sta     DecimalTens
         lda     ByteToDecimalInput
@@ -986,6 +1034,7 @@ LD9E1:  sta     ByteToDecimalInput
         sta     DecimalHundreds
         rts
 
+PrepareOneThousandPointIncrement:
 LD9F9:  lda     #$01
         sta     ScoreIncrementThousands
         rts
@@ -1017,11 +1066,12 @@ LDA13:  sta     ByteToDecimalInput
 ; с накоплением $3A. JMP $DA1C попадает на последний байт предыдущей JMP-инструкции;
 ; смысл этого намеренного входа в середину инструкции не подтверждён.
 LDA1D:  asl     a
-        bcc     LDA28
+        bcc     StoreDecimalOnes
         sec
         sbc     #$0A
         inc     DecimalTens
         jmp     $DA1C                 ; Хаковый вход внутрь предыдущего JMP.
+StoreDecimalOnes:
 LDA28:  sta     DecimalOnes
         rts
 ; Добавляет один 8x8-спрайт в OamShadow через курсор $0D и шаг $0E.
@@ -1044,10 +1094,11 @@ LDA2B:  txa
         jsr     PixelCoordinatesToShadowPointer
         lda     (ScratchPtrLo),y
         cmp     #$22
-        bne     LDA47
+        bne     StoreOamEntry
         lda     RenderAttributes
         ora     SpriteBehindTerrainMask
         sta     RenderAttributes
+StoreOamEntry:
 LDA47:  ldx     OamBufferPos
         lda     OamSavedY
         sta     OamShadow,x
@@ -1116,6 +1167,7 @@ LDA93:  ldx     OamBufferPos
         clc
         adc     #$01
         sta     OamBufferStep
+HideNextUnusedOamEntry:
 LDA9E:  txa
         clc
         adc     OamBufferStep
@@ -1123,19 +1175,21 @@ LDA9E:  txa
         lda     #$F0
         sta     OamShadow,x
         cpx     #$04
-        bne     LDA9E
+        bne     HideNextUnusedOamEntry
         stx     OamBufferPos
         rts
 
 ; Нормализует результат предшествующего SEC/SBC: A=0 при Z=1, A=1 при C=1,
 ; A=$FF при заёме. Флаги должны поступать сразу от вычитания; X/Y не меняются.
 NormalizeSubtractionSign:
-LDAAF:  beq     LDABA
-        bcs     LDAB8
+LDAAF:  beq     ReturnNormalizedSubtractionSign
+        bcs     ReturnPositiveSubtractionSign
         lda     #$FF
-        jmp     LDABA
+        jmp     ReturnNormalizedSubtractionSign
 
+ReturnPositiveSubtractionSign:
 LDAB8:  lda     #$01
+ReturnNormalizedSubtractionSign:
 LDABA:  rts
 
 MetatilePalettes:

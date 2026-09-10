@@ -135,11 +135,12 @@ DecodeProjectileFlagsFromAttributes:
 LE0C0:
         beq     FinishProjectileInitialization
         cmp     #$C0
-        beq     LE0CE
+        beq     StoreNormalProjectileFlagsValue
         cmp     #$60
-        beq     LE0D3
+        beq     SetStrongProjectileFlags
         and     #$80
         bne     FinishProjectileInitialization
+StoreNormalProjectileFlagsValue:
 LE0CE:  lda     #$01
         sta     ProjectileFlags,x
         rts
@@ -618,26 +619,29 @@ SpawnTank:
 LE363:  lda     #$00
         sta     ObjectAttributes,x
         cpx     #FirstEnemyTankSlot
-        bcs     LE37C
+        bcs     SelectEnemySpawnPosition
         lda     PlayerSpawnX,x
         sta     ObjectX,x
         lda     PlayerSpawnY,x
         sta     ObjectY,x
         lda     #$00
         sta     PlayerStunTimer,x
-        jmp     LE393
+        jmp     CommitTankSpawn
 
+SelectEnemySpawnPosition:
 LE37C:  inc     EnemySpawnColumn
         ldy     EnemySpawnColumn
         cpy     #$03
-        bne     LE389
+        bne     LoadEnemySpawnPosition
         lda     #$00
         sta     EnemySpawnColumn
         tay
+LoadEnemySpawnPosition:
 LE389:  lda     EnemySpawnX,y
         sta     ObjectX,x
         lda     EnemySpawnY,y
         sta     ObjectY,x
+CommitTankSpawn:
 LE393:  lda     #TankStateSpawning
         sta     ObjectState,x
         ldy     ObjectY,x
@@ -672,11 +676,12 @@ PowerUpEffect1:
 ; для X>=2 — оба PlayerStunTimer=$C8.
 ; Портит A и флаги; X/Y не меняет.
 LE3B8:  cpx     #FirstEnemyTankSlot
-        bcs     LE3C2
+        bcs     ApplyPowerUpEffect1ToEnemyCollector
         lda     #$0A
         sta     EnemyFreezeTimer
         rts
 
+ApplyPowerUpEffect1ToEnemyCollector:
 LE3C2:  lda     #$C8
         sta     PlayerStunTimer
         sta     PlayerStunTimer+1
@@ -686,8 +691,9 @@ LE3C2:  lda     #$C8
 ; Выход: A — записанное значение; X/Y и остальная RAM не меняются.
 InitializePlayerVariantAttributes:
 LE3C9:  lda     GameVariant
-        bpl     LE3CF
+        bpl     MaskPlayerVariantAttribute
         lda     #$20
+MaskPlayerVariantAttribute:
 LE3CF:  and     #$20
         sta     PlayerUpgradeLevel
         sta     PlayerUpgradeLevel+1
@@ -700,9 +706,10 @@ LE3D8:  lda     #$E5
         sta     AuxPtrHi
         lda     GameVariant
         asl     a
-        bcc     LE3E4
+        bcc     ComputeVariantTitleOffset
         clc
         adc     #$0E
+ComputeVariantTitleOffset:
 LE3E4:  asl     a
         asl     a
         clc
@@ -727,8 +734,9 @@ LE3F9:  .byte   $03
 MergeTankAttributeBits:
 LE3FA:  ora     ObjectAttributes,x
         cmp     #$E7
-        bne     LE402
+        bne     StoreMergedTankAttributes
         lda     #$E4
+StoreMergedTankAttributes:
 LE402:  sta     ObjectAttributes,x
         lda     #$00
         sta     ObjectFrame,x
@@ -737,9 +745,10 @@ ClearProjectileStates:
 ; Обнуляет ProjectileState всех 10 слотов. Выход: A=0, X=$FF; Y и остальные поля снарядов не меняются.
 LE409:  ldx     #(ProjectileSlotCount-1)
         lda     #$00
+ClearNextProjectileState:
 LE40D:  sta     ProjectileState,x
         dex
-        bpl     LE40D
+        bpl     ClearNextProjectileState
         rts
 
 ClearTankStates:
@@ -748,10 +757,11 @@ ClearTankStates:
 ; Выход: A=0, X=$FF; Y и остальные поля не меняются.
 LE413:  lda     #$00
         ldx     #(TankSlotCount-1)
+ClearNextTankState:
 LE417:  sta     ObjectState,x
         sta     PlayerIceState,x
         dex
-        bpl     LE417
+        bpl     ClearNextTankState
         rts
 
 ; Заменяет старшую тетраду ObjectState, сохраняя направление в младшей.
@@ -799,25 +809,29 @@ DecodeDirectionButtons:
 ; Вход: A — байт кнопок. Приоритет Right, Left, Down, Up. Выход: A=direction 3/1/2/0 или $FF, если D-pad не нажат.
 ; X/Y/RAM не меняет; флаги соответствуют A.
 LE451:  asl     a
-        bcc     LE457
+        bcc     TestLeftDirectionButton
         lda     #DIRECTION_RIGHT
         rts
 
+TestLeftDirectionButton:
 LE457:  asl     a
-        bcc     LE45D
+        bcc     TestDownDirectionButton
         lda     #DIRECTION_LEFT
         rts
 
+TestDownDirectionButton:
 LE45D:  asl     a
-        bcc     LE463
+        bcc     TestUpDirectionButton
         lda     #DIRECTION_DOWN
         rts
 
+TestUpDirectionButton:
 LE463:  asl     a
-        bcc     LE469
+        bcc     ReturnNoDirectionButton
         lda     #DIRECTION_UP
         rts
 
+ReturnNoDirectionButton:
 LE469:  lda     #$FF
         rts
 
@@ -878,7 +892,7 @@ InitializeTankState:
 LE4EC:  lda     InitialTankStateBySlot,x
         sta     ObjectState,x
         cpx     #FirstEnemyTankSlot
-        bcs     LE505
+        bcs     InitializeEnemyTankAttributes
         lda     #$03
         sta     PlayerShieldTimer,x
         lda     PlayerUpgradeLevel,x
@@ -888,6 +902,7 @@ LE4EC:  lda     InitialTankStateBySlot,x
         sta     ObjectFrame,x
         rts
 
+InitializeEnemyTankAttributes:
 LE505:  jsr     NextRandomByte
         and     #DirectionMask
         tay
@@ -896,26 +911,30 @@ LE505:  jsr     NextRandomByte
         sta     ObjectAttributes,x
         lda     StageNumber
         cmp     #$0C
-        bcc     LE520
+        bcc     SelectEarlyStageBonusAttributeIndex
         jsr     NextRandomByte
         and     #DirectionMask
-        jmp     LE525
+        jmp     ApplyEnemyBonusAttributeBits
 
+SelectEarlyStageBonusAttributeIndex:
 LE520:  jsr     NextRandomByte
         and     #$07
+ApplyEnemyBonusAttributeBits:
 LE525:  tay
         lda     EnemyBonusAttributeBits,y
         ora     ObjectAttributes,x
         sta     ObjectAttributes,x
         lda     StageNumber
         cmp     #$0C
-        bcc     LE53B
+        bcc     SelectEarlyStageLowAttributeIndex
         jsr     NextRandomByte
         and     #$07
-        jmp     LE540
+        jmp     ApplyEnemyLowAttributeBits
 
+SelectEarlyStageLowAttributeIndex:
 LE53B:  jsr     NextRandomByte
         and     #DirectionMask
+ApplyEnemyLowAttributeBits:
 LE540:  tay
         lda     EnemyLowAttributeBits,y
         ora     ObjectAttributes,x
@@ -945,8 +964,9 @@ LE54F:  lda     TankLevels+$56,y
 BeginPowerUpCollectorScan:
 LE55B:  lda     #$07
         cmp     GameVariant
-        bcc     LE563
+        bcc     StorePowerUpCollectorScanStart
         lda     #$01
+StorePowerUpCollectorScanStart:
 LE563:  sta     PowerUpCollectorSlot
         jmp     CheckPowerUpTankOverlap
 
@@ -954,8 +974,9 @@ LE563:  sta     PowerUpCollectorSlot
 ; При сложении портит A/X/Y и запись счёта выбранного игрока.
 AddPreparedScoreForPlayerSlot:
 LE568:  cpx     #FirstEnemyTankSlot
-        bcs     LE56F
+        bcs     FinishPreparedScoreAward
         jsr     AddScoreDigitsToRecord
+FinishPreparedScoreAward:
 LE56F:  rts
 
 ; 14 фиксированных 8-байтных тайловых строк "TANK A".."TANK N", каждая с двумя $FF.

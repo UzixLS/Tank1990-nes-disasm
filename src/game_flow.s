@@ -24,20 +24,23 @@ LC010:  jsr     EnableNmiAfterVblank
 DispatchPlayerFireInput:
 LC019:  lda     GameMode
         cmp     #$06
-        beq     LC031
+        beq     CheckCombinedFirePress
         lda     Joy1Pressed,x
         and     #BUTTON_A
-        bne     LC02B
+        bne     FirePlayerProjectileNow
         lda     Joy1Held,x
         and     #BUTTON_B
-        beq     LC02E
+        beq     SkipPlayerProjectile
+FirePlayerProjectileNow:
 LC02B:  jmp     FirePlayerProjectile
 
+SkipPlayerProjectile:
 LC02E:  jmp     AdvancePlayerFiringLoop
 
+CheckCombinedFirePress:
 LC031:  lda     Joy1Pressed,x
         and     #(BUTTON_A | BUTTON_B)
-        beq     LC02E
+        beq     SkipPlayerProjectile
         jmp     FirePlayerProjectile
 
 ByteToDecimalInput = $00
@@ -46,20 +49,23 @@ ByteToDecimalDigits:
 ; Выход: DecimalHundreds/Tens/Ones — десятичные цифры.
 ; Портит A и флаги; X/Y не меняет. Не обнуляет $39/$3A самостоятельно.
         lda     ByteToDecimalInput
+CountDecimalHundreds:
 LC03C:  cmp     #$64
-        bcc     LC048
+        bcc     CountDecimalTens
 LC040:  sec
         sbc     #$64
         inc     DecimalHundreds
-        jmp     LC03C
+        jmp     CountDecimalHundreds
 
+CountDecimalTens:
 LC048:  cmp     #$0A
-        bcc     LC054
+        bcc     StoreByteDecimalOnes
         sec
         sbc     #$0A
         inc     DecimalTens
-        jmp     LC048
+        jmp     CountDecimalTens
 
+StoreByteDecimalOnes:
 LC054:  sta     DecimalOnes
         rts
 
@@ -79,12 +85,13 @@ ResetHandler:
         sta     PPU_CTRL
         cld
         ldx     #$02
+WaitResetVblank:
 LC079:  lda     PPU_STATUS
-        bpl     LC079
+        bpl     WaitResetVblank
         lda     #$06
         sta     PPU_MASK
         dex
-        bne     LC079
+        bne     WaitResetVblank
         ldx     #$6F
         txs
         jsr     ResetExtensionState
@@ -120,11 +127,12 @@ ConstructionMode:
 ; START поднимает ConstructionMapFlag и
 ; возвращается в главное меню. Меняет объект 0, тень nametable, PPU-очередь и рабочую RAM; портит A/X/Y.
 LC0AE:  lda     ConstructionMapFlag
-        bne     LC0BE
+        bne     InitializeConstructionEditor
         jsr     DisableRenderingForBulkUpdate
         jsr     InitializePlayfieldRectangle
         jsr     UploadNametableBuffer
         jsr     EnableNmiAfterVblank
+InitializeConstructionEditor:
 LC0BE:  jsr     ClearTankStates
         lda     #$10
         sta     ObjectX
@@ -144,59 +152,68 @@ LC0BE:  jsr     ClearTankStates
         sta     PlayerStunTimer
         sta     PlayerStunTimer+1
         lda     ConstructionMapFlag
-        bne     LC0EA
+        bne     ConstructionEditorFrame
         jsr     DrawBrickBaseEnclosure
+ConstructionEditorFrame:
 LC0EA:  jsr     WaitForNextFrame
         jsr     UpdateConstructionCursor
         jsr     ClampConstructionCursor
         lda     FrameCounter
         and     #$10
-        beq     LC0FC
+        beq     ProcessConstructionEditorInput
         jsr     DrawTanks
+ProcessConstructionEditorInput:
 LC0FC:  lda     Joy1Held
         and     #BUTTON_DIRECTIONS
-        bne     LC13E
+        bne     CheckConstructionPaintHeld
         lda     Joy1Pressed
         and     #BUTTON_A
-        beq     LC120
+        beq     CheckConstructionPreviousTile
         lda     ConstructionEditLatch
-        bne     LC111
+        bne     SelectNextConstructionTile
         inc     ConstructionEditLatch
-        jmp     LC144
+        jmp     PaintConstructionTile
 
+SelectNextConstructionTile:
 LC111:  inc     ConstructionMetatileIndex
         lda     ConstructionMetatileIndex
         cmp     #$0E
-        bne     LC144
+        bne     PaintConstructionTile
         lda     #$00
         sta     ConstructionMetatileIndex
-        jmp     LC144
+        jmp     PaintConstructionTile
 
+CheckConstructionPreviousTile:
 LC120:  lda     Joy1Pressed
         and     #BUTTON_B
-        beq     LC13E
+        beq     CheckConstructionPaintHeld
         lda     ConstructionEditLatch
-        bne     LC12F
+        bne     SelectPreviousConstructionTile
         inc     ConstructionEditLatch
-        jmp     LC144
+        jmp     PaintConstructionTile
 
+SelectPreviousConstructionTile:
 LC12F:  dec     ConstructionMetatileIndex
         lda     ConstructionMetatileIndex
         cmp     #$FF
-        bne     LC144
+        bne     PaintConstructionTile
         lda     #$0D
         sta     ConstructionMetatileIndex
-        jmp     LC144
+        jmp     PaintConstructionTile
 
+CheckConstructionPaintHeld:
 LC13E:  lda     Joy1Held
         and     #(BUTTON_A | BUTTON_B)
-        beq     LC147
+        beq     CheckConstructionExit
+PaintConstructionTile:
 LC144:  jsr     DrawConstructionMetatile
+CheckConstructionExit:
 LC147:  lda     Joy1Pressed
         and     #BUTTON_START
-        bne     LC150
-        jmp     LC0EA
+        bne     ExitConstructionEditor
+        jmp     ConstructionEditorFrame
 
+ExitConstructionEditor:
 LC150:  lda     #$20
         sta     SpriteBehindTerrainMask
         inc     ConstructionMapFlag
@@ -285,14 +302,16 @@ LC1C5:  lda     #AudioStateStartRequested
         sta     StageIntroTriangleAudioState
         sta     StageIntroPulse2AudioState
         lda     ConstructionMapFlag
-        bne     LC1E2
+        bne     DrawConstructionStageBase
         jsr     InitializePlayfieldRectangle
         lda     StageNumber
         jsr     LoadAndDrawStage
         jsr     DrawBrickBaseEnclosure
-        jmp     LC1E5
+        jmp     FinishSelectedStageSetup
 
+DrawConstructionStageBase:
 LC1E2:  jsr     DrawBareBase
+FinishSelectedStageSetup:
 LC1E5:  lda     #$00
         sta     PpuBufferPos
         jsr     UploadAttributesGradually
@@ -308,28 +327,30 @@ LC1E5:  lda     #$00
 MainGameplayFrameLoop:
 LC1F9:  jsr     WaitForNextFrame
         lda     PauseState
-        bne     LC203
+        bne     RenderGameplayFrame
         jsr     RunGameplayLogicTick
+RenderGameplayFrame:
 LC203:  jsr     DrawAndExpirePowerUp
         jsr     DrawProjectiles
         jsr     DrawTanks
         lda     Joy1Pressed
         and     #BUTTON_START
-        beq     LC21B
+        beq     FinishGameplayFrame
         lda     #$01
         eor     PauseState
         sta     PauseState
         sta     PauseAudioState
+FinishGameplayFrame:
 LC21B:  jsr     DrawPauseOverlay
         jsr     CheckStageLoopFinished
-        beq     LC1F9
+        beq     MainGameplayFrameLoop
         lda     #$00
         sta     SlowFrameCounter
         sta     FrameCounter
         sta     PlayerMovementLoopAudioState
         sta     GameplayLoopAudioState
         lda     TransitionObjectTimer
-        beq     LC238
+        beq     TransitionObjectFrameLoop
         lda     #$FE
         sta     SlowFrameCounter
 ; Анимация/задержка после исхода этапа. Продолжает логику и рендеринг, пока
@@ -344,13 +365,13 @@ LC238:  jsr     WaitForNextFrame
         jsr     UpdateHalfSecondPhaseFlag
         lda     SlowFrameCounter
         cmp     #$02
-        bne     LC238
+        bne     TransitionObjectFrameLoop
         jsr     ResetAudioEngine
         jsr     ShowStageStatistics
         inc     StageNumber
         lda     StageNumber
         cmp     #$FF
-        bne     LC265
+        bne     ResolveStageOutcome
         lda     #$01
         sta     StageNumber
 ; После сброса звука и экрана результата выбирает продолжение, секретный continue или возврат в главное меню.
@@ -358,10 +379,10 @@ ResolveStageOutcome:
 LC265:  lda     Player1Lives
         clc
         adc     Player2Lives
-        beq     LC283
+        beq     ReturnToTitleAfterStage
         lda     BattleState
         cmp     #BattleStateActive
-        bne     LC283
+        bne     ReturnToTitleAfterStage
         jmp     HandleSecretContinueChord
 
 ; Альтернативный хвост продолжения: ожидает в A жизни P1, добавляет Player2Lives и при $68=$80 переходит в SelectStage.
@@ -369,17 +390,19 @@ LC265:  lda     Player1Lives
 UnusedContinueTail:
 LC275:  clc
         adc     Player2Lives
-        beq     LC283
+        beq     ReturnToTitleAfterStage
         lda     BattleState
         cmp     #BattleStateActive
-        bne     LC283
+        bne     ReturnToTitleAfterStage
         jmp     SelectStage
+ReturnToTitleAfterStage:
 LC283:  jsr     ClearScreenAndAudio
         jsr     UpdateHighScoreRecord
         tya
-        beq     LC292
+        beq     RebuildTitleAfterStage
         jsr     ShowSessionResultScreen
         jsr     ClearScreenAndResumeNmi
+RebuildTitleAfterStage:
 LC292:  jmp     RebuildTitleNametable
 
 ; Гасит рендеринг, очищает shadow RAM, загружает её в текущую nametable,
@@ -396,12 +419,13 @@ LC295:  jsr     DisableRenderingForBulkUpdate
 SuppressInputOutsideActiveStage:
 LC2A2:  lda     BattleState
         cmp     #BattleStateActive
-        beq     LC2B2
+        beq     FinishInputSuppression
         lda     #$00
         sta     Joy1Held
         sta     Joy2Held
         sta     Joy1Pressed
         sta     Joy2Pressed
+FinishInputSuppression:
 LC2B2:  rts
 
 ; Сбрасывает записи двух игроков и общие счётчики новой игровой сессии.
@@ -427,9 +451,10 @@ LC2BD:  jsr     InitializePlayerVariantAttributes
         sta     Player2Lives
         sta     EnemySpawnColumn
         lda     MenuSelection
-        bne     LC2DD
+        bne     FinishGameSessionInitialization
         lda     #$00
         sta     Player2Lives
+FinishGameSessionInitialization:
 LC2DD:  lda     #$01
         sta     StageNumber
         nop
@@ -470,15 +495,17 @@ UnreferencedRtsByteC31c:
 UpdateHalfSecondPhaseFlag:
 LC31D:  lda     FrameCounter
         and     #$3F
-        beq     LC32C
+        beq     SelectFirstHalfSecondPhase
         cmp     #$20
-        bne     LC330
+        bne     KeepHalfSecondPhase
         lda     #$01
         sta     BackgroundPaletteIndex
         rts
 
+SelectFirstHalfSecondPhase:
 LC32C:  lda     #$02
         sta     BackgroundPaletteIndex
+KeepHalfSecondPhase:
 LC330:  rts
 
 ; Инициализирует рабочее состояние выбранного этапа: очищает танки/снаряды, создаёт танки живых игроков,
@@ -494,13 +521,15 @@ LC331:  jsr     ClearProjectileStates
         lda     #$00
         sta     TransitionObjectTimer
         lda     Player1Lives
-        beq     LC34A
+        beq     TrySpawnSecondPlayer
         ldx     #$00
         jsr     SpawnTank
+TrySpawnSecondPlayer:
 LC34A:  lda     Player2Lives
-        beq     LC353
+        beq     InitializeStageCounters
         ldx     #$01
         jsr     SpawnTank
+InitializeStageCounters:
 LC353:  lda     #$14
         sta     EnemiesToSpawn
         sta     EnemiesRemaining
@@ -533,20 +562,23 @@ LC353:  lda     #$14
         sta     StageSelectionLocked
         lda     StageNumber
         cmp     #$0C
-        bcc     LC39C
+        bcc     SelectEarlyStageActivityInterval
         lda     #$00
         sta     EnemyActivityInterval
         rts
 
+SelectEarlyStageActivityInterval:
 LC39C:  lda     #$0C
         sec
         sbc     StageNumber
         sta     EnemyActivityInterval
         jsr     NextRandomByte
+ReduceActivityIntervalRandomIndex:
 LC3A6:  cmp     EnemyActivityInterval
-        bcc     LC3AE
+        bcc     LoadEarlyStageActivityInterval
         sbc     EnemyActivityInterval
-        bcs     LC3A6
+        bcs     ReduceActivityIntervalRandomIndex
+LoadEarlyStageActivityInterval:
 LC3AE:  tax
         lda     EarlyStageSpawnDelayTable,x
         sta     EnemyActivityInterval
@@ -614,18 +646,19 @@ RunAttractMode:
 LC41D:  jsr     WaitForNextFrame
         lda     Joy1Pressed
         and     #(BUTTON_SELECT | BUTTON_START)
-        bne     LC43F
+        bne     ExitAttractModeToTitle
         jsr     GenerateAttractModeInput
         jsr     RunGameplayLogicTick
         jsr     DrawAndExpirePowerUp
         jsr     DrawTanks
         jsr     DrawProjectiles
         jsr     CheckStageLoopFinished
-        beq     LC41D
+        beq     RunAttractMode
         lda     #$00
         sta     PpuBufferPos
         rts
 
+ExitAttractModeToTitle:
 LC43F:  pla
         pla
         lda     #$00
@@ -662,6 +695,7 @@ LC44B:  jsr     DisableRenderingForBulkUpdate
         sta     SessionResultPulse1AudioState
         sta     SessionResultPulse2AudioState
         sta     SessionResultTriangleAudioState
+WaitForSessionResultMusic:
 LC486:  jsr     WaitForNextFrame
         lda     FrameCounter
         and     #$03
@@ -669,7 +703,7 @@ LC486:  jsr     WaitForNextFrame
         adc     #$05
         sta     BackgroundPaletteIndex
         lda     SessionResultPulse1AudioState
-        bne     LC486
+        bne     WaitForSessionResultMusic
         lda     #$00
         sta     BackgroundPaletteIndex
         rts
@@ -677,7 +711,7 @@ LC486:  jsr     WaitForNextFrame
 ; Вход: A — $46. Возвращается без изменений, если A!=$AB; иначе открывает модальное меню вариантов.
 HandleBootVariantMarker:
 LC49C:  cmp     #$AB
-        beq     LC4A1
+        beq     RunVariantSelectionMenu
         rts
 
 VariantMenuRow       = TitleSecretInputCode
@@ -727,6 +761,7 @@ LC4A1:  lda     #$80
         lda     #$00
         sta     MenuSelection
         sta     VariantMenuRow
+DrawNextVariantMenuRow:
 LC4F9:  lda     #>VariantMenuTankNames
         sta     ScratchPtrHi
         lda     VariantMenuTextPtrLo
@@ -744,52 +779,61 @@ LC4F9:  lda     #>VariantMenuTankNames
         inc     VariantMenuRow
         lda     VariantMenuRow
         cmp     #$0E
-        bcc     LC4F9
+        bcc     DrawNextVariantMenuRow
+DrawVariantMenuCursor:
 LC51C:  lda     #>VariantMenuSelectionCursor
         sta     ScratchPtrHi
         lda     #<VariantMenuSelectionCursor
         sta     ScratchPtrLo
         jsr     QueueVariantMenuText
+VariantMenuInputLoop:
 LC527:  lda     Joy1Held
         and     #BUTTON_DOWN
-        beq     LC545
+        beq     CheckVariantMenuUp
         jsr     WaitVariantMenuRepeatAndEraseCursor
         inc     GameVariant
         lda     GameVariant
         cmp     #$07
-        bne     LC53A
+        bne     WrapVariantMenuAfterSix
         lda     #$80
+WrapVariantMenuAfterSix:
 LC53A:  cmp     #$87
-        bne     LC540
+        bne     CommitVariantMenuSelection
         lda     #$00
+CommitVariantMenuSelection:
 LC540:  sta     GameVariant
-        jmp     LC51C
+        jmp     DrawVariantMenuCursor
 
+CheckVariantMenuUp:
 LC545:  lda     Joy1Held
         and     #BUTTON_UP
-        beq     LC563
+        beq     CheckVariantMenuPowerUps
         jsr     WaitVariantMenuRepeatAndEraseCursor
         dec     GameVariant
         lda     GameVariant
         cmp     #$FF
-        bne     LC558
+        bne     WrapVariantMenuBeforeExtendedRange
         lda     #$86
+WrapVariantMenuBeforeExtendedRange:
 LC558:  cmp     #$7F
-        bne     LC55E
+        bne     CommitPreviousVariantSelection
         lda     #$06
+CommitPreviousVariantSelection:
 LC55E:  sta     GameVariant
-        jmp     LC51C
+        jmp     DrawVariantMenuCursor
 
+CheckVariantMenuPowerUps:
 LC563:  lda     Joy1Pressed
         and     #BUTTON_SELECT
-        beq     LC572
+        beq     CheckVariantMenuExit
         lda     AllPowerUpsEnabled
         eor     #$01
         sta     AllPowerUpsEnabled
         jsr     DrawSelectedMenuOption
+CheckVariantMenuExit:
 LC572:  lda     Joy1Pressed
         and     #BUTTON_START
-        beq     LC527
+        beq     VariantMenuInputLoop
         rts
 
 ; Debounce/autorepeat меню: сбрасывает FrameCounter, ждёт фазу mod16=0,
@@ -798,10 +842,11 @@ LC572:  lda     Joy1Pressed
 WaitVariantMenuRepeatAndEraseCursor:
 LC579:  lda     #$00
         sta     FrameCounter
+WaitForVariantMenuRepeatPhase:
 LC57D:  jsr     WaitForNextFrame
         lda     FrameCounter
         and     #$0F
-        bne     LC57D
+        bne     WaitForVariantMenuRepeatPhase
         lda     #AudioStateStartRequested
         sta     RicochetOrMenuStepAudioState
         lda     #>VariantMenuBlankCursorText
@@ -868,10 +913,11 @@ LC5D9:  jsr     DisableRenderingForBulkUpdate
 ; иначе применяет RestrictedPowerUpTypeTable, исключающую эффект 7. Выход: A — номер; RAM и X/Y не меняются.
 SelectPowerUpTypeForVariant:
 LC5F3:  lda     AllPowerUpsEnabled
-        beq     LC5FB
+        beq     SelectRestrictedPowerUpType
         lda     LE8FA,y
         rts
 
+SelectRestrictedPowerUpType:
 LC5FB:  lda     RestrictedPowerUpTypeTable,y
         rts
 
@@ -879,26 +925,28 @@ PowerUpEffect3:
 ; Для игрока X<2 и $8E!=0 увеличивает $0178,X на $20, затем всегда переходит в ApplyPowerUpEffect3.
 ; Для X>=2 или $8E=0 сразу идёт в общую часть. Выходного RTS здесь нет; портит A и флаги.
 LC5FF:  cpx     #$02
-        bcs     LC610
+        bcs     ApplyCommonPowerUpEffect3
         lda     AllPowerUpsEnabled
-        beq     LC610
+        beq     ApplyCommonPowerUpEffect3
         lda     PlayerExtendedUpgrade,x
         clc
         adc     #$20
         sta     PlayerExtendedUpgrade,x
+ApplyCommonPowerUpEffect3:
 LC610:  jmp     ApplyPowerUpEffect3
 
 PowerUpEffect6:
 ; Для игрока X<2 и $8E!=0 увеличивает $0178,X на $60, затем переходит в SetMaximumObjectUpgrade.
 ; Для остальных слотов/вариантов только общая часть. Портит A и флаги.
 LC613:  cpx     #$02
-        bcs     LC624
+        bcs     ApplyCommonPowerUpEffect6
         lda     AllPowerUpsEnabled
-        beq     LC624
+        beq     ApplyCommonPowerUpEffect6
         lda     PlayerExtendedUpgrade,x
         clc
         adc     #$60
         sta     PlayerExtendedUpgrade,x
+ApplyCommonPowerUpEffect6:
 LC624:  jmp     SetMaximumObjectUpgrade
 ; Подкладывает в StageNumber верхнюю границу для декремента: $76 при ($46&$0F)=6, иначе $32.
 ; Выход: A — записанное StageNumber; X/Y не меняются.
@@ -906,10 +954,12 @@ WrapStageNumberBackward:
 LC627:  lda     GameVariant
         and     #$0F
         cmp     #$06
-        beq     LC633
+        beq     SelectExtendedStageUpperBound
         lda     #$32
-        bne     LC635
+        bne     StoreStageUpperBound
+SelectExtendedStageUpperBound:
 LC633:  lda     #$76
+StoreStageUpperBound:
 LC635:  sta     StageNumber
         rts
 
@@ -930,68 +980,76 @@ AttractPlayerSlot = $5A
 GenerateAttractModeInput:
 LC642:  lda     #$01
         sta     AttractPlayerSlot
+GenerateNextAttractPlayerInput:
 LC646:  ldx     AttractPlayerSlot
         lda     PowerUpX
-        beq     LC65E
+        beq     TryFirstAttractEnemyTarget
         lda     PowerUpPickupDisplayTimer
-        bne     LC65E
+        bne     TryFirstAttractEnemyTarget
         lda     PowerUpX
         sta     TankTargetX
         lda     PowerUpY
         sta     TankTargetY
         jsr     ChooseTankStateTowardTarget
-        jmp     LC6A5
+        jmp     ConvertAttractDirectionToInput
 
+TryFirstAttractEnemyTarget:
 LC65E:  lda     ObjectState+2,x
-        bpl     LC674
+        bpl     TrySecondAttractEnemyTarget
         cmp     #NonTargetableTankStateMin
-        bcs     LC674
+        bcs     TrySecondAttractEnemyTarget
         lda     ObjectX+2,x
         sta     TankTargetX
         lda     ObjectY+2,x
         sta     TankTargetY
         jsr     ChooseTankStateTowardTarget
-        jmp     LC6A5
+        jmp     ConvertAttractDirectionToInput
 
+TrySecondAttractEnemyTarget:
 LC674:  lda     ObjectState+4,x
-        bpl     LC68A
+        bpl     TryThirdAttractEnemyTarget
         cmp     #NonTargetableTankStateMin
-        bcs     LC68A
+        bcs     TryThirdAttractEnemyTarget
         lda     ObjectX+4,x
         sta     TankTargetX
         lda     ObjectY+4,x
         sta     TankTargetY
         jsr     ChooseTankStateTowardTarget
-        jmp     LC6A5
+        jmp     ConvertAttractDirectionToInput
 
+TryThirdAttractEnemyTarget:
 LC68A:  lda     ObjectState+3,x
-        bpl     LC6A0
+        bpl     UseAttractNeutralInput
         cmp     #NonTargetableTankStateMin
-        bcs     LC6A0
+        bcs     UseAttractNeutralInput
         lda     ObjectX+3,x
         sta     TankTargetX
         lda     ObjectY+3,x
         sta     TankTargetY
         jsr     ChooseTankStateTowardTarget
-        jmp     LC6A5
+        jmp     ConvertAttractDirectionToInput
 
+UseAttractNeutralInput:
 LC6A0:  lda     #$00
-        jmp     LC6AB
+        jmp     StoreAttractPlayerInput
 
+ConvertAttractDirectionToInput:
 LC6A5:  and     #DirectionMask
         tay
         lda     DemoInputByDirection,y
+StoreAttractPlayerInput:
 LC6AB:  ldx     AttractPlayerSlot
         sta     Joy1Held,x
         sta     Joy1Pressed,x
         lda     ObjectY,x
         cmp     #$C8
-        bcc     LC6BD
+        bcc     AdvanceAttractPlayer
         lda     Joy1Pressed,x
         and     #BUTTON_DIRECTIONS
         sta     Joy1Pressed,x
+AdvanceAttractPlayer:
 LC6BD:  dec     AttractPlayerSlot
-        bpl     LC646
+        bpl     GenerateNextAttractPlayerInput
         rts
 
 DemoInputByDirection:
@@ -1012,29 +1070,33 @@ LC6C6:  lda     ConstructionMetatileIndex
 UpdateConstructionCursor:
 LC6D2:  lda     Joy1Held
         and     #BUTTON_DIRECTIONS
-        beq     LC6E1
+        beq     ResetConstructionMoveRepeat
         inc     ConstructionMoveRepeatTimer
         lda     #$00
         sta     ConstructionEditLatch
-        jmp     LC6E5
+        jmp     CheckConstructionMoveStep
 
+ResetConstructionMoveRepeat:
 LC6E1:  lda     #$00
         sta     ConstructionMoveRepeatTimer
+CheckConstructionMoveStep:
 LC6E5:  lda     ConstructionMoveRepeatTimer
         cmp     #$14
-        beq     LC6FB
+        beq     RepeatConstructionCursorMove
         lda     Joy1Pressed
         and     #BUTTON_DIRECTIONS
-        beq     LC71D
+        beq     FinishConstructionCursorUpdate
         lda     Joy1Pressed
         jsr     DecodeDirectionButtons
-        bmi     LC71D
-        jmp     LC704
+        bmi     FinishConstructionCursorUpdate
+        jmp     ApplyConstructionCursorMove
 
+RepeatConstructionCursorMove:
 LC6FB:  lda     #$0F
         sta     ConstructionMoveRepeatTimer
         lda     Joy1Held
         jsr     DecodeDirectionButtons
+ApplyConstructionCursorMove:
 LC704:  tay
         lda     LD3D5,y
         asl     a
@@ -1052,15 +1114,17 @@ LC704:  tay
         clc
         adc     ObjectY
         sta     ObjectY
+FinishConstructionCursorUpdate:
 LC71D:  rts
 
 ; Обнуляет восемь байт $73..$7A. Выход: A=0, X=$FF; Y и остальная RAM не меняются.
 ClearStageWorkBytes:
 LC71E:  ldx     #$07
         lda     #$00
+ClearNextStageWorkByte:
 LC722:  sta     Player1KillCounts,x
         dex
-        bpl     LC722
+        bpl     ClearNextStageWorkByte
         rts
 
 ; Проверяет условие завершения текущего кадрового цикла.
@@ -1069,13 +1133,14 @@ LC722:  sta     Player1KillCounts,x
 ; и сбрасывает FrameCounter. Портит A и флаги.
 CheckStageLoopFinished:
 LC728:  lda     BattleState
-        beq     LC737
+        beq     StartStageEndTransition
         lda     EnemiesRemaining
-        beq     LC74F
+        beq     ReportStageLoopFinished
         lda     Player1Lives
         clc
         adc     Player2Lives
-        bne     LC752
+        bne     ReportStageLoopActive
+StartStageEndTransition:
 LC737:  lda     #$70
         sta     TransitionObjectX
         lda     #$F0
@@ -1086,9 +1151,11 @@ LC737:  lda     #$70
         sta     TransitionObjectTimer
         lda     #$00
         sta     FrameCounter
+ReportStageLoopFinished:
 LC74F:  lda     #$01
         rts
 
+ReportStageLoopActive:
 LC752:  lda     #$00
         rts
 
@@ -1120,19 +1187,22 @@ LC755:  lda     DebugRamIndex
         sta     TileTranslationOffset
         lda     Joy1Pressed
         and     #BUTTON_SELECT
-        beq     LC792
+        beq     CheckRamInspectorPreviousByte
         inc     DebugRamIndex
+CheckRamInspectorPreviousByte:
 LC792:  lda     Joy1Pressed
         and     #BUTTON_B
-        beq     LC79B
+        beq     CheckRamInspectorNextPage
         dec     DebugRamIndex
+CheckRamInspectorNextPage:
 LC79B:  lda     Joy1Pressed
         and     #BUTTON_A
-        beq     LC7AA
+        beq     FinishRamInspector
         lda     DebugRamIndex
         clc
         adc     #$10
         sta     DebugRamIndex
+FinishRamInspector:
 LC7AA:  rts
 ; Прокручивает заставку вертикально от 0 до $F0 по одному пикселю за кадр.
 ; SELECT/START прерывают вызывающую процедуру через PLA/PLA и переходят в главное меню.
@@ -1141,16 +1211,18 @@ ScrollIntroUntilInput:
 LC7AB:  lda     #$00
         sta     VerticalScroll
         sta     NametableBits
+ScrollNextIntroFrame:
 LC7B1:  jsr     WaitForNextFrame
         inc     VerticalScroll
         lda     Joy1Pressed
         and     #(BUTTON_SELECT | BUTTON_START)
-        bne     LC7C3
+        bne     InterruptIntroScroll
         lda     VerticalScroll
         cmp     #$F0
-        bne     LC7B1
+        bne     ScrollNextIntroFrame
         rts
 
+InterruptIntroScroll:
 LC7C3:  pla
         pla
         jmp     EnterTitleMenu
@@ -1175,13 +1247,14 @@ LC7C8:  lda     #$01
         jsr     QueueTileAtCoordinates
         lda     StageSetLength
         cmp     #$02
-        beq     LC7F2
+        beq     DrawSecondPlayerLivesIcon
         lda     MenuSelection
-        bne     LC7F2
+        bne     DrawSecondPlayerLivesIcon
         lda     #$00
         sta     PlayerHudIndex
-        jmp     LC801
+        jmp     DrawNextPlayerLivesCount
 
+DrawSecondPlayerLivesIcon:
 LC7F2:  lda     #>LivesHudIconText
         sta     ScratchPtrHi
         lda     #<LivesHudIconText
@@ -1189,12 +1262,14 @@ LC7F2:  lda     #>LivesHudIconText
         ldx     #$1D
         ldy     #$15
         jsr     QueueTileAtCoordinates
+DrawNextPlayerLivesCount:
 LC801:  ldx     PlayerHudIndex
         lda     Player1Lives,x
         sec
         sbc     #$01
-        bpl     LC80C
+        bpl     ConvertPlayerLivesCount
         lda     #$00
+ConvertPlayerLivesCount:
 LC80C:  jsr     ByteToDisplayDigits
         ldy     #$36
         ldx     #$19
@@ -1209,7 +1284,7 @@ LC80C:  jsr     ByteToDisplayDigits
         tay
         jsr     QueueTranslatedTileString
         dec     PlayerHudIndex
-        bpl     LC801
+        bpl     DrawNextPlayerLivesCount
         lda     #$00
         sta     TileTranslationOffset
         sta     DigitBlankMode
@@ -1226,9 +1301,10 @@ LC830:  lda     #>PlayerOneCompactMarker
         jsr     QueueTileAtCoordinates
         lda     StageSetLength
         cmp     #$02
-        beq     LC849
+        beq     DrawSecondPlayerHudLabel
         lda     MenuSelection
-        beq     LC858
+        beq     FinishPlayerHudLabels
+DrawSecondPlayerHudLabel:
 LC849:  lda     #>PlayerTwoCompactMarker
         sta     ScratchPtrHi
         lda     #<PlayerTwoCompactMarker
@@ -1236,6 +1312,7 @@ LC849:  lda     #>PlayerTwoCompactMarker
         ldx     #$1D
         ldy     #$14
         jsr     QueueTileAtCoordinates
+FinishPlayerHudLabels:
 LC858:  rts
 
 ; После vblank выводит в HUD маркер и десятичный StageNumber. Меняет PPU-очередь, ScratchPtr, $39..$3B/$60;
@@ -1310,11 +1387,12 @@ RemainingEnemyMarkerIndex = $5A
 InitializeRemainingEnemyMarkers:
 LC8C0:  lda     #$12
         sta     RemainingEnemyMarkerIndex
+DrawNextRemainingEnemyMarker:
 LC8C4:  lda     RemainingEnemyMarkerIndex
         jsr     DrawRemainingEnemyMarker
         dec     RemainingEnemyMarkerIndex
         dec     RemainingEnemyMarkerIndex
-        bpl     LC8C4
+        bpl     DrawNextRemainingEnemyMarker
         rts
 
 ; Ограничивает Construction-курсор прямоугольником $18..$D8 по обеим осям.
@@ -1322,24 +1400,28 @@ LC8C4:  lda     RemainingEnemyMarkerIndex
 ClampConstructionCursor:
 LC8D0:  lda     ObjectX
         cmp     #$D8
-        bcc     LC8DA
+        bcc     ClampConstructionCursorLeft
         lda     #$D8
         sta     ObjectX
+ClampConstructionCursorLeft:
 LC8DA:  lda     ObjectX
         cmp     #$18
-        bcs     LC8E4
+        bcs     ClampConstructionCursorBottom
         lda     #$18
         sta     ObjectX
+ClampConstructionCursorBottom:
 LC8E4:  lda     ObjectY
         cmp     #$D8
-        bcc     LC8EE
+        bcc     ClampConstructionCursorTop
         lda     #$D8
         sta     ObjectY
+ClampConstructionCursorTop:
 LC8EE:  lda     ObjectY
         cmp     #$18
-        bcs     LC8F8
+        bcs     FinishConstructionCursorClamp
         lda     #$18
         sta     ObjectY
+FinishConstructionCursorClamp:
 LC8F8:  rts
 
 ; При $6D!=0 мигает пятью двухтайловыми знаками в центре экрана на фазе FrameCounter&$10.
@@ -1347,10 +1429,10 @@ LC8F8:  rts
 ; $20; портит A/X/Y, $04/OamTile и OAM shadow.
 DrawPauseOverlay:
 LC8F9:  lda     PauseState
-        beq     LC946
+        beq     FinishPauseOverlay
         lda     FrameCounter
         and     #$10
-        beq     LC946
+        beq     FinishPauseOverlay
         lda     #$03
         sta     RenderAttributes
         lda     #$00
@@ -1382,6 +1464,7 @@ LC8F9:  lda     PauseState
         jsr     EmitOamSprite
         lda     #$20
         sta     SpriteBehindTerrainMask
+FinishPauseOverlay:
 LC946:  rts
 
 ; Рисует двухчастный переходный объект по TransitionObjectX/Y и кодам $79/$7D.
@@ -1416,20 +1499,21 @@ LC947:  lda     #$03
 ; При обнулении прячет объект при Y=$F0. Портит A/X/Y и OAM shadow при отрисовке.
 UpdateTransitionObject:
 LC972:  lda     TransitionObjectTimer
-        beq     LC9AF
+        beq     FinishTransitionObjectUpdate
         lda     StageSetLength
         cmp     #$02
-        beq     LC9AF
+        beq     FinishTransitionObjectUpdate
         lda     FrameCounter
         and     #$0F
-        bne     LC98D
+        bne     UpdateTransitionObjectPosition
         dec     TransitionObjectTimer
-        bne     LC98D
+        bne     UpdateTransitionObjectPosition
         lda     #$F0
         sta     TransitionObjectY
+UpdateTransitionObjectPosition:
 LC98D:  lda     TransitionObjectTimer
         cmp     #$0A
-        bcc     LC9AC
+        bcc     DrawCurrentTransitionObject
         lda     TransitionObjectDirection
         tay
         lda     LD3D5,y
@@ -1440,7 +1524,9 @@ LC98D:  lda     TransitionObjectTimer
         clc
         adc     TransitionObjectY
         sta     TransitionObjectY
+DrawCurrentTransitionObject:
 LC9AC:  jsr     DrawTransitionObject
+FinishTransitionObjectUpdate:
 LC9AF:  rts
 
 ; Готовит параметры прямоугольника (2,2), 26x26 тайлов и вызывает InitializePlayfieldShadow.

@@ -26,10 +26,12 @@ MenuOptionText1:
 ; QueueTileAtCoordinates/WaitForNextFrame меняют PPU-очередь и кадровое состояние.
 DrawSelectedMenuOption:
 LFD0C:  lda     AllPowerUpsEnabled
-        bne     LFD14
+        bne     SelectEnabledPowerUpMenuText
         lda     #<MenuOptionText0
-        beq     LFD16
+        beq     StoreSelectedPowerUpMenuText
+SelectEnabledPowerUpMenuText:
 LFD14:  lda     #<MenuOptionText1
+StoreSelectedPowerUpMenuText:
 LFD16:  sta     ScratchPtrLo
         lda     #$FD
         sta     ScratchPtrHi
@@ -46,9 +48,10 @@ QueueVariantMenuText:
 LFD27:  ldx     #$0B
         lda     GameVariant
         clc
-        bpl     LFD32
+        bpl     FinishVariantMenuRow
         and     #$0F
         adc     #$07
+FinishVariantMenuRow:
 LFD32:  adc     #$09
         tay
         jsr     QueueTileAtCoordinates
@@ -65,22 +68,25 @@ UnreferencedFd39Data:
 SelectInitialLifeCount:
 LFD46:  lda     TitleSecretInputCode
         cmp     #$0F
-        bne     LFD4F
+        bne     CheckInitialLivesDown
         lda     #$15
         rts
 
+CheckInitialLivesDown:
 LFD4F:  lda     Joy1Held
         and     #BUTTON_DOWN
-        beq     LFD58
+        beq     CheckInitialLivesUp
         lda     #$08
         rts
 
+CheckInitialLivesUp:
 LFD58:  lda     Joy1Held
         and     #BUTTON_UP
-        beq     LFD61
+        beq     ReturnDefaultInitialLives
         lda     #$0B
         rts
 
+ReturnDefaultInitialLives:
 LFD61:  lda     #$03
         rts
 
@@ -90,27 +96,30 @@ LFD61:  lda     #$03
 HandleSecretContinueChord:
 LFD64:  lda     Joy1Held
         and     #BUTTON_A
-        beq     LFD91
+        beq     FinishSecretContinue
         lda     Joy2Held
         and     #BUTTON_B
-        beq     LFD91
+        beq     FinishSecretContinue
         lda     Joy2Held
         and     #BUTTON_A
-        beq     LFD91
+        beq     FinishSecretContinue
         lda     Player1Lives
-        bne     LFD81
+        bne     RestorePlayer2ForSecretContinue
         lda     #$03
         sta     Player1Lives
-        bne     LFD89
+        bne     EnableSecretContinue
         nop
+RestorePlayer2ForSecretContinue:
 LFD81:  lda     Player2Lives
-        bne     LFD91
+        bne     FinishSecretContinue
         lda     #$03
         sta     Player2Lives
+EnableSecretContinue:
 LFD89:  lda     #$01
         sta     MenuSelection
         lda     #$07
         sta     GameMode
+FinishSecretContinue:
 LFD91:  jmp     SelectStage
 
 ; Отложенная проверка runtime-контрольной суммы.
@@ -143,7 +152,7 @@ LFDAD:  jsr     UpdateHalfSecondPhaseFlag
 ; при X>=2 проваливается в PowerUpEffect2. Портит A и флаги.
 InitializePlayerExtensionOrApplyEffect2:
 LFDB1:  cpx     #FirstEnemyTankSlot
-        bcs     LFDBB
+        bcs     PowerUpEffect2
         lda     #$0A
         sta     EnemyFreezeTimer
         rts
@@ -156,7 +165,7 @@ LFDB1:  cpx     #FirstEnemyTankSlot
 ; хвостовым переходом возвращается из QueueBrickBaseAttributes.
 PowerUpEffect2:
 LFDBB:  cpx     #FirstEnemyTankSlot
-        bcc     LFDEF
+        bcc     ApplyPlayerBaseFortification
         lda     #$D3
         sta     ScratchPtrHi
         lda     #$6D
@@ -180,11 +189,13 @@ LFDBB:  cpx     #FirstEnemyTankSlot
         jsr     QueueTileAtCoordinates
         jmp     QueueBrickBaseAttributes
 
+ApplyPlayerBaseFortification:
 LFDEF:  lda     BattleState
-        bpl     LFDFA
+        bpl     FinishPowerUpEffect2
         jsr     DrawSteelBaseEnclosure
         lda     #$14
         sta     BaseFortificationTimer
+FinishPowerUpEffect2:
 LFDFA:  rts
 
 ; Обработчик эффекта 3. Для X>=2 ставит bit3 в ObjectAttributes слотов 2..7.
@@ -192,28 +203,31 @@ LFDFA:  rts
 ; его в ObjectAttributes,X. Сохраняет исходный X и Y; портит A и флаги.
 ApplyPowerUpEffect3:
 LFDFB:  cpx     #FirstEnemyTankSlot
-        bcc     LFE12
+        bcc     UpgradeCollectingPlayer
         txa
         pha
         ldx     #(TankSlotCount-1)
+UpgradeNextEnemyTank:
 LFE03:  lda     ObjectAttributes,x
         ora     #$08
         sta     ObjectAttributes,x
         nop
         dex
         cpx     #$01
-        bne     LFE03
+        bne     UpgradeNextEnemyTank
         pla
         tax
         rts
 
+UpgradeCollectingPlayer:
 LFE12:  lda     PlayerUpgradeLevel,x
         cmp     #$60
-        bcs     LFE21
+        bcs     FinishPowerUpEffect3
         clc
         adc     #$20
         sta     PlayerUpgradeLevel,x
         sta     ObjectAttributes,x
+FinishPowerUpEffect3:
 LFE21:  rts
 
 ; Поражает танки противоположной стороны: для X<2 — слоты 2..7, для X>=2 — игроков 0..1,
@@ -223,44 +237,49 @@ LFE21:  rts
 ; PowerUpTargetSlot и флаги.
 PowerUpEffect4:
 LFE22:  cpx     #FirstEnemyTankSlot
-        bcc     LFE51
+        bcc     DestroyOpposingEnemies
         lda     #$01
         sta     PowerUpTargetSlot
         sta     TankDestructionAudioState
+CheckNextOpposingPlayer:
 LFE2D:  ldy     PowerUpTargetSlot
         lda     ObjectState,y
-        bpl     LFE4C
+        bpl     AdvanceOpposingPlayerTarget
         cmp     #NonTargetableTankStateMin
-        bcs     LFE4C
+        bcs     AdvanceOpposingPlayerTarget
         lda     PlayerStunTimer,y
-        bne     LFE4C
+        bne     AdvanceOpposingPlayerTarget
         lda     #$20
         sta     PlayerUpgradeLevel,y
         lda     #TankStateDestroyed
         sta     ObjectState,y
         lda     #$00
         sta     ObjectAttributes,y
+AdvanceOpposingPlayerTarget:
 LFE4C:  dec     PowerUpTargetSlot
-        bpl     LFE2D
+        bpl     CheckNextOpposingPlayer
         rts
 
+DestroyOpposingEnemies:
 LFE51:  lda     #(TankSlotCount-1)
         sta     PowerUpTargetSlot
         lda     #AudioStateStartRequested
         sta     TankDestructionAudioState
+CheckNextOpposingEnemy:
 LFE5A:  ldy     PowerUpTargetSlot
         lda     ObjectState,y
-        bpl     LFE6F
+        bpl     AdvanceOpposingEnemyTarget
         cmp     #NonTargetableTankStateMin
-        bcs     LFE6F
+        bcs     AdvanceOpposingEnemyTarget
         lda     #TankStateDestroyed
         sta     ObjectState,y
         lda     #$00
         sta     ObjectAttributes,y
+AdvanceOpposingEnemyTarget:
 LFE6F:  dec     PowerUpTargetSlot
         lda     PowerUpTargetSlot
         cmp     #$01
-        bne     LFE5A
+        bne     CheckNextOpposingEnemy
         rts
 
 ; Для игрока X<2 добавляет жизнь и запрашивает два аудиопотока звука
@@ -268,23 +287,25 @@ LFE6F:  dec     PowerUpTargetSlot
 ; младшие биты ObjectAttributes всех слотов 2..7. Сохраняет исходный X; портит A и флаги.
 PowerUpEffect5:
 LFE78:  cpx     #FirstEnemyTankSlot
-        bcs     LFE87
+        bcs     TransformEnemyUpgradeBits
         inc     Player1Lives,x
         lda     #AudioStateStartRequested
         sta     ExtraLifePulse1AudioState
         sta     ExtraLifePulse2AudioState
         rts
 
+TransformEnemyUpgradeBits:
 LFE87:  txa
         pha
         ldx     #(TankSlotCount-1)
+TransformNextEnemyUpgrade:
 LFE8B:  lda     ObjectAttributes,x
         ora     #$03
         eor     #$04
         sta     ObjectAttributes,x
         dex
         cpx     #$01
-        bne     LFE8B
+        bne     TransformNextEnemyUpgrade
         pla
         tax
         rts
@@ -294,8 +315,9 @@ LFE8B:  lda     ObjectAttributes,x
 SetMaximumObjectUpgrade:
 LFE9B:  lda     #$63
         cpx     #FirstEnemyTankSlot
-        bcs     LFEA4
+        bcs     StoreMaximumObjectUpgrade
         sta     PlayerUpgradeLevel,x
+StoreMaximumObjectUpgrade:
 LFEA4:  sta     ObjectAttributes,x
         rts
 
@@ -317,11 +339,12 @@ LFEA7:  lda     #$FF
 UpdateTank1990Extensions:
 LFEAD:  lda     #(TankSlotCount-1)
         sta     ExtensionObjectSlot
+DrawNextTankExtension:
 LFEB1:  ldx     ExtensionObjectSlot
         lda     ObjectSpecialState,x
         nop
         nop
-        beq     LFEC9
+        beq     AdvanceTankExtensionSlot
         txa
         sta     RenderAttributes
         ldy     ObjectY,x
@@ -330,36 +353,39 @@ LFEB1:  ldx     ExtensionObjectSlot
         lda     #$63
         sta     OamTile
         jsr     EmitTwoTileOamPair
+AdvanceTankExtensionSlot:
 LFEC9:  dec     ExtensionObjectSlot
-        bpl     LFEB1
+        bpl     DrawNextTankExtension
         jsr     RunDeferredIntegrityGuard
         lda     MenuSelection
-        beq     LFF04
+        beq     FinishTank1990Extensions
         lda     Player2Lives
-        beq     LFEEF
+        beq     TryShareLifeWithPlayer2
         cmp     #$02
-        bcc     LFF04
+        bcc     FinishTank1990Extensions
         lda     Player1Lives
-        bne     LFF04
+        bne     FinishTank1990Extensions
         lda     Joy1Held
         and     #BUTTON_A
-        beq     LFF04
+        beq     FinishTank1990Extensions
         inc     Player1Lives
         dec     Player2Lives
         ldx     #$00
         jmp     SpawnTank
 
+TryShareLifeWithPlayer2:
 LFEEF:  lda     Player1Lives
         cmp     #$02
-        bcc     LFF04
+        bcc     FinishTank1990Extensions
         lda     Joy2Held
         and     #BUTTON_A
-        beq     LFF04
+        beq     FinishTank1990Extensions
         inc     Player2Lives
         dec     Player1Lives
         ldx     #$01
         jmp     SpawnTank
 
+FinishTank1990Extensions:
 LFF04:  rts
 
 ; Маршрутизация первой проверки TSA при движении.
@@ -431,9 +457,10 @@ LFF3E:  cmp     #$20
 ResetExtensionState:
 LFF45:  lda     #$00
         ldx     #$0F
+ClearNextExtensionStateByte:
 LFF49:  sta     ObjectSpecialState,x
         dex
-        bpl     LFF49
+        bpl     ClearNextExtensionStateByte
         jsr     InitializeCoreRuntime
         rts
 
@@ -454,18 +481,20 @@ LFF53:  sta     ObjectSpecialState+4
 ; PlayerExtendedUpgrade и ObjectAttributes. Не возвращается.
 HandleProjectileHitOnTank:
 LFF66:  lda     ObjectSpecialState,x
-        beq     LFF73
+        beq     ApplyUnshieldedProjectileHit
         lda     #$00
         sta     ObjectSpecialState,x
         jmp     AdvancePlayerCollisionPassOrBeginEnemyPass
 
+ApplyUnshieldedProjectileHit:
 LFF73:  lda     PlayerUpgradeLevel,x
         cmp     #$63
-        beq     LFF81
+        beq     DowngradeMaximumPlayerArmor
         lda     #TankStateDestroyed
         sta     ObjectState,x
         jmp     ApplyPlayerHitVariantState
 
+DowngradeMaximumPlayerArmor:
 LFF81:  lda     #AudioStateStartRequested
         sta     ArmorHitAudioState
         lda     #$40
@@ -481,10 +510,11 @@ GetVariantAttributeBits:
 LFF93:  lda     #AudioStateStartRequested
         sta     PlayerOrBaseDestructionNoiseAudioState
         lda     GameVariant
-        bmi     LFF9F
+        bmi     ReturnExtendedVariantAttributeBits
         lda     #$00
         rts
 
+ReturnExtendedVariantAttributeBits:
 LFF9F:  lda     #$20
         rts
 
@@ -502,13 +532,15 @@ LFFA3:  sta     ObjectAttributes,x
 AdvanceTankCollisionPass:
 LFFA8:  lda     ObjectState,x
         cmp     #TankStateDestroyed
-        bne     LFFB3
+        bne     AdvanceTankCollisionSlot
         lda     #$00
         sta     ObjectSpecialState,x
+AdvanceTankCollisionSlot:
 LFFB3:  dec     TankCollisionSlot
-        bpl     LFFB8
+        bpl     ContinueTankCollisionPass
         rts
 
+ContinueTankCollisionPass:
 LFFB8:  jmp     CheckNextPlayerTank
 
 ; Очищает дополнительное состояние $0170,X. Выход: A=0; X/Y сохраняются.
@@ -522,31 +554,36 @@ LFFBB:  lda     #$00
 ; бит $08 или класс $60 дают flags=3, часть прочих ненулевых классов — flags=1. Портит A и флаги.
 InitializeProjectileFlagsForVariant:
 LFFC1:  lda     GameVariant
-        bmi     LFFCC
+        bmi     DecodeExtendedVariantProjectileFlags
         lda     ObjectAttributes,x
         and     #$F0
         jmp     DecodeProjectileFlagsFromAttributes
 
+DecodeExtendedVariantProjectileFlags:
 LFFCC:  lda     ObjectAttributes,x
         and     #$08
-        beq     LFFD5
+        beq     DecodeProjectileFlagsFromUpgradeClass
         jmp     SetStrongProjectileFlags
 
+DecodeProjectileFlagsFromUpgradeClass:
 LFFD5:  lda     ObjectAttributes,x
         and     #$F0
-        beq     LFFF0
+        beq     FinishProjectileFlagInitialization
         cmp     #$A0
-        bcs     LFFE7
+        bcs     SetVariantNormalProjectileFlags
         cmp     #$60
-        beq     LFFEC
+        beq     SetStrongProjectileFlagsDirect
         and     #$80
-        bne     LFFF0
+        bne     FinishProjectileFlagInitialization
+SetVariantNormalProjectileFlags:
 LFFE7:  lda     #$01
         sta     ProjectileFlags,x
         rts
 
+SetStrongProjectileFlagsDirect:
 LFFEC:  lda     #$03
         sta     ProjectileFlags,x
+FinishProjectileFlagInitialization:
 LFFF0:  rts
 
 ; $FFF1..$FFF9 — заполнение $FF перед аппаратными векторами.

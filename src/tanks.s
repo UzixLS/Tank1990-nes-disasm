@@ -20,13 +20,13 @@ TankTargetYRelation      = $65
 ; Портит A, X; Y не меняет.
 UpdatePlayerMovementAudio:
 LDB0B:  lda     PlayerMovementLoopAudioState
-        beq     LDB24
+        beq     StartPlayerMovementAudioIfNeeded
         ldx     #$00
         jsr     IsPlayerTankMoving
-        bne     LDB37
+        bne     ReturnFromPlayerMovementAudioUpdate
         ldx     #$01
         jsr     IsPlayerTankMoving
-        bne     LDB37
+        bne     ReturnFromPlayerMovementAudioUpdate
         lda     #AudioStateOff
         sta     PlayerMovementLoopAudioState
         rts
@@ -34,12 +34,14 @@ LDB0B:  lda     PlayerMovementLoopAudioState
 StartPlayerMovementAudioIfNeeded:
 LDB24:  ldx     #$00
         jsr     IsPlayerTankMoving
-        bne     LDB32
+        bne     RequestPlayerMovementAudio
         ldx     #$01
         jsr     IsPlayerTankMoving
-        beq     LDB37
+        beq     ReturnFromPlayerMovementAudioUpdate
+RequestPlayerMovementAudio:
 LDB32:  lda     #AudioStateStartRequested
         sta     PlayerMovementLoopAudioState
+ReturnFromPlayerMovementAudioUpdate:
 LDB37:  rts
 
 ; Вход: X=0/1. Возвращает A=1/Z=0, если ObjectState игрока ненулевой и нажато
@@ -47,12 +49,13 @@ LDB37:  rts
 IsPlayerTankMoving:
 LDB38:  lda     Joy1Held,x
         and     #BUTTON_DIRECTIONS
-        beq     LDB45
+        beq     ReturnPlayerNotMoving
         lda     ObjectState,x
-        beq     LDB45
+        beq     ReturnPlayerNotMoving
         lda     #$01
         rts
 
+ReturnPlayerNotMoving:
 LDB45:  lda     #$00
         rts
 
@@ -63,17 +66,19 @@ LDB45:  lda     #$00
 ; и обновляет экранный счётчик. Портит A, X, CurrentTankSlot и вызываемые процедуры.
 SpawnPendingEnemyTank:
 LDB48:  lda     EnemySpawnTimer
-        beq     LDB4F
+        beq     TrySpawnPendingEnemy
         dec     EnemySpawnTimer
         rts
 
+TrySpawnPendingEnemy:
 LDB4F:  lda     EnemiesToSpawn
-        beq     LDB74
+        beq     ReturnFromEnemySpawn
         lda     GameMode
         sta     CurrentTankSlot
+CheckEnemySpawnSlot:
 LDB57:  ldx     CurrentTankSlot
         lda     ObjectState,x
-        bne     LDB6C
+        bne     ScanPreviousEnemySlot
         lda     EnemyActivityInterval
         sta     EnemySpawnTimer
         jsr     SpawnTank
@@ -86,7 +91,8 @@ ScanPreviousEnemySlot:
 LDB6C:  dec     CurrentTankSlot
         lda     CurrentTankSlot
         cmp     #(FirstEnemyTankSlot-1)
-        bne     LDB57
+        bne     CheckEnemySpawnSlot
+ReturnFromEnemySpawn:
 LDB74:  rts
 
 ; Преобразует ввод двух игроков в направление и класс $A их ObjectState.
@@ -99,30 +105,32 @@ LDB74:  rts
 UpdatePlayerTankInput:
 LDB75:  lda     FrameCounter
         and     #$01
-        bne     LDB81
+        bne     ProcessPlayerTankInput
         lda     FrameCounter
         and     #$03
-        bne     LDBF0
+        bne     NoOpHandler
 ProcessPlayerTankInput:
 LDB81:  ldx     #(PlayerTankCount-1)
+UpdatePlayerInputForSlot:
 LDB83:  lda     ObjectState,x
-        bpl     LDBED
+        bpl     AdvanceToPreviousPlayer
         cmp     #NonTargetableTankStateMin
-        bcs     LDBED
+        bcs     AdvanceToPreviousPlayer
         lda     PlayerStunTimer,x
-        beq     LDB94
+        beq     ReadPlayerDirection
         dec     PlayerStunTimer,x
-        jmp     LDBA6
+        jmp     SetPlayerTankIdleState
 
 ReadPlayerDirection:
 LDB94:  lda     PlayerIceState,x
-        bpl     LDB9D
+        bpl     DecodePlayerDirectionButtons
         and     #PlayerIceInputLockFlag
-        bne     LDBA6
+        bne     SetPlayerTankIdleState
+DecodePlayerDirectionButtons:
 LDB9D:  lda     Joy1Held,x
         jsr     DecodeDirectionButtons
         sta     PlayerDirectionCandidate
-        bpl     LDBB4
+        bpl     ApplyPlayerDirection
 ; Без принятого направления переводит танк в класс $8 с флагом бита 3.
 SetPlayerTankIdleState:
 LDBA6:  lda     #$80
@@ -130,13 +138,13 @@ LDBA6:  lda     #$80
         lda     #$08
         ora     ObjectState,x
         sta     ObjectState,x
-        jmp     LDBED
+        jmp     AdvanceToPreviousPlayer
 
 ApplyPlayerDirection:
 LDBB4:  lda     PlayerIceState,x
-        bpl     LDBC7
+        bpl     AlignPlayerTankForTurn
         and     #$1F
-        bne     LDBC7
+        bne     AlignPlayerTankForTurn
         lda     #PlayerIceReloadValue
         sta     PlayerIceState,x
         lda     #AudioStateStartRequested
@@ -146,10 +154,10 @@ AlignPlayerTankForTurn:
 LDBC7:  lda     ObjectState,x
         and     #DirectionMask
         cmp     PlayerDirectionCandidate
-        beq     LDBE7
+        beq     CommitPlayerTankDirection
         eor     #$02
         cmp     PlayerDirectionCandidate
-        beq     LDBE7
+        beq     CommitPlayerTankDirection
         lda     ObjectX,x
         clc
         adc     #$04
@@ -164,8 +172,9 @@ CommitPlayerTankDirection:
 LDBE7:  lda     PlayerDirectionCandidate
         ora     #$A0
         sta     ObjectState,x
+AdvanceToPreviousPlayer:
 LDBED:  dex
-        bpl     LDB83
+        bpl     UpdatePlayerInputForSlot
 NoOpHandler:
 TankLogicState0:
 TankDrawState0:
@@ -182,42 +191,44 @@ UpdateTanks:
 LDBF1:  lda     #(TankSlotCount-1)
         sta     CurrentTankSlot
         lda     EnemyFreezeTimer
-        beq     LDC03
+        beq     UpdateNextTank
         lda     FrameCounter
         and     #$3F
-        bne     LDC03
+        bne     UpdateNextTank
         dec     EnemyFreezeTimer
 UpdateNextTank:
 LDC03:  ldx     CurrentTankSlot
         cpx     #FirstEnemyTankSlot
-        bcs     LDC18
+        bcs     CheckEnemyTankSchedule
         lda     FrameCounter
         and     #$01
-        bne     LDC35
+        bne     RunTankLogicForSlot
         lda     FrameCounter
         and     #$03
-        bne     LDC38
-        jmp     LDC35
+        bne     SkipTankLogicForSlot
+        jmp     RunTankLogicForSlot
 
+CheckEnemyTankSchedule:
 LDC18:  lda     EnemyFreezeTimer
-        beq     LDC25
+        beq     ApplyTankUpdateSchedule
         lda     ObjectState,x
-        bpl     LDC25
+        bpl     ApplyTankUpdateSchedule
         cmp     #NonTargetableTankStateMin
-        bcc     LDC38
+        bcc     SkipTankLogicForSlot
+ApplyTankUpdateSchedule:
 LDC25:  lda     ObjectAttributes,x
         and     #$F0
         cmp     #$A0
-        beq     LDC35
+        beq     RunTankLogicForSlot
         lda     CurrentTankSlot
         eor     FrameCounter
         and     #$01
-        beq     LDC38
+        beq     SkipTankLogicForSlot
 RunTankLogicForSlot:
 LDC35:  jsr     DispatchTankLogic
 SkipTankLogicForSlot:
 LDC38:  dec     CurrentTankSlot
-        bpl     LDC03
+        bpl     UpdateNextTank
         rts
 
 ; Старшая тетрада ObjectState,X выбирает обработчик логики танка из TankLogicHandlers.
@@ -242,16 +253,16 @@ LDC3D:  lda     ObjectState,x
 ; ObjectFrame; портит A, X/Y сохраняет.
 TankLogicState8:
         cpx     #FirstEnemyTankSlot
-        bcs     LDC6B
+        bcs     AdvanceTankIdlePhase
         lda     PlayerIceState,x
-        bpl     LDC6B
+        bpl     AdvanceTankIdlePhase
         and     #PlayerIceInactiveMask
-        beq     LDC6B
+        beq     AdvanceTankIdlePhase
         dec     PlayerIceState,x
         lda     ObjectFrame,x
         eor     #$04
         sta     ObjectFrame,x
-        jmp     LDC97
+        jmp     AdvanceTankMovement
 
 AdvanceTankIdlePhase:
 LDC6B:  lda     ObjectState,x
@@ -259,9 +270,10 @@ LDC6B:  lda     ObjectState,x
         sbc     #$04
         sta     ObjectState,x
         and     #$0C
-        bne     LDC7B
+        bne     ReturnFromTankIdlePhase
         lda     #$A0
         jsr     SetTankStateClass
+ReturnFromTankIdlePhase:
 LDC7B:  rts
 
 ; Класс $A: движение на 1 px по направлению. Противник в узле сетки с вероятностью
@@ -393,12 +405,13 @@ LDD29:  lda     ObjectFrame,x
 ReverseEnemyTankDirection:
 LDD30:  lda     ObjectX,x
         and     #$07
-        bne     LDD41
+        bne     CommitReversedEnemyDirection
         lda     ObjectY,x
         and     #$07
-        bne     LDD41
+        bne     CommitReversedEnemyDirection
         lda     #$90
         jsr     SetTankStateClass
+CommitReversedEnemyDirection:
 LDD41:  lda     ObjectState,x
         eor     #$02
         sta     ObjectState,x
@@ -411,23 +424,26 @@ LDD41:  lda     ObjectState,x
 TankLogicState9:
         jsr     NextRandomByte
         and     #$01
-        beq     LDD6A
+        beq     ChooseAiDirectionForState9
         jsr     NextRandomByte
         and     #$01
-        beq     LDD5E
+        beq     TurnEnemyCounterclockwise
         lda     ObjectState,x
         clc
         adc     #$01
-        jmp     LDD63
+        jmp     CommitRandomEnemyTurn
 
+TurnEnemyCounterclockwise:
 LDD5E:  lda     ObjectState,x
         sec
         sbc     #$01
+CommitRandomEnemyTurn:
 LDD63:  and     #DirectionMask
         ora     #$A0
         sta     ObjectState,x
         rts
 
+ChooseAiDirectionForState9:
 LDD6A:  jsr     ChooseEnemyTankAiMode
         rts
 
@@ -436,17 +452,19 @@ LDD6A:  jsr     ChooseEnemyTankAiMode
 ; A либо неизменён, либо уменьшен на 1. X/Y и RAM сохраняет.
 ClampFirstTankProbeX:
 LDD6E:  cmp     ProposedTankX
-        bcc     LDD75
+        bcc     ReturnClampedTankProbeX
         sec
         sbc     #$01
+ReturnClampedTankProbeX:
 LDD75:  rts
 
 ClampFirstTankProbeY:
 ; Аналог ClampFirstTankProbeX для A=проверяемой Y и ProposedTankY.
 LDD76:  cmp     ProposedTankY
-        bcc     LDD7D
+        bcc     ReturnClampedTankProbeY
         sec
         sbc     #$01
+ReturnClampedTankProbeY:
 LDD7D:  rts
 
 ; Классы $B-$D выбирают цель и сразу сводятся к классу $A с направлением из
@@ -458,20 +476,21 @@ TankLogicStateD:
         sta     TankTargetX
         lda     ObjectY
         sta     TankTargetY
-        jmp     LDD9C
+        jmp     ChooseDirectionTowardSelectedTarget
 
 TankLogicStateC:
         lda     ObjectX+1
         sta     TankTargetX
         lda     ObjectY+1
         sta     TankTargetY
-        jmp     LDD9C
+        jmp     ChooseDirectionTowardSelectedTarget
 
 TankLogicStateB:
         lda     #$78
         sta     TankTargetX
         lda     #$D8
         sta     TankTargetY
+ChooseDirectionTowardSelectedTarget:
 LDD9C:  jsr     ChooseTankStateTowardTarget
         sta     ObjectState,x
         rts
@@ -539,28 +558,32 @@ TankLogicStates1To7:
         dec     ObjectState,x
         lda     ObjectState,x
         and     #$0F
-        bne     LDE45
+        bne     ReturnFromTankDestructionUpdate
         lda     ObjectState,x
         sec
         sbc     #$10
-        beq     LDE07
+        beq     FinishTankDestruction
         cmp     #$10
-        bne     LDE02
+        bne     SetDefaultDestructionPhase
         ora     #$06
-        jmp     LDE04
+        jmp     CommitNextDestructionPhase
 
+SetDefaultDestructionPhase:
 LDE02:  ora     #$03
+CommitNextDestructionPhase:
 LDE04:  sta     ObjectState,x
         rts
 
+FinishTankDestruction:
 LDE07:  sta     ObjectState,x
         cpx     #FirstEnemyTankSlot
-        bcs     LDE15
+        bcs     RemoveDestroyedEnemy
         dec     Player1Lives,x
-        beq     LDE18
+        beq     PrepareSurvivingPlayerTransition
         jsr     SpawnTank
         rts
 
+RemoveDestroyedEnemy:
 LDE15:  dec     EnemiesRemaining
         rts
 
@@ -571,11 +594,11 @@ LDE15:  dec     EnemiesRemaining
 PrepareSurvivingPlayerTransition:
 LDE18:  lda     BattleState
         cmp     #BattleStateActive
-        bne     LDE45
+        bne     ReturnFromTankDestructionUpdate
         cpx     #$01
-        beq     LDE34
+        beq     PreparePlayerTwoTransition
         lda     Player2Lives
-        beq     LDE45
+        beq     ReturnFromTankDestructionUpdate
         lda     #$03
         sta     TransitionObjectDirection
         lda     #$20
@@ -583,13 +606,15 @@ LDE18:  lda     BattleState
         jsr     InitializePlayerTransitionRecord
         rts
 
+PreparePlayerTwoTransition:
 LDE34:  lda     Player1Lives
-        beq     LDE45
+        beq     ReturnFromTankDestructionUpdate
         lda     #$01
         sta     TransitionObjectDirection
         lda     #$C0
         sta     TransitionObjectX
         jsr     InitializePlayerTransitionRecord
+ReturnFromTankDestructionUpdate:
 LDE45:  rts
 
 InitializePlayerTransitionRecord:
@@ -611,9 +636,10 @@ TankLogicStateF:
         lda     ObjectState,x
         and     #$0F
         cmp     #$0E
-        bne     LDE63
+        bne     ReturnFromTankLogicStateF
         lda     #$E0
         sta     ObjectState,x
+ReturnFromTankLogicStateF:
 LDE63:  rts
 
 ; Класс $E проигрывает возрастающий 14-фазный переход, затем инициализирует танк.
@@ -624,8 +650,9 @@ TankLogicStateE:
         lda     ObjectState,x
         and     #$0F
         cmp     #$0E
-        bne     LDE71
+        bne     ReturnFromTankLogicStateE
         jsr     InitializeTankState
+ReturnFromTankLogicStateE:
 LDE71:  rts
 
 ; Выбирает следующий AI-класс. Сравнения EnemyActivityInterval с
@@ -677,12 +704,13 @@ LDEA2:  jsr     SetTankStateClass
 DrawTanks:
 LDEA6:  lda     #$00
         sta     CurrentTankSlot
+DrawNextTank:
 LDEAA:  ldx     CurrentTankSlot
         jsr     DispatchTankDraw
         inc     CurrentTankSlot
         lda     CurrentTankSlot
         cmp     #TankSlotCount
-        bne     LDEAA
+        bne     DrawNextTank
         rts
 
 ; Старшая тетрада ObjectState,X выбирает обработчик из TankDrawHandlers.
@@ -748,7 +776,7 @@ DrawTankState1:
         lda     #$00
         sta     SpriteBehindTerrainMask
         lda     ObjectAttributes,x
-        beq     LDF23
+        beq     DrawDefaultTankState1Frame
         lda     ObjectAttributes,x
         lsr     a
         lsr     a
@@ -765,14 +793,16 @@ DrawTankState1:
         lda     ObjectX,x
         tax
         jsr     EmitTwoTileOamPair
-        jmp     LDF2E
+        jmp     RestoreTankSpritePriority
 
+DrawDefaultTankState1Frame:
 LDF23:  lda     ObjectY,x
         tay
         lda     ObjectX,x
         tax
         lda     #$00
         jsr     DrawTankTransitionFrameFromOffset
+RestoreTankSpritePriority:
 LDF2E:  lda     #$20
         sta     SpriteBehindTerrainMask
         rts
@@ -873,10 +903,10 @@ LDF99:  ldx     CurrentTankSlot
 ; кадров, ObjectFrame добавляется к старшей тетраде tile-base.
 DrawTankStates8ToD:
         cpx     #FirstEnemyTankSlot
-        bcc     LDFDD
+        bcc     DrawPlayerTank
         lda     ObjectAttributes,x
         and     #$04
-        beq     LDFCD
+        beq     SelectEnemyPaletteCycle
         lda     FrameCounter
         lsr     a
         lsr     a
@@ -884,8 +914,9 @@ DrawTankStates8ToD:
         and     #$01
         clc
         adc     #$02
-        jmp     LDFE9
+        jmp     DrawTankWithSelectedPalette
 
+SelectEnemyPaletteCycle:
 LDFCD:  lda     FrameCounter
         asl     a
         asl     a
@@ -894,16 +925,19 @@ LDFCD:  lda     FrameCounter
         and     #$07
         tay
         lda     LE003,y
-        jmp     LDFE9
+        jmp     DrawTankWithSelectedPalette
 
+DrawPlayerTank:
 LDFDD:  lda     PlayerStunTimer,x
-        beq     LDFE8
+        beq     UsePlayerTankPalette
         lda     FrameCounter
         and     #$08
-        beq     LDFE8
+        beq     UsePlayerTankPalette
         rts
 
+UsePlayerTankPalette:
 LDFE8:  txa
+DrawTankWithSelectedPalette:
 LDFE9:  sta     RenderAttributes
         lda     ObjectState,x
         and     #DirectionMask
@@ -928,10 +962,11 @@ LE00B:  lda     ObjectState,x
         and     #$0F
         sec
         sbc     #$07
-        bpl     LE019
+        bpl     ConvertTankTransitionPhaseToTile
         eor     #$FF
         clc
         adc     #$01
+ConvertTankTransitionPhaseToTile:
 LE019:  asl     a
         and     #$FC
         clc
