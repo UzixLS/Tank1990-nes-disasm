@@ -41,12 +41,19 @@
 | `$C03A-$C056` | `src/decimal.s` | преобразование байта в десятичные цифры |
 | `$C5F3-$C626` | `src/powerup_flow.s` | выбор типа и эффекты усилений 3/6 |
 | `$C9C0-$CA90` | `src/title_menu.s` | логика главного меню и курсора |
+| `$CA91-$CAF4` | `src/battle_hud.s` | номер этапа в HUD |
 | `$CAF5-$CC26` | `src/base_render.s` | база, кирпичное и стальное ограждение |
+| `$CC27-$CCD3` | `src/screen_transitions.s` | строки nametable и экранная шторка |
 | `$CCD4-$D137` | `src/stage_statistics.s` | послеэтапная статистика и её анимация |
 | `$D138-$D169` | `src/score_rewards.s` | дополнительные жизни за порог счёта |
 | `$D16A-$D254` | `src/title_render.s` | построение nametable заглавного экрана |
+| `$D255-$D275` | `src/legacy_screen_stream.s` | адаптер неидентифицированных экранных потоков |
+| `$D276-$D283` | `src/statistics_delay.s` | задержка с перерисовкой иконок статистики |
+| `$D284-$D2F7` | `src/screen_text_data.s` | строки заглавного экрана и статистики |
 | `$D2F8-$D333` | `src/runtime_checksum_init.s` | подготовка runtime-проверки суммы |
+| `$D334-$D34C` | `src/screen_misc_text.s` | служебные и нераспознанные строки |
 | `$D34D-$D357` | `src/remainder.s` | остаток от деления байта на шесть |
+| `$D358-$D3D4` | `src/battle_ui_data.s` | данные HUD, базы и статистики |
 | `$D3D5-$D3DC` | `src/direction_tables.s` | единичные смещения по направлениям |
 | `$D3E0-$D3FC` | `src/powerup_effect0.s` | обработчик усиления 0 |
 | `$D491-$D501` | `src/runtime_init.s` | инициализация общей RAM и restart signature |
@@ -68,10 +75,19 @@
 | `$E55B-$E567` | `src/powerup_pickup_entry.s` | выбор диапазона сборщиков усиления |
 | `$E568-$E56F` | `src/score_awards.s` | начисление подготовленного счёта игроку |
 | `$E570-$E603` | `src/variant_ui_data.s` | строки заголовка и меню вариантов |
+| `$E604-$E70B` | `src/projectile_terrain_collisions.s` | столкновения снарядов с местностью |
+| `$E70C-$E83F` | `src/projectile_tank_collisions.s` | попадания снарядов в игроков и врагов |
 | `$E840-$E8B9` | `src/variant_menu_data.s` | строки скрытого меню вариантов |
+| `$E8BA-$E8BD` | `src/enemy_score_awards.s` | награды за типы противников |
 | `$E8BE-$E90F` | `src/powerup_spawn.s` | выбор координат и типа усиления |
+| `$E910-$E971` | `src/projectile_pair_collisions.s` | столкновения снарядов между собой |
 | `$E972-$E9F1` | `src/powerup_pickup.s` | подбор и диспетчеризация усиления |
 | `$E9F2-$EA0E` | `src/stage_selection_helpers.s` | изменение номера выбранного этапа |
+| `$EA0F-$EA11` | `src/maximum_upgrade_trampoline.s` | сохранённый trampoline улучшения |
+| `$EA12-$EA38` | `src/projectile_terrain_classifier.s` | variant-классификация terrain tile |
+| `$EA39-$EA44` | `src/upgrade_state_helper.s` | сохранённый адаптер улучшения |
+| `$EA45-$EA48` | `src/audio_state_helper.s` | адаптер состояния аудиопотока |
+| `$EA49-$EA50` | `src/projectile_direction_tables.s` | векторы направления снаряда |
 | `$FCFC-$FD93` | `src/frontend_extensions.s` | расширения меню и секретное продолжение |
 | `$FD94-$FDB0` | `src/runtime_integrity.s` | отложенная runtime-проверка суммы |
 | `$FDB1-$FEAC` | `src/powerup_effects_hi.s` | эффекты усилений 2–5/7 и максимальное улучшение |

@@ -1,5 +1,7 @@
 ; Создание и позиционирование усиления на поле ($E8BE-$E90F).
 
+PowerUpCoordinateGridIndex = $00
+
 ; Выбирает свободную позицию и тип появляющегося power-up.
 ; PowerUpX/Y получают одну из координат 48,96,144,192. Пока кандидат пересекается
 ; с активным танком, UpdatePowerUpPickup ставит PowerUpPickupDisplayTimer и
