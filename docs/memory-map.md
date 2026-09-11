@@ -17,13 +17,13 @@
 
 | CPU-адреса | Исходник | Назначение |
 |---:|---|---|
-| `$C000-$C9BF` | `src/game_flow.s` | сброс, главный цикл, выбор режима и этапа |
+| `$C000-$C9BF` | `src/game_flow.s` | адресный контейнер игрового потока |
 | `$C9C0-$D3FF` | `src/screens.s` | меню, заставки, таблицы экранов и статистика |
-| `$D400-$DB0A` | `src/ppu.s` | NMI, очереди обновлений PPU и таблицы метатайлов |
-| `$DB0B-$E02D` | `src/tanks.s` | движение, состояния и отрисовка танков |
+| `$D400-$DB0A` | `src/ppu.s` | адресный контейнер кадровых и PPU-подсистем |
+| `$DB0B-$E02D` | `src/tanks.s` | адресный контейнер подсистем танков |
 | `$E02E-$E603` | `src/projectiles.s` | снаряды и физически соседние игровые подсистемы |
 | `$E604-$EA50` | `src/collisions.s` | столкновения и физически соседние данные/подсистемы |
-| `$EA51-$EF75` | `src/audio.s` | музыка, звуковые эффекты и интерпретатор потоков |
+| `$EA51-$EF75` | `src/audio.s` | контейнер аудиодвижка и его данных |
 | `$EF76-$F021` | `src/stage_loader.s` | выбор, распаковка и отрисовка карты этапа |
 | `$FCFC-$FFFF` | `src/prg1_hi.s` | контейнер верхнего банка, расширения и векторы |
 
@@ -38,8 +38,31 @@
 
 | CPU-адреса | Исходник | Назначение |
 |---:|---|---|
+| `$A38C-$A552` | `src/extra_levels.s` | пять дополнительных карт |
+| `$A553-$A73C` | `src/prg0_extensions.s` | активные расширения Tank 1990 |
+| `$A73D-$BF7F` | `src/prg0_unreferenced_data.s` | неподтверждённые таблицы и заполнение |
+| `$BF80-$BF83` | `src/deferred_integrity_bridge.s` | мост к отложенной проверке checksum |
+| `$BF84-$BFFF` | `src/prg0_extension_prototypes.s` | неиспользуемые прототипы расширений |
+| `$C000-$C0AD` | `src/startup.s` | boot hook, reset и frontend loop |
 | `$C03A-$C056` | `src/decimal.s` | преобразование байта в десятичные цифры |
+| `$C0AE-$C158` | `src/construction_editor.s` | основной цикл редактора Construction |
+| `$C159-$C2B2` | `src/battle_flow.s` | выбор этапа, бой и разбор результата |
+| `$C2B3-$C2E5` | `src/session_init.s` | инициализация новой сессии |
+| `$C2E6-$C330` | `src/gameplay_tick.s` | один logic tick и полусекундная фаза |
+| `$C331-$C3B4` | `src/stage_runtime.s` | runtime-состояние выбранного этапа |
+| `$C3B5-$C44A` | `src/attract_mode.s` | подготовка и цикл демонстрации |
+| `$C44B-$C49B` | `src/session_result.s` | завершение игровой сессии |
+| `$C49C-$C59C` | `src/variant_selection.s` | boot marker и выбор варианта |
+| `$C59D-$C5D8` | `src/gameplay_runtime_data.s` | runtime-таблицы игрового потока |
+| `$C5D9-$C641` | `src/flow_helpers.s` | общие helpers потока и усилений |
 | `$C5F3-$C626` | `src/powerup_flow.s` | выбор типа и эффекты усилений 3/6 |
+| `$C642-$C6C5` | `src/attract_ai.s` | генерация ввода для attract mode |
+| `$C6C6-$C71D` | `src/construction_cursor.s` | отрисовка и движение курсора Construction |
+| `$C71E-$C754` | `src/stage_outcome.s` | счётчики и условие завершения этапа |
+| `$C755-$C7C7` | `src/frontend_misc.s` | сохранённый RAM inspector и заставка |
+| `$C7C8-$C8CF` | `src/battle_hud_runtime.s` | жизни, номер этапа и маркеры врагов |
+| `$C8D0-$C8F8` | `src/construction_cursor_bounds.s` | границы курсора Construction |
+| `$C8F9-$C9BF` | `src/battle_overlays.s` | pause, переходный объект и рамка поля |
 | `$C9C0-$CA90` | `src/title_menu.s` | логика главного меню и курсора |
 | `$CA91-$CAF4` | `src/battle_hud.s` | номер этапа в HUD |
 | `$CAF5-$CC26` | `src/base_render.s` | база, кирпичное и стальное ограждение |
@@ -56,11 +79,32 @@
 | `$D358-$D3D4` | `src/battle_ui_data.s` | данные HUD, базы и статистики |
 | `$D3D5-$D3DC` | `src/direction_tables.s` | единичные смещения по направлениям |
 | `$D3E0-$D3FC` | `src/powerup_effect0.s` | обработчик усиления 0 |
+| `$D400-$D44C` | `src/nmi.s` | кадровый NMI и вызов кадровых подсистем |
+| `$D44D-$D466` | `src/random.s` | генератор псевдослучайных байтов |
+| `$D467-$D490` | `src/ppu_display.s` | управление NMI, рендеринг и очистка nametable shadow |
 | `$D491-$D501` | `src/runtime_init.s` | инициализация общей RAM и restart signature |
+| `$D502-$D5FA` | `src/palette.s` | палитры и ожидание vblank |
+| `$D5FB-$D688` | `src/ppu_attributes.s` | адресация shadow и attribute table |
 | `$D689-$D6B2` | `src/input.s` | чтение двух контроллеров |
+| `$D6B3-$D705` | `src/ppu_queues.s` | строковые команды PPU |
+| `$D706-$D7B3` | `src/terrain_shadow.s` | подобласти collision/terrain shadow |
+| `$D7B4-$D80A` | `src/nametable_shadow.s` | передача и инициализация nametable shadow |
+| `$D80B-$D85D` | `src/metatile_render.s` | отрисовка TSA-метатайлов |
+| `$D85E-$D8F5` | `src/chr_raster.s` | CHR-растр для collision shadow |
+| `$D8F6-$D933` | `src/ppu_sync.s` | ожидание кадра и сброс PPU-очереди |
 | `$D934-$DA2A` | `src/score.s` | десятичные записи счёта и high score |
 | `$DA2B-$DAAE` | `src/oam.s` | построение спрайтов в OAM shadow |
 | `$DAAF-$DABA` | `src/math.s` | нормализация знака разности |
+| `$DABB-$DB0A` | `src/metatile_data.s` | палитры и тайлы TSA-метатайлов |
+| `$DB0B-$DB47` | `src/tank_player_audio.s` | звук движения танков игроков |
+| `$DB48-$DB74` | `src/enemy_tank_spawn.s` | интервалы появления противников |
+| `$DB75-$DBF0` | `src/tank_player_input.s` | ввод, поворот и общие no-op handlers |
+| `$DBF1-$DC51` | `src/tank_update.s` | диспетчер обновления танков |
+| `$DC52-$DD7D` | `src/tank_navigation.s` | движение и terrain-пробы |
+| `$DD7E-$DDE9` | `src/tank_targeting.s` | наведение противников |
+| `$DDEA-$DE71` | `src/tank_lifecycle.s` | уничтожение и состояния танков |
+| `$DE72-$DEA5` | `src/enemy_tank_ai.s` | выбор действий противника |
+| `$DEA6-$E02D` | `src/tank_render.s` | кадры и построение спрайтов танков |
 | `$E181-$E23A` | `src/tank_occupancy.s` | занятость клеток танками и обнаружение льда |
 | `$E23B-$E362` | `src/battle_effects.s` | усиление на поле, щит игроков и эффекты базы |
 | `$E363-$E3B7` | `src/tank_spawn.s` | создание танка в слоте |
@@ -88,6 +132,8 @@
 | `$EA39-$EA44` | `src/upgrade_state_helper.s` | сохранённый адаптер улучшения |
 | `$EA45-$EA48` | `src/audio_state_helper.s` | адаптер состояния аудиопотока |
 | `$EA49-$EA50` | `src/projectile_direction_tables.s` | векторы направления снаряда |
+| `$EA51-$ECE5` | `src/audio_engine.s` | интерпретатор и маршрутизация потоков APU |
+| `$ECE6-$EF75` | `src/audio_data.s` | периоды, указатели и байткод аудиопотоков |
 | `$FCFC-$FD93` | `src/frontend_extensions.s` | расширения меню и секретное продолжение |
 | `$FD94-$FDB0` | `src/runtime_integrity.s` | отложенная runtime-проверка суммы |
 | `$FDB1-$FEAC` | `src/powerup_effects_hi.s` | эффекты усилений 2–5/7 и максимальное улучшение |
@@ -98,7 +144,8 @@
 ## Неиспользуемые данные PRG0
 
 В диапазоне `$A73D-$BF7F` статических ссылок и подтверждённых точек входа нет.
-Регулярные участки отделены от заполнения и размечены в `src/prg0_rest.s`:
+Регулярные участки отделены от заполнения и размечены в
+`src/prg0_unreferenced_data.s`:
 
 - `$A780-$A7A7` — копии фрагментов расположенных ниже таблиц;
 - `$A800-$A85A` — полноценная карта, вынесенная в

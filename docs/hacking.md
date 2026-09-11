@@ -24,11 +24,14 @@
 `TankLogicHandlers` и `TankDrawHandlers` находятся в `src/tank_tables.s`,
 `ProjectileLogicHandlers` и `ProjectileDrawHandlers` — в `src/projectiles.s`,
 `PowerUpEffectHandlers` — в `src/powerup_pickup.s`, а `AudioCommandHandlers` —
-в `src/audio.s`. Логика состояний танков находится в `src/tanks.s`.
+в `src/audio_engine.s`. Логика танков разделена между файлами
+`src/tank_*.s` и `src/enemy_tank_*.s`; `src/tanks.s` сохраняет их адресный
+порядок.
 Адреса устойчивых игровых полей собраны в `src/ram.inc`, а общие коды состояний,
 маски и размеры пулов — в `src/game.inc`. Один и тот же байт RAM иногда
 переиспользуется разными экранами; такие рабочие значения намеренно именуются
 локально в соответствующем модуле.
+Редактируемые периоды, указатели и байткод находятся в `src/audio_data.s`.
 У аудиопотоков есть точки входа `AudioSequence00`–`AudioSequence27`; несколько
 потоков могут совместно использовать один и тот же хвост данных. Значения
 `AudioStreamStates` равны 0 для выключенного потока, 1 для запроса запуска и 2

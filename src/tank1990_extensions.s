@@ -59,7 +59,7 @@ FinishTank1990Extensions:
 LFF04:  rts
 
 ; Маршрутизация первой проверки TSA при движении.
-; Вход: A — код TSA первой точки, TerrainObjectSlot — слот объекта. X на входе
+; Вход: A — код TSA первой точки, CurrentTankSlot — слот объекта. X на входе
 ; не используется. При ObjectSpecialState слота !=0 код $12 считается проходимым;
 ; в остальных случаях TSA<$20 блокирует движение, TSA>=$20 разрешает проверку
 ; второй точки. Хвостом уходит в ProbeSecondTankCorner либо
@@ -72,7 +72,7 @@ LFF05:  pha
         nop
         nop
         nop
-        ldx     TerrainObjectSlot
+        ldx     CurrentTankSlot
         lda     ObjectSpecialState,x
         nop
         nop
@@ -102,7 +102,7 @@ LFF25:  pha
         nop
         nop
         nop
-        ldx     TerrainObjectSlot
+        ldx     CurrentTankSlot
         lda     ObjectSpecialState,x
         nop
         nop

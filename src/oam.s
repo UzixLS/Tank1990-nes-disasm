@@ -1,6 +1,11 @@
 ; Построение shadow OAM ($DA2B-$DAAE).
 ; Файл включается из ppu.s в исходной позиции, чтобы сохранять адреса ROM.
 
+OamSavedX = $47
+OamSavedY = $48
+OamPairX  = $54
+OamPairY  = $55
+
 ; Добавляет один 8x8-спрайт в OamShadow через OamBufferPos и OamBufferStep.
 ; Вход: X/Y -- экранные X и базовый Y, OamTile -- tile,
 ; RenderAttributes -- attributes, SpriteBehindTerrainMask -- добавочные

@@ -5,7 +5,6 @@
 ; Локальные роли $5A в непересекающихся проходах high-bank.
 PowerUpTargetSlot    = $5A
 ExtensionObjectSlot = $5A
-TerrainObjectSlot   = $5A
 
 .include "frontend_extensions.s"
 

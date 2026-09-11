@@ -1,6 +1,8 @@
 ; Опрос контроллеров ($D689-$D6B2).
 ; Файл включается из ppu.s в исходной позиции, чтобы сохранять адреса ROM.
 
+PpuControllerBits = $00
+
 ; Последовательно читает оба контроллера. Joy1Held/Joy2Held — текущее состояние,
 ; Joy1Pressed/Joy2Pressed — фронты вновь нажатых кнопок. Биты собираются в
 ; NES-порядке A..Right через ROR. Меняет A/X/Y, PpuControllerBits и strobe JOY1;
