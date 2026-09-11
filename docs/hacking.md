@@ -21,8 +21,8 @@
 - игровой код и таблицы: `src/*.s` и `src/*.inc`.
 
 Основные таблицы диспетчеризации используют символические ссылки:
-`TankLogicHandlers`, `TankDrawHandlers`, `ProjectileLogicHandlers` и
-`ProjectileDrawHandlers` пока находятся в `src/projectiles.s`,
+`TankLogicHandlers` и `TankDrawHandlers` находятся в `src/tank_tables.s`,
+`ProjectileLogicHandlers` и `ProjectileDrawHandlers` — в `src/projectiles.s`,
 `PowerUpEffectHandlers` — в `src/powerup_pickup.s`, а `AudioCommandHandlers` —
 в `src/audio.s`. Логика состояний танков находится в `src/tanks.s`.
 Адреса устойчивых игровых полей собраны в `src/ram.inc`, а общие коды состояний,

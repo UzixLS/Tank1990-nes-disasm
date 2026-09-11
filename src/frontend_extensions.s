@@ -22,7 +22,7 @@ SelectEnabledPowerUpMenuText:
 LFD14:  lda     #<MenuOptionText1
 StoreSelectedPowerUpMenuText:
 LFD16:  sta     ScratchPtrLo
-        lda     #$FD
+        lda     #>MenuOptionText0
         sta     ScratchPtrHi
         ldx     #$15
         ldy     #$03

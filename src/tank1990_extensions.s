@@ -134,9 +134,10 @@ LFF49:  sta     ObjectSpecialState,x
         jsr     InitializeCoreRuntime
         rts
 
-; Заполняет ObjectSpecialState+4..+7 и PlayerExtendedUpgrade значением A, затем вызывает
-; InitializeCoreRuntime. Входные A/X/Y этой процедурой не сохраняются.
-FillExtensionSlots4Through8:
+; Заполняет хвост ObjectSpecialState+4..+7 и PlayerExtendedUpgrade для первого
+; игрока значением A, затем вызывает InitializeCoreRuntime.
+; Входные A/X/Y этой процедурой не сохраняются.
+FillEnemyExtensionTailAndPlayer1ExtendedUpgrade:
 LFF53:  sta     ObjectSpecialState+4
         sta     ObjectSpecialState+5
         sta     ObjectSpecialState+6

@@ -7,7 +7,7 @@
 SelectPowerUpTypeForVariant:
 LC5F3:  lda     AllPowerUpsEnabled
         beq     SelectRestrictedPowerUpType
-        lda     LE8FA,y
+        lda     AllPowerUpTypes,y
         rts
 
 SelectRestrictedPowerUpType:

@@ -49,7 +49,9 @@ LE3A2:  .byte   $04
 
 ; Альтернативный spawn entry: вход A записывает в ObjectAttributes,X,
 ; обнуляет PowerUpX, ставит TankStateSpawning и рисует spawn-метатайл.
-; Статических ссылок нет; побочные эффекты соответствуют SpawnTank.
+; Статических ссылок нет. Использует уже заданные ObjectX/Y; в отличие от
+; SpawnTank не выбирает spawn-координаты, не очищает PlayerStunTimer и не меняет
+; EnemySpawnColumn, но дополнительно удаляет лежащее усиление через PowerUpX=0.
 SpawnTankWithAttributes:
 LE3A3:  sta     ObjectAttributes,x
         lda     #$00

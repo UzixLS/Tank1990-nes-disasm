@@ -40,6 +40,13 @@
 |---:|---|---|
 | `$C03A-$C056` | `src/decimal.s` | преобразование байта в десятичные цифры |
 | `$C5F3-$C626` | `src/powerup_flow.s` | выбор типа и эффекты усилений 3/6 |
+| `$C9C0-$CA90` | `src/title_menu.s` | логика главного меню и курсора |
+| `$CAF5-$CC26` | `src/base_render.s` | база, кирпичное и стальное ограждение |
+| `$CCD4-$D137` | `src/stage_statistics.s` | послеэтапная статистика и её анимация |
+| `$D138-$D169` | `src/score_rewards.s` | дополнительные жизни за порог счёта |
+| `$D16A-$D254` | `src/title_render.s` | построение nametable заглавного экрана |
+| `$D2F8-$D333` | `src/runtime_checksum_init.s` | подготовка runtime-проверки суммы |
+| `$D34D-$D357` | `src/remainder.s` | остаток от деления байта на шесть |
 | `$D3D5-$D3DC` | `src/direction_tables.s` | единичные смещения по направлениям |
 | `$D3E0-$D3FC` | `src/powerup_effect0.s` | обработчик усиления 0 |
 | `$D491-$D501` | `src/runtime_init.s` | инициализация общей RAM и restart signature |
@@ -50,7 +57,17 @@
 | `$E181-$E23A` | `src/tank_occupancy.s` | занятость клеток танками и обнаружение льда |
 | `$E23B-$E362` | `src/battle_effects.s` | усиление на поле, щит игроков и эффекты базы |
 | `$E363-$E3B7` | `src/tank_spawn.s` | создание танка в слоте |
-| `$E4EC-$E54C` | `src/tank_init.s` | начальные поля и атрибуты танка |
+| `$E3B8-$E3C8` | `src/powerup_effect1.s` | обработчик усиления 1 |
+| `$E3C9-$E3EE` | `src/variant_ui_logic.s` | атрибуты игрока и заголовок варианта |
+| `$E3EF-$E42A` | `src/object_state_helpers.s` | сброс и изменение состояний объектов |
+| `$E42B-$E440` | `src/stage_catalog.s` | описатели наборов классических этапов |
+| `$E441-$E450` | `src/variant_metadata_helpers.s` | сохранённый helper variant-метаданных |
+| `$E451-$E46B` | `src/input_direction.s` | преобразование D-pad в направление |
+| `$E46C-$E4D7` | `src/tank_tables.s` | векторы, spawn-данные и dispatch танков |
+| `$E4EC-$E55A` | `src/tank_init.s` | начальные поля и атрибуты танка |
+| `$E55B-$E567` | `src/powerup_pickup_entry.s` | выбор диапазона сборщиков усиления |
+| `$E568-$E56F` | `src/score_awards.s` | начисление подготовленного счёта игроку |
+| `$E570-$E603` | `src/variant_ui_data.s` | строки заголовка и меню вариантов |
 | `$E840-$E8B9` | `src/variant_menu_data.s` | строки скрытого меню вариантов |
 | `$E8BE-$E90F` | `src/powerup_spawn.s` | выбор координат и типа усиления |
 | `$E972-$E9F1` | `src/powerup_pickup.s` | подбор и диспетчеризация усиления |

@@ -45,10 +45,15 @@ $(BUILD)/unused-level-a800.bin: assets/levels/unused/001.map tools/levels.py | $
 
 ASM_SOURCES := src/main.s src/hardware.inc src/ram.inc src/game.inc src/header.s src/levels.s src/prg0_rest.s \
 	src/prg1_lo.s src/game_flow.s src/decimal.s src/powerup_flow.s src/screens.s \
-	src/direction_tables.s src/powerup_effect0.s \
+	src/title_menu.s src/base_render.s src/stage_statistics.s src/title_render.s \
+	src/direction_tables.s src/powerup_effect0.s src/score_rewards.s \
+	src/runtime_checksum_init.s src/remainder.s \
 	src/ppu.s src/runtime_init.s src/input.s src/score.s \
 	src/oam.s src/math.s src/tanks.s src/projectiles.s src/tank_occupancy.s src/battle_effects.s \
-	src/tank_spawn.s src/tank_init.s src/collisions.s src/variant_menu_data.s src/powerup_spawn.s \
+	src/tank_spawn.s src/powerup_effect1.s src/variant_ui_logic.s src/object_state_helpers.s \
+	src/stage_catalog.s src/variant_metadata_helpers.s src/input_direction.s src/tank_tables.s \
+	src/tank_init.s src/powerup_pickup_entry.s src/score_awards.s src/variant_ui_data.s \
+	src/collisions.s src/variant_menu_data.s src/powerup_spawn.s \
 	src/powerup_pickup.s src/stage_selection_helpers.s \
 	src/audio.s src/stage_loader.s src/prg1_hi.s src/frontend_extensions.s src/runtime_integrity.s \
 	src/powerup_effects_hi.s src/tank1990_extensions.s src/collision_extensions.s \

@@ -1,8 +1,9 @@
-; Инициализация активного состояния танка ($E4EC-$E54C).
+; Инициализация активного состояния танка ($E4EC-$E55A).
 ; Файл включается из projectiles.s в исходной позиции для сохранения адресов ROM.
 
 ; Заполняет начальное состояние танка. Для противников дополнительные свойства
-; (тип, бонусный флаг и скорость) выбираются псевдослучайно.
+; выбираются псевдослучайно из таблиц типа, bonus-флага и младших битов
+; атрибутов; точная игровая трактовка каждого младшего бита не предполагается.
 ; Вход: X — слот. Начальное состояние берётся из InitialTankStateBySlot.
 ; Для игроков ставит PlayerShieldTimer,X=3, объединяет PlayerUpgradeLevel,X с
 ; attributes и обнуляет frame. Для противников RNG выбирает три группы bits.
@@ -58,6 +59,22 @@ LE53B:  jsr     NextRandomByte
 ApplyEnemyLowAttributeBits:
 LE540:  tay
         lda     EnemyLowAttributeBits,y
+        ora     ObjectAttributes,x
+        sta     ObjectAttributes,x
+        lda     #$00
+        sta     ObjectFrame,x
+        rts
+
+; Два сохранённых байта после RTS и перед отдельным entry point $E54F.
+; Статических ссылок на $E54D нет; исполняемым блоком не классифицируются.
+UnreferencedE54dBytes:
+LE54D:  .byte   $E0,$A0
+
+; Статически неиспользуемый вход: объединяет байт TankLevels+$56+Y с
+; ObjectAttributes,X и обнуляет ObjectFrame,X. Вход: X — слот, Y — смещение;
+; выход: A — новые attributes. Формат исходного байта не установлен.
+ApplyLevelByteToTankAttributesStub:
+LE54F:  lda     TankLevels+$56,y
         ora     ObjectAttributes,x
         sta     ObjectAttributes,x
         lda     #$00

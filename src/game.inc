@@ -18,6 +18,7 @@ StateClassMask        = $F0
 NonTargetableTankStateMin= $E0
 
 BattleStateActive     = $80
+TankStateActiveClass  = $A0
 TankStateDestroyed    = $73
 TankStateSpawning     = $F0
 ProjectileStateActive = $40

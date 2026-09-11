@@ -201,8 +201,8 @@ LE709:  lda     #$00
 ; Общий проход снарядов по танкам.
 ; Фаза 1 проверяет игроков Object 1..0 против активных вражеских снарядов 7..2.
 ; Попадание определяется квадратом |dx|<10, |dy|<10. Таймер $89,X поглощает
-; снаряд без взрыва; иначе управление передаётся HandleProjectileHitOnTank.
-; AdvanceTankCollisionPass из high-bank возвращает сюда для следующего игрока.
+; снаряд без взрыва; иначе управление передаётся HandleProjectileHitOnPlayer.
+; AdvancePlayerTankCollisionPass из high-bank возвращает сюда для следующего игрока.
 ; Фаза 2 проверяет врагов Object 7..2 против логических снарядов игроков
 ; в слотах 0,1,8,9, начисляет уничтожения и очки.
 ; Побочно меняет A/X/Y, TankCollisionSlot,
@@ -261,7 +261,7 @@ LE74A:  cmp     #$0A
         jmp     AdvanceEnemyProjectileCollision
 
 HandleUnshieldedPlayerHit:
-LE75F:  jmp     HandleProjectileHitOnTank
+LE75F:  jmp     HandleProjectileHitOnPlayer
 
 ; Недостижимый NOP после безусловного JMP.
 UnreferencedE762Nop:
@@ -270,7 +270,7 @@ LE762:  .byte   $EA
 ; зеркалит их в $0178/$0101/ObjectAttributes и продолжает общий проход.
 ApplyPlayerHitVariantState:
 LE763:
-        jsr     GetVariantAttributeBits
+        jsr     RequestPlayerDestructionAudioAndGetVariantBits
         nop
         sta     PlayerExtendedUpgrade,x
         sta     PlayerUpgradeLevel,x
@@ -283,13 +283,13 @@ LE772:  dec     ProjectileCollisionSlot
         cmp     #$01
         bne     CheckNextEnemyProjectile
 ; JSR вызывает проход игроков повторно через внутренний JMP из
-; AdvanceTankCollisionPass. Первый
+; AdvancePlayerTankCollisionPass. Первый
 ; переход сохраняет адрес возврата на стеке, второй вызов при $5A<0 возвращается
 ; сюда и запускает проход врагов. Его RTS разматывает сохранённый адрес и тем же
 ; способом запускает проход врагов второй раз, после чего следующий RTS выходит
 ; к исходному вызывающему. Это намеренная стековая схема, а не обычный цикл.
 AdvancePlayerCollisionPassOrBeginEnemyPass:
-LE77A:  jsr     AdvanceTankCollisionPass
+LE77A:  jsr     AdvancePlayerTankCollisionPass
         nop
         lda     #(TankSlotCount-1)
         sta     TankCollisionSlot

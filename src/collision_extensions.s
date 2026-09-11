@@ -1,11 +1,11 @@
 ; Расширения обработки попаданий и прохода коллизий ($FF66-$FFC0).
 
-; Обрабатывает попадание снаряда в объект X с нулевым PlayerShieldTimer,X.
+; Обрабатывает попадание снаряда в игрока X с нулевым PlayerShieldTimer,X.
 ; Ненулевой ObjectSpecialState,X поглощается/очищается. Без него объект
 ; переводится в TankStateDestroyed, кроме PlayerUpgradeLevel,X=$63: тогда
 ; запрашивается ArmorHitAudioState, а $40 записывается в PlayerUpgradeLevel,
 ; PlayerExtendedUpgrade и ObjectAttributes. Не возвращается.
-HandleProjectileHitOnTank:
+HandleProjectileHitOnPlayer:
 LFF66:  lda     ObjectSpecialState,x
         beq     ApplyUnshieldedProjectileHit
         lda     #$00
@@ -32,7 +32,7 @@ LFF81:  lda     #AudioStateStartRequested
 ; Запрашивает PlayerOrBaseDestructionNoiseAudioState и возвращает в A
 ; модификатор $20 при отрицательном GameVariant, иначе 0.
 ; X/Y не меняет; портит флаги.
-GetVariantAttributeBits:
+RequestPlayerDestructionAudioAndGetVariantBits:
 LFF93:  lda     #AudioStateStartRequested
         sta     PlayerOrBaseDestructionNoiseAudioState
         lda     GameVariant
@@ -55,7 +55,7 @@ LFFA3:  sta     ObjectAttributes,x
 ; ObjectState=TankStateDestroyed, затем уменьшает TankCollisionSlot (тот же $5A).
 ; При TankCollisionSlot>=0 переходит к CheckNextPlayerTank, иначе возвращается.
 ; Портит A, TankCollisionSlot и флаги.
-AdvanceTankCollisionPass:
+AdvancePlayerTankCollisionPass:
 LFFA8:  lda     ObjectState,x
         cmp     #TankStateDestroyed
         bne     AdvanceTankCollisionSlot

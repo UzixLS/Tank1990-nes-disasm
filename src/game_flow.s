@@ -602,9 +602,9 @@ LC3B5:  lda     #$01
         stx     RasterStringX
         ldy     #$78
         sty     RasterStringY
-        lda     #$E5
+        lda     #>EditionYearText
         sta     AuxPtrHi
-        lda     #$E0
+        lda     #<EditionYearText
         sta     AuxPtrLo
         jsr     RasterizeTileStringToShadow
         jsr     UploadNametableBuffer
@@ -715,16 +715,16 @@ LC4A1:  lda     #$80
         ldy     #$03
         ldx     #$07
         jsr     QueueTileAtCoordinates
-        lda     #$E5
+        lda     #>VariantMenuDividerText
         sta     ScratchPtrHi
-        lda     #$EF
+        lda     #<VariantMenuDividerText
         sta     ScratchPtrLo
         ldy     #$04
         ldx     #$07
         jsr     QueueTileAtCoordinates
-        lda     #$E5
+        lda     #>VariantMenuDividerText
         sta     ScratchPtrHi
-        lda     #$EF
+        lda     #<VariantMenuDividerText
         sta     ScratchPtrLo
         ldy     #$01
         ldx     #$07
@@ -1036,7 +1036,7 @@ LC6FB:  lda     #$0F
         jsr     DecodeDirectionButtons
 ApplyConstructionCursorMove:
 LC704:  tay
-        lda     LD3D5,y
+        lda     DirectionStepX,y
         asl     a
         asl     a
         asl     a
@@ -1044,7 +1044,7 @@ LC704:  tay
         clc
         adc     ObjectX
         sta     ObjectX
-        lda     LD3D9,y
+        lda     DirectionStepY,y
         asl     a
         asl     a
         asl     a
@@ -1454,11 +1454,11 @@ LC98D:  lda     TransitionObjectTimer
         bcc     DrawCurrentTransitionObject
         lda     TransitionObjectDirection
         tay
-        lda     LD3D5,y
+        lda     DirectionStepX,y
         clc
         adc     TransitionObjectX
         sta     TransitionObjectX
-        lda     LD3D9,y
+        lda     DirectionStepY,y
         clc
         adc     TransitionObjectY
         sta     TransitionObjectY

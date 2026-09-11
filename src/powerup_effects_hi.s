@@ -1,40 +1,42 @@
 ; Обработчики усилений и улучшений объектов ($FDB1-$FEAC).
 
-; Адаптер для слотов игроков: при X<2 записывает $0A в $0100 и возвращается;
-; при X>=2 проваливается в PowerUpEffect2. Портит A и флаги.
-InitializePlayerExtensionOrApplyEffect2:
+; Статически неиспользуемый адаптер: при X<2 замораживает врагов через
+; EnemyFreezeTimer=$0A; при X>=2 проваливается в PowerUpEffect2.
+; Портит A и флаги.
+UnreferencedFreezeEnemiesOrApplyPowerUpEffect2:
 LFDB1:  cpx     #FirstEnemyTankSlot
         bcs     PowerUpEffect2
         lda     #$0A
         sta     EnemyFreezeTimer
         rts
 
-; Вход: X — слот подобравшего усиление. Для X>=2 заменяет три блока вокруг базы и
-; обнуляет атрибуты через QueueBrickBaseAttributes. Для X<2 при активном
-; BattleState обновляет стальное ограждение и ставит BaseFortificationTimer=$14.
+; Вход: X — слот подобравшего усиление. Для X>=2 рисует голую целую базу без
+; ограждения и через QueueBrickBaseAttributes обнуляет верхний атрибут, сохраняя
+; разрешённые биты нижнего. Для X<2 при активном BattleState обновляет стальное
+; ограждение и ставит BaseFortificationTimer=$14.
 ; Портит ScratchPtr, A, X, Y; меняет nametable shadow и PPU-очередь через
 ; вызываемые процедуры. Ветка противника не возвращается самостоятельно, а
 ; хвостовым переходом возвращается из QueueBrickBaseAttributes.
 PowerUpEffect2:
 LFDBB:  cpx     #FirstEnemyTankSlot
         bcc     ApplyPlayerBaseFortification
-        lda     #$D3
+        lda     #>BlankBaseRow
         sta     ScratchPtrHi
-        lda     #$6D
+        lda     #<BlankBaseRow
         sta     ScratchPtrLo
         ldx     #$0C
         ldy     #$19
         jsr     QueueTileAtCoordinates
-        lda     #$E5
+        lda     #>IntactBaseUpperRow
         sta     ScratchPtrHi
-        lda     #$E8
+        lda     #<IntactBaseUpperRow
         sta     ScratchPtrLo
         ldx     #$0C
         ldy     #$1A
         jsr     QueueTileAtCoordinates
-        lda     #$D2
+        lda     #>IntactBaseLowerRow
         sta     ScratchPtrHi
-        lda     #$99
+        lda     #<IntactBaseLowerRow
         sta     ScratchPtrLo
         ldx     #$0C
         ldy     #$1B
@@ -82,9 +84,10 @@ LFE12:  lda     PlayerUpgradeLevel,x
 FinishPowerUpEffect3:
 LFE21:  rts
 
-; Поражает танки противоположной стороны: для X<2 — слоты 2..7, для X>=2 — игроков 0..1,
-; если их ObjectState активен. Записывает TankStateDestroyed, attributes=0;
-; для игроков также PlayerUpgradeLevel=$20.
+; Поражает танки противоположной стороны: для X<2 — активные слоты 2..7;
+; для X>=2 — активных игроков 0..1 только при PlayerStunTimer,Y=0.
+; Записывает TankStateDestroyed, attributes=0; для игроков также
+; PlayerUpgradeLevel=$20.
 ; Запрашивает аудиопоток уничтожения танка. X сохраняет; портит A/Y,
 ; PowerUpTargetSlot и флаги.
 PowerUpEffect4:

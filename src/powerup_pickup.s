@@ -5,9 +5,11 @@
 ; запрещает повторную проверку. BeginPowerUpCollectorScan выбирает слоты 1..0
 ; при GameVariant<=7 или 7..0 при GameVariant>7. Квадрат захвата: |dx|<12,
 ; |dy|<12. PowerUpType=$FF используется SpawnPowerUp как проверка свободного места.
-; При настоящем подборе начисляет 500 очков игроку и запускает обработчик эффекта.
-; Dispatch снимает со стека собственный адрес возврата: RTS обработчика
-; возвращает непосредственно вызывающей UpdatePowerUpPickup процедуре.
+; При настоящем подборе обычно начисляет игроку 500 очков и запускает звук;
+; PowerUpScoreSuppressionState=$06 пропускает награду и звук, но не сам эффект.
+; Dispatch снимает со стека адрес возврата UpdatePowerUpPickup: RTS обработчика
+; возвращает вызывающему её caller-а и тем самым пропускает остаток caller-а.
+PowerUpScoreSuppressionState = $C6
 UpdatePowerUpPickup:
 LE972:  lda     PowerUpX
         beq     FinishPowerUpPickupScan
@@ -48,7 +50,7 @@ LE9A4:  cmp     #$0C
         sta     PowerUpPickupDisplayTimer
         lda     PowerUpType
         bmi     FinishPowerUpPickupScan
-        lda     $C6
+        lda     PowerUpScoreSuppressionState
         cmp     #$06
         beq     DispatchCollectedPowerUp
         lda     #$50

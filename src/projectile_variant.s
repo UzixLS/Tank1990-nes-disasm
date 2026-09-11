@@ -3,7 +3,9 @@
 ; Настраивает ProjectileFlags,X по режиму $46 и ObjectAttributes,X.
 ; В базовом режиме передаёт старшую тетраду атрибутов в
 ; DecodeProjectileFlagsFromAttributes. В расширенном режиме ($46<0)
-; бит $08 или класс $60 дают flags=3, часть прочих ненулевых классов — flags=1. Портит A и флаги.
+; бит $08 или класс $60 дают flags=3, часть прочих ненулевых классов — flags=1.
+; Предусловие: ProjectileFlags,X уже обнулён; некоторые ветки намеренно не
+; записывают его. Портит A и флаги.
 InitializeProjectileFlagsForVariant:
 LFFC1:  lda     GameVariant
         bmi     DecodeExtendedVariantProjectileFlags
