@@ -44,8 +44,15 @@ $(BUILD)/unused-level-a800.bin: assets/levels/unused/001.map tools/levels.py | $
 	$(PYTHON) tools/levels.py encode assets/levels/unused 1 $@
 
 ASM_SOURCES := src/main.s src/hardware.inc src/ram.inc src/game.inc src/header.s src/levels.s src/prg0_rest.s \
-	src/prg1_lo.s src/game_flow.s src/screens.s src/ppu.s src/tanks.s src/projectiles.s src/collisions.s \
-	src/audio.s src/stage_loader.s src/prg1_hi.s src/chr.s
+	src/prg1_lo.s src/game_flow.s src/decimal.s src/powerup_flow.s src/screens.s \
+	src/direction_tables.s src/powerup_effect0.s \
+	src/ppu.s src/runtime_init.s src/input.s src/score.s \
+	src/oam.s src/math.s src/tanks.s src/projectiles.s src/tank_occupancy.s src/battle_effects.s \
+	src/tank_spawn.s src/tank_init.s src/collisions.s src/variant_menu_data.s src/powerup_spawn.s \
+	src/powerup_pickup.s src/stage_selection_helpers.s \
+	src/audio.s src/stage_loader.s src/prg1_hi.s src/frontend_extensions.s src/runtime_integrity.s \
+	src/powerup_effects_hi.s src/tank1990_extensions.s src/collision_extensions.s \
+	src/projectile_variant.s src/chr.s
 
 $(BUILD)/tank1990.o: $(ASM_SOURCES) $(BUILD)/tank-levels.bin $(BUILD)/extra-levels.bin $(BUILD)/classic-levels.bin $(BUILD)/unused-level-a800.bin $(BUILD)/sprites.chr $(BUILD)/background.chr $(BUILD)/sprite-palette.bin $(BUILD)/background-palettes.bin $(BUILD)/background-metatiles.bin | $(BUILD)
 	$(CA65) -g -o $@ $<

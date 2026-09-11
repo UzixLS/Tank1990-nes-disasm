@@ -43,31 +43,7 @@ LC031:  lda     Joy1Pressed,x
         beq     SkipPlayerProjectile
         jmp     FirePlayerProjectile
 
-ByteToDecimalInput = $00
-ByteToDecimalDigits:
-; Вход: ByteToDecimalInput — байт 0..255, DecimalHundreds/Tens заранее обнулены.
-; Выход: DecimalHundreds/Tens/Ones — десятичные цифры.
-; Портит A и флаги; X/Y не меняет. Не обнуляет $39/$3A самостоятельно.
-        lda     ByteToDecimalInput
-CountDecimalHundreds:
-LC03C:  cmp     #$64
-        bcc     CountDecimalTens
-LC040:  sec
-        sbc     #$64
-        inc     DecimalHundreds
-        jmp     CountDecimalHundreds
-
-CountDecimalTens:
-LC048:  cmp     #$0A
-        bcc     StoreByteDecimalOnes
-        sec
-        sbc     #$0A
-        inc     DecimalTens
-        jmp     CountDecimalTens
-
-StoreByteDecimalOnes:
-LC054:  sta     DecimalOnes
-        rts
+.include "decimal.s"
 
 ; 25-байтная авторская строка; не завершена $FF и не имеет прямых ссылок.
 UnreferencedAuthorText:
@@ -909,45 +885,7 @@ LC5D9:  jsr     DisableRenderingForBulkUpdate
         jsr     ResetAudioEngine
         rts
 
-; Вход: Y=0..7 — псевдослучайный номер эффекта. При $8E!=0 возвращает его без изменений,
-; иначе применяет RestrictedPowerUpTypeTable, исключающую эффект 7. Выход: A — номер; RAM и X/Y не меняются.
-SelectPowerUpTypeForVariant:
-LC5F3:  lda     AllPowerUpsEnabled
-        beq     SelectRestrictedPowerUpType
-        lda     LE8FA,y
-        rts
-
-SelectRestrictedPowerUpType:
-LC5FB:  lda     RestrictedPowerUpTypeTable,y
-        rts
-
-PowerUpEffect3:
-; Для игрока X<2 и $8E!=0 увеличивает $0178,X на $20, затем всегда переходит в ApplyPowerUpEffect3.
-; Для X>=2 или $8E=0 сразу идёт в общую часть. Выходного RTS здесь нет; портит A и флаги.
-LC5FF:  cpx     #$02
-        bcs     ApplyCommonPowerUpEffect3
-        lda     AllPowerUpsEnabled
-        beq     ApplyCommonPowerUpEffect3
-        lda     PlayerExtendedUpgrade,x
-        clc
-        adc     #$20
-        sta     PlayerExtendedUpgrade,x
-ApplyCommonPowerUpEffect3:
-LC610:  jmp     ApplyPowerUpEffect3
-
-PowerUpEffect6:
-; Для игрока X<2 и $8E!=0 увеличивает $0178,X на $60, затем переходит в SetMaximumObjectUpgrade.
-; Для остальных слотов/вариантов только общая часть. Портит A и флаги.
-LC613:  cpx     #$02
-        bcs     ApplyCommonPowerUpEffect6
-        lda     AllPowerUpsEnabled
-        beq     ApplyCommonPowerUpEffect6
-        lda     PlayerExtendedUpgrade,x
-        clc
-        adc     #$60
-        sta     PlayerExtendedUpgrade,x
-ApplyCommonPowerUpEffect6:
-LC624:  jmp     SetMaximumObjectUpgrade
+.include "powerup_flow.s"
 ; Подкладывает в StageNumber верхнюю границу для декремента: $76 при ($46&$0F)=6, иначе $32.
 ; Выход: A — записанное StageNumber; X/Y не меняются.
 WrapStageNumberBackward:

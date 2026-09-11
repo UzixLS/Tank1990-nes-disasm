@@ -1432,42 +1432,11 @@ LD3CB:  .byte   $53,$54,$41,$47,$45,$FF
 ; фактические прибавки к счёту равны 100, 200, 300 и 400.
 ScoreAwardsByEnemyType:
 LD3D1:  .byte   $10,$20,$30,$40
-; Шаг курсора/редактора по направлениям
-; Up,Left,Down,Right. В одном месте значения масштабируются на 16 пикселей,
-; в другом прибавляются непосредственно к координатам.
-DirectionStepX:
-LD3D5:  .byte   $00,$FF,$00,$01
-DirectionStepY:
-LD3D9:  .byte   $FF,$00,$01,$00
+.include "direction_tables.s"
 ; Оба известных потребителя индексируют таблицы направлением 0..3; эти три $FF лежат за их границей.
 PaddingBeforePowerUpEffect0:
 LD3DD:  .byte   $FF,$FF,$FF
-PowerUpEffect0:
-; Эффект усиления 0 зависит от типа подобравшего слота.
-; Для X=0/1 ставит таймер $89,X=$0A. Для X>=2 временно сохраняет X и проходит
-; слоты танков 7..2, устанавливая младшие биты атрибутов и инвертируя бит $04:
-; ObjectAttributes=(old|$03)^$04. Возвращает исходный X; A и флаги меняются.
-LD3E0:  cpx     #$02
-        bcc     ApplyPlayerPowerUpEffect0
-        txa
-        pha
-        ldx     #$07
-ApplyPowerUpEffect0ToNextEnemy:
-LD3E8:  lda     ObjectAttributes,x
-        ora     #$03
-        eor     #$04
-        sta     ObjectAttributes,x
-        dex
-        cpx     #$01
-        bne     ApplyPowerUpEffect0ToNextEnemy
-        pla
-        tax
-        rts
-
-ApplyPlayerPowerUpEffect0:
-LD3F8:  lda     #$0A
-        sta     PlayerShieldTimer,x
-        rts
+.include "powerup_effect0.s"
 
 ; Заполнение конца экранного модуля до следующей процедуры $D400; ссылок на эти байты нет.
 ScreenModuleEndPadding:
