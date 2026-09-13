@@ -1,15 +1,6 @@
 ; Адресный контейнер экранных подсистем и их данных ($C9C0-$D3FF).
 ; Include-точки сохраняют исходный порядок байтов ROM.
 
-StatisticsPlayer1Count = $5D
-StatisticsPlayer2Count = $5E
-StatisticsEnemyType    = $5A
-StatisticsRowActive    = $7C
-Player1StageKillTotal  = $7D
-Player2StageKillTotal  = $7E
-CurtainRowIndex        = $57
-NametableRowFillTile   = $63
-
 .include "title_menu.s"
 .include "battle_hud.s"
 .include "base_render.s"

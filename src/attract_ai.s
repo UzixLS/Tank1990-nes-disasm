@@ -64,10 +64,15 @@ UseAttractNeutralInput:
 LC6A0:  lda     #$00
         jmp     StoreAttractPlayerInput
 
+; Преобразует младшие два бита состояния-направления A в D-pad+fire демо.
+; Затем общий хвост записывает ввод игрока AttractPlayerSlot.
 ConvertAttractDirectionToInput:
 LC6A5:  and     #DirectionMask
         tay
         lda     DemoInputByDirection,y
+; Альтернативный вход: A уже содержит маску Joy. Для игрока у нижнего края
+; снимает огонь только из Joy1Pressed; Joy1Held сохраняет исходную маску.
+; Портит A/X.
 StoreAttractPlayerInput:
 LC6AB:  ldx     AttractPlayerSlot
         sta     Joy1Held,x

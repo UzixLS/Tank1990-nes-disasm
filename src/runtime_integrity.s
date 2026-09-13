@@ -1,29 +1,37 @@
 ; Отложенная runtime-проверка контрольной суммы ($FD94-$FDB0).
 
-; Проверка использует абсолютную индексацию с X=5/4, поэтому её база на
+; Проверка использует zero-page indexed addressing с X=5/4, поэтому её база на
 ; четыре байта ниже RuntimeChecksumExpected.
 IntegrityWorkBase = RuntimeChecksumExpected - $04
+RuntimeIntegrityFirstStage = $1A
+RuntimeIntegrityRandomMask = $0E
 
-; При StageNumber<26 и в большинстве кадров только вызывает
-; UpdateHalfSecondPhaseFlag. Начиная с 26-го этапа с вероятностью 1/8
+; При StageNumber<RuntimeIntegrityFirstStage и в большинстве вызовов только
+; вызывает UpdateHalfSecondPhaseFlag. Начиная с 26-го этапа с вероятностью 1/8
 ; сравнивает RuntimeChecksumActual с RuntimeChecksumExpected. При несовпадении
-; выполняет непрямой переход по ScratchPtr и к вызывающему коду не возвращается.
-; Портит A; при выполнении сравнения оставляет X=4, иначе X сохраняется.
-; При StageNumber>=26 может также изменить состояние RNG.
+; выполняет JMP (ScratchPtr). После штатной InitializeRuntimeChecksumGuard это
+; RuntimeChecksumFailureTarget, чей первый байт — RTI; путь к вызывающему коду
+; не возвращается обычным RTS.
+; На всех возвращающихся путях вызывает UpdateHalfSecondPhaseFlag, который
+; меняет BackgroundPaletteIndex только на полусекундной фазе. Портит A и
+; флаги; при сравнении оставляет X=4,
+; иначе X сохраняется; Y сохраняется. На этапах 26+ обновляет RandomState и
+; RandomIndex при каждом вызове, дошедшем до вероятностной проверки.
 MaybeEnforceRuntimeChecksum:
 LFD94:
         lda     StageNumber
-        cmp     #$1A
-        bcc     LFDAD
+        cmp     #RuntimeIntegrityFirstStage
+        bcc     UpdateIntegrityPhaseAndReturn
         jsr     NextRandomByte
-        and     #$0E
-        bne     LFDAD
+        and     #RuntimeIntegrityRandomMask
+        bne     UpdateIntegrityPhaseAndReturn
         ldx     #$05
         lda     IntegrityWorkBase,x
         dex
         cmp     IntegrityWorkBase,x
-        beq     LFDAD
+        beq     UpdateIntegrityPhaseAndReturn
         jmp     (ScratchPtrLo)
 
+UpdateIntegrityPhaseAndReturn:
 LFDAD:  jsr     UpdateHalfSecondPhaseFlag
         rts

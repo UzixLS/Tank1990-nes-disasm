@@ -30,6 +30,8 @@ LD14F:  lda     MenuSelection
         bcc     ReturnFromExtraLifeCheck
         inc     Player2Lives
         inc     PlayerExtraLifeAwarded+1
+; Общий хвост награды: запускает оба pulse-потока extra life.
+; Выход: A=AudioStateStartRequested; X/Y и счётчики жизней не меняет.
 RequestExtraLifeAudio:
 LD161:  lda     #AudioStateStartRequested
         sta     ExtraLifePulse1AudioState

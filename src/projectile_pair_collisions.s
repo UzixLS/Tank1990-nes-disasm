@@ -2,21 +2,25 @@
 
 ProjectilePairOuterSlot  = $5A
 ProjectilePairInnerSlot  = $5B
-ProjectilePairOwnerIndex = $00
+ProjectilePairLogicalId  = $00
+ProjectilePairHitRadius  = $06
+ProjectileLogicalIdMask  = $07
 
 ; Проверяет столкновения активных снарядов друг с другом.
 ; Внешний цикл рассматривает только логические player slots 0,1,8,9;
 ; внутренний — все 10 слотов. Пары с одинаковым индексом modulo 8 исключаются,
 ; поэтому основные и дополнительные слоты одного владельца не гасят друг друга.
 ; При |dx|<6 и |dy|<6 оба ProjectileState обнуляются без взрывного state $33.
-; Побочно меняет A/X/Y, ProjectilePairOuterSlot/
-; ProjectilePairInnerSlot/ProjectilePairOwnerIndex и ProjectileState; прочую RAM не меняет.
+; Вход: состояния и координаты десяти снарядов.
+; Выход: ProjectilePairOuterSlot=$FF; A/X/Y и ProjectilePairInnerSlot не
+; определены. Портит ProjectilePairLogicalId, ProjectileState и флаги;
+; PPU/OAM, audio states, танки и счёт не меняет.
 UpdateProjectileProjectileCollisions:
 LE910:  lda     #(ProjectileSlotCount-1)
         sta     ProjectilePairOuterSlot
 CheckNextProjectilePairOuter:
 LE914:  lda     ProjectilePairOuterSlot
-        and     #$06
+        and     #PlayerProjectileSlotMask
         bne     AdvanceProjectilePairOuter
         ldx     ProjectilePairOuterSlot
         lda     ProjectileState,x
@@ -28,11 +32,11 @@ LE914:  lda     ProjectilePairOuterSlot
 CheckNextProjectilePairInner:
 LE928:  lda     ProjectilePairInnerSlot
         tay
-        and     #$07
-        sta     ProjectilePairOwnerIndex
+        and     #ProjectileLogicalIdMask
+        sta     ProjectilePairLogicalId
         lda     ProjectilePairOuterSlot
-        and     #$07
-        cmp     ProjectilePairOwnerIndex
+        and     #ProjectileLogicalIdMask
+        cmp     ProjectilePairLogicalId
         beq     AdvanceProjectilePairInner
         lda     ProjectileState,y
         and     #StateClassMask
@@ -46,7 +50,7 @@ LE928:  lda     ProjectilePairInnerSlot
         clc
         adc     #$01
 ProjectilePairXDistanceReady:
-LE94D:  cmp     #$06
+LE94D:  cmp     #ProjectilePairHitRadius
         bcs     AdvanceProjectilePairInner
         lda     ProjectileY,y
         sec
@@ -56,7 +60,7 @@ LE94D:  cmp     #$06
         clc
         adc     #$01
 ProjectilePairYDistanceReady:
-LE95E:  cmp     #$06
+LE95E:  cmp     #ProjectilePairHitRadius
         bcs     AdvanceProjectilePairInner
         lda     #$00
         sta     ProjectileState,x

@@ -1,5 +1,7 @@
 ; Главный проход логики танков и dispatch состояний ($DBF1-$DC51).
 
+TankAlwaysUpdateAttributeClass = $A0
+
 ; Обновляет восемь танков в обратном порядке. Расписание пропускает часть объектов
 ; по чётности FrameCounter/слота; танки игроков обслуживаются по отдельному ритму.
 ; EnemyFreezeTimer
@@ -36,7 +38,7 @@ LDC18:  lda     EnemyFreezeTimer
 ApplyTankUpdateSchedule:
 LDC25:  lda     ObjectAttributes,x
         and     #$F0
-        cmp     #$A0
+        cmp     #TankAlwaysUpdateAttributeClass
         beq     RunTankLogicForSlot
         lda     CurrentTankSlot
         eor     FrameCounter

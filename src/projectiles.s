@@ -1,23 +1,21 @@
 ; Снаряды, эффекты поля, создание танков и общие таблицы ($E02E-$E603).
 
-TankShadowPtrLo         = $E0
-TankShadowPtrHiAndFlags = $E8
-BaseSpriteTileOffset    = $69
-
 ; Локальные роли общего loop-байта $5A; времена жизни проходов не пересекаются.
 ProjectileUpdateSlot = $5A
 ProjectileDrawSlot   = $5A
 PlayerFiringSlot     = $5A
-OccupancyTankSlot    = $5A
-ShieldPlayerSlot     = $5A
-TankStateClassCandidate = $00
 
-TankCenterShadowOffset = $21
+ProjectileFlagFast       = $01
+ProjectileFlagBreakSteel = $02
+ProjectileFlagsMaximum   = ProjectileFlagFast + ProjectileFlagBreakSteel
+PlayerDoubleShotClass    = $40
+PlayerProjectileSlotMask = $06
 
 UpdateProjectiles:
 ; Обновляет все 10 слотов снарядов от 9 до 0 через DispatchProjectileLogic.
-; Выход: ProjectileUpdateSlot=$FF; портит A/X/Y, ScratchPtr и поля снарядов
-; по контракту обработчика.
+; Вход: нет. Выход: ProjectileUpdateSlot=$FF, X=0.
+; Портит A/X/Y, ScratchPtr; активные снаряды меняют ProjectileX/Y, фазы
+; попадания — ProjectileState. PPU/OAM и счёт здесь не затрагиваются.
 LE02E:  lda     #(ProjectileSlotCount-1)
         sta     ProjectileUpdateSlot
 UpdateNextProjectile:
@@ -28,8 +26,10 @@ LE032:  ldx     ProjectileUpdateSlot
         rts
 
 DispatchProjectileLogic:
-; Вход: X — слот. Выбирает пять обработчиков по старшей тетраде ProjectileState,X.
-; Хвостовой JMP; портит A/Y/ScratchPtr, X сохраняется до входа в обработчик.
+; Вход: X — слот 0..9. Выбирает обработчик класса 0..4 по старшей
+; тетраде ProjectileState,X. Выход определяется обработчиком; X сохраняется.
+; Хвостовой JMP: на стеке не появляется дополнительный адрес возврата.
+; Портит A/Y, ScratchPtr и флаги.
 LE03C:  lda     ProjectileState,x
         lsr     a
         lsr     a
@@ -44,19 +44,21 @@ LE03C:  lda     ProjectileState,x
 
 ProjectileLogicState4:
 ; Активный снаряд: двигает на 2 px в направлении из младших двух битов state; при ProjectileFlags bit0 повторяет шаг,
-; то есть двигает на 4 px. Меняет ProjectileX/Y,X; портит A/Y и флаги.
+; то есть двигает на 4 px. Вход: X — слот. Выход: X сохранён;
+; меняет ProjectileX/Y,X, портит A/Y и флаги.
         lda     ProjectileState,x
         and     #DirectionMask
         tay
         jsr     MoveProjectileTwoPixels
         lda     ProjectileFlags,x
-        and     #$01
+        and     #ProjectileFlagFast
         beq     FinishActiveProjectileStep
         jsr     MoveProjectileTwoPixels
 FinishActiveProjectileStep:
 LE062:  rts
 
-; Один шаг снаряда X на 2 px. Вход: Y — direction 0..3; меняет ProjectileX/Y,X, портит A и флаги.
+; Один шаг снаряда X на 2 px. Вход: X — слот, Y — direction 0..3.
+; Выход: X/Y сохранены; меняет ProjectileX/Y,X, портит A и флаги.
 MoveProjectileTwoPixels:
 LE063:  lda     DirectionDeltaX,y
         asl     a
@@ -72,7 +74,9 @@ LE063:  lda     DirectionDeltaX,y
 
 ProjectileLogicStates1To3:
 ; Обратный отсчёт фаз взрыва 1..3. Когда младшая тетрада доходит до 0, уменьшает фазу на $10;
-; ненулевые промежуточные фазы получают таймер 3, последняя переходит в state=0. Меняет ProjectileState,X; портит A/флаги.
+; ненулевые промежуточные фазы получают таймер 3, последняя переходит в state=0.
+; Вход: X — слот. Выход: X/Y сохранены; меняет ProjectileState,X,
+; портит A и флаги. Координаты и остальные поля снаряда не меняются.
         dec     ProjectileState,x
         lda     ProjectileState,x
         and     #$0F
@@ -91,7 +95,10 @@ LE08B:  rts
 ; Создаёт снаряд в слоте X, только если ProjectileState,X=0.
 ; Начальное state=$40|direction; координаты смещены на 8 px от ObjectX/Y,X, flags затем вычисляются по attributes/варианту.
 ; Для игрока X<2 запрашивает PlayerFireAudioState. Хвостовой JMP в
-; InitializeProjectileFlagsForVariant; портит A/Y и флаги.
+; InitializeProjectileFlagsForVariant.
+; Вход: X — слот танка 0..7, одновременно основной слот его снаряда.
+; Выход: X сохранён; при занятом слоте ничего не меняет. Портит A/Y и флаги;
+; при создании меняет ProjectileState/X/Y/Flags,X и, для игрока, audio state.
 InitializeProjectileForTank:
 LE08C:  lda     ProjectileState,x
         bne     FinishProjectileInitialization
@@ -129,31 +136,34 @@ LE099:  lda     ObjectState,x
 UnreferencedE0bfByte:
 LE0BF:  .byte   $F0
 ; Базовая декодировка мощности снаряда из старшей тетрады ObjectAttributes.
-; Вход: A=attributes&$F0, X — слот. $60 даёт flags=3; $C0 и ненулевые классы без bit7 — flags=1.
+; Вход: A=attributes&$F0, X — слот. $60 даёт flags=3; $C0 и прочие ненулевые
+; классы без bit7, кроме $60, дают flags=1.
 ; Ноль и остальные классы с bit7 оставляют предварительно очищенный ProjectileFlags,X без изменения.
 DecodeProjectileFlagsFromAttributes:
 LE0C0:
         beq     FinishProjectileInitialization
         cmp     #$C0
-        beq     StoreNormalProjectileFlagsValue
+        beq     SetNormalProjectileFlags
         cmp     #$60
         beq     SetStrongProjectileFlags
         and     #$80
         bne     FinishProjectileInitialization
-StoreNormalProjectileFlagsValue:
-LE0CE:  lda     #$01
+SetNormalProjectileFlags:
+LE0CE:  lda     #ProjectileFlagFast
         sta     ProjectileFlags,x
         rts
 
 SetStrongProjectileFlags:
-LE0D3:  lda     #$03
+LE0D3:  lda     #ProjectileFlagsMaximum
         sta     ProjectileFlags,x
 FinishProjectileInitialization:
 LE0D7:  rts
 
 DrawProjectiles:
-; Отрисовывает все 10 слотов снарядов от 9 до 0. Выход: ProjectileDrawSlot=$FF;
-; портит A/X/Y, ScratchPtr, render/OAM scratch и OAM shadow.
+; Отрисовывает все 10 слотов снарядов от 9 до 0.
+; Вход: нет. Выход: ProjectileDrawSlot=$FF, X зависит от последнего обработчика.
+; Портит A/X/Y, ScratchPtr, render/OAM scratch и OAM shadow; игровое состояние
+; снарядов и PPU-очередь не меняет.
 LE0D8:  lda     #(ProjectileSlotCount-1)
         sta     ProjectileDrawSlot
 DrawNextProjectile:
@@ -164,7 +174,9 @@ LE0DC:  ldx     ProjectileDrawSlot
         rts
 
 DispatchProjectileDraw:
-; Вход: X — слот. Диспетчер по старшей тетраде ProjectileState,X; хвостовой JMP, портит A/Y/ScratchPtr.
+; Вход: X — слот 0..9. Диспетчер по классу 0..4 старшей тетрады
+; ProjectileState,X. Хвостовой JMP; выход определяется обработчиком.
+; Портит A/Y, ScratchPtr и флаги ещё до входа в него.
 LE0E6:  lda     ProjectileState,x
         lsr     a
         lsr     a
@@ -180,6 +192,7 @@ LE0E6:  lda     ProjectileState,x
 ProjectileDrawState4:
 ; Рисует активный снаряд в его ProjectileX/Y с кадром по direction. Портит
 ; A/X/Y, ScratchPtr, $00, $04/$53, $0D, $47/$48 и OAM shadow.
+; ProjectileState/X/Y/Flags и PPU-очередь не меняет.
         lda     ProjectileState,x
         and     #DirectionMask
         pha
@@ -197,6 +210,7 @@ ProjectileDrawState4:
 ProjectileDrawStates1To3:
 ; Рисует фазу взрыва снаряда по ProjectileState+$40 в ProjectileX/Y. Портит
 ; A/X/Y, ScratchPtr, $00, $04/$53, $0D, $47/$48, $54/$55 и OAM shadow.
+; ProjectileState/X/Y/Flags и PPU-очередь не меняет.
         lda     ProjectileState,x
         pha
         ldy     ProjectileY,x
@@ -210,7 +224,9 @@ ProjectileDrawStates1To3:
 
 ; Обходит игроков X=1..0, и для активных танков передаёт ввод в DispatchPlayerFireInput.
 ; Может создать или переложить снаряд; выход: PlayerFiringSlot=$FF.
-; Портит A/X/Y и projectile RAM.
+; Вход: Joy1Pressed/Joy2Pressed и состояния игроков. Выход: X=0,
+; PlayerFiringSlot=$FF. Портит A/X/Y, projectile RAM и при выстреле
+; PlayerFireAudioState; PPU/OAM и счёт не меняет.
 UpdatePlayerFiring:
 LE122:  lda     #$01
         sta     PlayerFiringSlot
@@ -231,9 +247,12 @@ LE133:  .byte   $03,$F0,$27
 ; очищает первый и создаёт новый.
 ; Иначе просто пытается инициализировать первый слот. Портит A/Y и projectile RAM; X сохраняет индекс игрока до хвоста цикла.
 FirePlayerProjectile:
+; Вход из DispatchPlayerFireInput: X=PlayerFiringSlot (0 или 1).
+; Это continuation прохода, а не самостоятельная JSR-процедура: завершает
+; обработку переходом к AdvancePlayerFiringLoop.
 LE136:  lda     ObjectAttributes,x
         and     #$C0
-        cmp     #$40
+        cmp     #PlayerDoubleShotClass
         bne     InitializeCurrentPlayerProjectile
         lda     ProjectileState,x
         beq     InitializeCurrentPlayerProjectile
@@ -256,8 +275,11 @@ LE15D:  dec     PlayerFiringSlot
         bpl     CheckNextPlayerFire
         rts
 
-; При $0100=0 обходит врагов X=7..2. Каждый активный танк с вероятностью 1/32 пытается выстрелить.
-; Портит A/X/Y, RNG и projectile RAM; при ненулевом $0100 ничего не меняет.
+; При EnemyFreezeTimer=0 обходит врагов X=7..2. Каждый активный танк
+; с вероятностью 1/32 пытается выстрелить.
+; Вход: нет. Выход: при выполненном проходе X=1; при заморозке X/Y сохранены.
+; Портит A/Y, RNG, projectile RAM и флаги; успешный вражеский выстрел не
+; запускает PlayerFireAudioState. PPU/OAM и счёт не меняет.
 UpdateEnemyFiring:
 LE162:  lda     EnemyFreezeTimer
         bne     FinishEnemyFiringPass

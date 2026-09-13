@@ -18,7 +18,12 @@ StateClassMask        = $F0
 NonTargetableTankStateMin= $E0
 
 BattleStateActive     = $80
+TankStateIdleClass    = $80
+TankStateTurningClass = $90
 TankStateActiveClass  = $A0
+TankStateTargetBaseClass      = $B0
+TankStateTargetPlayerTwoClass = $C0
+TankStateTargetPlayerOneClass = $D0
 TankStateDestroyed    = $73
 TankStateSpawning     = $F0
 ProjectileStateActive = $40
@@ -28,6 +33,7 @@ PlayerIceTile          = $21
 PlayerIceActiveFlag    = $80
 PlayerIceInactiveMask  = $7F
 PlayerIceInputLockFlag = $10
+PlayerIcePhaseMask     = $1F
 PlayerIceReloadValue   = $9C
 
 AudioStateOff            = $00

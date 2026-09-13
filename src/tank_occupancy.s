@@ -1,6 +1,14 @@
 ; Маркеры занятости клеток танками ($E181-$E23A).
 ; Файл включается из projectiles.s в исходной позиции для сохранения адресов ROM.
 
+TankShadowPtrLo         = $E0
+TankShadowPtrHiAndFlags = $E8
+OccupancyTankSlot       = $5A
+TankCenterShadowOffset  = $21
+
+TankOccupancyBelowFlag = $80
+TankOccupancyRightFlag = $40
+
 ; Перед движением помечает в nametable shadow клетки активных танков 7..0.
 ; PixelCoordinatesToShadowPointer возвращает адрес для точки
 ; (ObjectX-8,ObjectY-8); адрес и признаки дополнительных клеток кэшируются в
@@ -52,7 +60,7 @@ LE1C9:  jsr     SetTileOccupiedFlag
         and     #$07
         bne     CheckTankVerticalAlignment
         lda     TankShadowPtrHiAndFlags,x
-        ora     #$80
+        ora     #TankOccupancyBelowFlag
         sta     TankShadowPtrHiAndFlags,x
         ldy     #$20
         jsr     SetTileOccupiedFlag
@@ -61,7 +69,7 @@ LE1DD:  lda     ObjectY,x
         and     #$07
         bne     AdvanceTankOccupancySlot
         lda     TankShadowPtrHiAndFlags,x
-        ora     #$40
+        ora     #TankOccupancyRightFlag
         sta     TankShadowPtrHiAndFlags,x
         ldy     #$01
         jsr     SetTileOccupiedFlag
@@ -97,13 +105,13 @@ LE1FE:  ldx     OccupancyTankSlot
         ldy     #TankCenterShadowOffset
         jsr     ClearTileOccupiedFlag
         lda     TankShadowPtrHiAndFlags,x
-        and     #$80
+        and     #TankOccupancyBelowFlag
         beq     ClearTankVerticalOccupancy
         ldy     #$20
         jsr     ClearTileOccupiedFlag
 ClearTankVerticalOccupancy:
 LE224:  lda     TankShadowPtrHiAndFlags,x
-        and     #$40
+        and     #TankOccupancyRightFlag
         beq     AdvanceClearOccupancySlot
         ldy     #$01
         jsr     ClearTileOccupiedFlag

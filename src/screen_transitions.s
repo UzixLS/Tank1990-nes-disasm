@@ -1,5 +1,8 @@
 ; Очереди строк и шторка перехода экрана ($CC27-$CCD3).
 
+CurtainRowIndex      = $57
+NametableRowFillTile = $63
+
 ; За 64 кадра переносит NametableAttributes в PPU $23C0-$23FF,
 ; по одному байту за кадр. Меняет A/X/Y, ScratchPtr и PPU-очередь.
 UploadAttributesGradually:

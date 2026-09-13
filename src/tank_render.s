@@ -239,6 +239,9 @@ LDFDD:  lda     PlayerStunTimer,x
 
 UsePlayerTankPalette:
 LDFE8:  txa
+; Общий хвост обычного танка. Вход: A=палитра 0..3, X=слот.
+; Выбирает tile по type/frame/direction и передаёт объект в OAM; портит A/X/Y
+; и рабочие поля рендера, состояние танка не меняет.
 DrawTankWithSelectedPalette:
 LDFE9:  sta     RenderAttributes
         lda     ObjectState,x

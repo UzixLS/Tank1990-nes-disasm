@@ -13,7 +13,7 @@ LDE72:  lda     EnemyActivityInterval
         lsr     a
         cmp     SlowFrameCounter
         bcs     MaybeChooseRandomEnemyDirection
-        lda     #$B0
+        lda     #TankStateTargetBaseClass
         jmp     CommitEnemyAiClass
 
 MaybeChooseRandomEnemyDirection:
@@ -22,7 +22,7 @@ LDE7F:  lsr     a
         bcc     ChooseEnemyPlayerTarget
         jsr     NextRandomByte
         and     #DirectionMask
-        ora     #$A0
+        ora     #TankStateActiveClass
         sta     ObjectState,x
         rts
 
@@ -35,11 +35,11 @@ LDE8E:  lda     ObjectState
         lda     ObjectState+1
         beq     TargetFirstPlayer
 TargetSecondPlayer:
-LDE9B:  lda     #$C0
+LDE9B:  lda     #TankStateTargetPlayerTwoClass
         jmp     CommitEnemyAiClass
 
 TargetFirstPlayer:
-LDEA0:  lda     #$D0
+LDEA0:  lda     #TankStateTargetPlayerOneClass
 CommitEnemyAiClass:
 LDEA2:  jsr     SetTankStateClass
         rts

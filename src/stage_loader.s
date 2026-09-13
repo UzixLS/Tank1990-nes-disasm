@@ -71,6 +71,8 @@ LEFB3:  pha
 StageDataBaseAdjusted:
 LEFBF:  pla
         sta     StageWrapOffset
+; Продвигает ScratchPtr на StageWrapOffset-1 записей по 91 байту.
+; Вход: StageWrapOffset>=1; выход: указатель выбранной карты, A изменён.
 AdvanceToSelectedStage:
 LEFC2:  dec     StageWrapOffset
         beq     BuildStageShadow
@@ -110,6 +112,8 @@ LEFF6:  lda     (AuxPtrLo),y
         lsr     a
         lsr     a
         lsr     a
+; Общий хвост половин байта: A=индекс TSA, StageDrawX/Y=позиция.
+; Обновляет shadow через DrawMetatile и намеренно отбрасывает PPU-команды.
 DrawDecodedStageMetatile:
 LEFFC:  ldx     StageDrawX
         ldy     StageDrawY

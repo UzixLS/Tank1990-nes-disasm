@@ -11,9 +11,10 @@
 ;   +5  позиция в потоке байткода;
 ;   +6  длительность для следующего события;
 ;   +7  текущий счётчик кадров.
-; Меньший номер потока первым захватывает нужный аппаратный канал.
+; Меньший номер потока первым захватывает нужный аппаратный канал. Четыре
+; байта AudioHardwareClaims — кадровые флаги занятости, а не номера владельцев.
 
-AudioHardwareOwners          = $F9
+AudioHardwareClaims          = $F9
 AudioStreamCount             = $1C
 AudioRecordSize              = $08
 AudioHardwareChannels        = $04
@@ -34,8 +35,10 @@ AudioRecordDuration  = $06
 AudioRecordCountdown = $07
 
 ; Включает pulse/triangle/noise в $4015, запрещает frame IRQ через
-; $4017 и сбрасывает состояния потоков и поле +0 их записей.
-; Входы: нет. Выходы: нет. Портит A, X, Y, AudioStatePtrLo/Hi.
+; $4017 и сбрасывает состояния потоков и поле +0 их записей. Остальные семь
+; байтов каждой записи намеренно не очищаются: состояние 0 исключает их чтение.
+; Входы: нет. Результат: все 28 потоков выключены, каналы APU разрешены.
+; Портит A, X, Y, AudioStatePtrLo/Hi; пишет APU_STATUS и JOY2_FRAME.
 ResetAudioEngine:
 LEA51:  lda     #$0F
         sta     APU_STATUS
@@ -69,8 +72,9 @@ LEA78:  inx
 ; событию для истёкших потоков. Такой порядок откладывает запись новой
 ; ноты в APU до следующего кадра. При ненулевом PauseState обслуживается
 ; только поток 0.
-; Побочные эффекты: запись $4000-$400F; изменение записей потоков,
-; AudioHardwareOwners, AudioLoopCounters и временных Audio*; портит A, X, Y.
+; Регистрированных результатов нет. Побочные эффекты: запись $4000-$400F;
+; изменение записей потоков, AudioHardwareClaims, AudioLoopCounters и временных
+; Audio*; портит A, X, Y и флаги процессора.
 UpdateAudioEngine:
 LEA7E:  lda     PauseState
         bne     LimitAudioToPauseStream
@@ -83,10 +87,10 @@ LEA88:  lda     #$01
 BeginAudioRoutingPass:
 LEA8C:  lda     #$00
         ldx     #(AudioHardwareChannels-1)
-ClearAudioHardwareOwners:
-LEA90:  sta     AudioHardwareOwners,x
+ClearAudioHardwareClaims:
+LEA90:  sta     AudioHardwareClaims,x
         dex
-        bpl     ClearAudioHardwareOwners
+        bpl     ClearAudioHardwareClaims
         lda     #$00
         sta     AudioStreamIndex
         lda     #<AudioStreamRecords
@@ -109,16 +113,16 @@ LEAA1:  ldx     AudioStreamIndex
         sbc     #AudioRoutedChannelBias
         tax
         lda     #AudioChannelClaimed
-        sta     AudioHardwareOwners,x
+        sta     AudioHardwareClaims,x
         jmp     AdvanceAudioOutputStream
 
 WriteAudioStreamToApu:
 LEABD:  tax
         dex
-        lda     AudioHardwareOwners,x
+        lda     AudioHardwareClaims,x
         bne     AdvanceAudioOutputStream
         lda     #AudioChannelClaimed
-        sta     AudioHardwareOwners,x
+        sta     AudioHardwareClaims,x
         txa
         tay
         clc
@@ -156,7 +160,7 @@ SilenceUnclaimedAudioChannels:
         ldx     #$00
 SilenceNextAudioChannel:
 LEAF8:  stx     AudioWorkLo
-        lda     AudioHardwareOwners,x
+        lda     AudioHardwareClaims,x
         bne     RestoreAudioHardwareIndex
         txa
         asl     a
@@ -179,7 +183,8 @@ LEB0A:  ldx     AudioWorkLo
         sta     AudioStatePtrHi
 
 ; Второй проход: запускает запрошенные потоки, отсчитывает кадр у активных и
-; читает следующее событие, когда счётчик +7 достиг 0.
+; читает следующее событие, когда счётчик +7 достиг 0. Переходы из декодера
+; возвращаются сюда хвостом, поэтому это не самостоятельная процедура.
 AdvanceAudioStreams:
 LEB1D:  ldx     AudioStreamIndex
         lda     AudioStreamStates,x
@@ -212,7 +217,9 @@ LEB42:  ldy     #AudioRecordCountdown
         beq     ResumeAudioStream
         bne     AdvanceToNextAudioStream
 ; При запуске позиция сбрасывается, затем заголовок копируется в +0,+1,+2,+4.
-; Для канала 4 (noise) заголовок содержит ещё байт +3.
+; Для канала 4 (noise) заголовок содержит ещё байт +3. Вход: указатели записи
+; и AudioStreamIndex уже выбраны вторым проходом; выполнение продолжается в
+; DecodeNextAudioToken и в итоге переходит к AdvanceToNextAudioStream.
 InitializeAudioStream:
 LEB4F:  lda     #$00
         ldy     #AudioRecordPosition
@@ -239,11 +246,14 @@ LEB4F:  lda     #$00
         sta     (AudioStatePtrLo),y
         bpl     DecodeNextAudioToken
 
-; При истечении таймера указатель таблицы восстанавливается по номеру потока.
+; При истечении таймера указатель байткода восстанавливается по номеру потока;
+; позиция +5 уже указывает на следующий токен.
 ResumeAudioStream:
 LEB85:  jsr     LoadAudioSequencePointer
 
-; Декодер может прочитать цепочку модификаторов длительности/команд за один вызов.
+; Декодер может прочитать цепочку модификаторов длительности/команд за один
+; кадровый вызов. Завершается лишь на ноте/$60, остановке потока или переходе
+; к следующей записи; обычного RTS у этого участка нет.
 DecodeNextAudioToken:
 LEB88:  jsr     ReadAudioArgument
         cmp     #AudioCommandTokenBase
@@ -305,9 +315,12 @@ DecodeAudioCommand:
 LEBE1:  sbc     #AudioCommandTokenBase
         jsr     DispatchAudioCommand
 
-; DispatchAudioCommand использует адрес возврата как базу этой inline-таблицы и передаёт
-; управление обработчику команды $E8-$F9. Все обработчики продолжают декодирование
-; через переход к LEB88 и не возвращаются обычным RTS.
+; DispatchAudioCommand использует адрес возврата как базу этой inline-таблицы и
+; передаёт управление обработчику команды $E8-$F9. Общий вход обработчиков:
+; AudioStatePtr — текущая запись, AudioDataPtr — начало потока, +5 — позиция
+; после opcode. Команды с operand читают его через ReadAudioArgument. Все
+; обработчики продолжают декодирование либо переходят к следующему потоку и не
+; возвращаются обычным RTS; A/X/Y и AudioWorkLo/Hi следует считать испорченными.
 AudioCommandHandlers:
         .word   AudioCommandStop,AudioCommandSetControlHighBits
         .word   AudioCommandSetControlLowBits,AudioCommandSetControlLowNibble
@@ -323,6 +336,7 @@ AudioCommandHandlers:
 AudioCommandStop:
 AudioCommandE8:
 LEC0A:  ldx     AudioStreamIndex
+DeactivateAudioStream:
 LEC0C:  lda     #AudioStateOff
         sta     AudioStreamStates,x
         ldy     #AudioRecordChannel
@@ -447,8 +461,8 @@ LECA5:  jsr     ReadAudioArgument
         jmp     DecodeNextAudioToken
 
 ; Выбирает базу байткода по AudioStreamIndex.
-; Вход: AudioStreamIndex=0..27. Выход: AudioDataPtrLo/Hi.
-; Портит A, X; Y не меняет.
+; Вход: AudioStreamIndex=0..27. Выход: AudioDataPtrLo/Hi указывают на заголовок
+; соответствующей последовательности. Портит A, X; Y и записи потоков не меняет.
 LoadAudioSequencePointer:
 LECAF:  lda     AudioStreamIndex
         asl     a
@@ -459,9 +473,11 @@ LECAF:  lda     AudioStreamIndex
         sta     AudioDataPtrHi
         rts
 
-; Читает байт AudioDataPtr[record.position] и сдвигает position на 1.
+; Читает байт AudioDataPtr[record.position] и сдвигает position на 1 по модулю
+; 256. Последовательность может пересечь физическую границу страницы, но не
+; может адресовать байты дальше смещения $FF от собственного начала.
 ; Входы: AudioDataPtrLo/Hi и AudioStatePtrLo/Hi для текущего потока.
-; Выход: A=байт. Портит Y, сохраняет X.
+; Выход: A=байт, Y=AudioRecordPosition. Сохраняет X; меняет флаги и поле +5.
 ReadAudioArgument:
 LECBE:  lda     AudioStreamIndex
         ldy     #AudioRecordPosition
@@ -478,7 +494,9 @@ LECBE:  lda     AudioStreamIndex
 
 ; Безвозвратный inline-dispatch. Вход: A=индекс команды 0..17, вызов JSR
 ; непосредственно перед таблицей адресов. Снимает со стека адрес возврата,
-; извлекает адрес обработчика и прыгает на него. Портит A, X, Y, AudioWorkLo/Hi.
+; извлекает адрес обработчика и прыгает на него. Адрес возврата намеренно не
+; восстанавливается: обработчик завершит UpdateAudioEngine через его общий хвост.
+; Портит A, X, Y, AudioWorkLo/Hi и флаги.
 DispatchAudioCommand:
 LECD0:  asl     a
         tay

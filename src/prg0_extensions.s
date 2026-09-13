@@ -1,13 +1,28 @@
-; Активные расширения Tank 1990 в первом PRG-банке ($A553-$A73C).
-
-; Расширения Tank 1990 в свободных областях первого PRG-банка.
+; Исполняемые обработчики расширений Tank 1990 в первом PRG-банке
+; ($A553-$A73C). В текущем именованном графе вызовов внешних ссылок на этот
+; блок нет; близкие варианты части обработчиков находятся в верхнем PRG-банке.
 
 MinimumLifeDonationCount = $02
+ModeExtensionEnabledValue       = $20
+InitialPlayerShieldTimerValue   = $0A
+
+GameOverTextChecksumExpected   = $9D
+StageAdvanceChecksumExpected   = $11
+TankLevelDataChecksumExpected  = $BB
+GameOverTextChecksumByteCount  = $09
+StageAdvanceChecksumByteCount  = $0D
+TankLevelDataChecksumByteCount = $07
+StageAdvanceChecksumStart      = StageDataBaseAdjusted + 1
+TankLevelDataChecksumStart     = TankLevels + $0D12
 
 ; Передаёт жизнь выбывшему партнёру в режиме двух игроков.
-; Вход: текущие MenuSelection, Player*Lives и Joy*Held.
-; Побочные эффекты: меняет оба счётчика жизней; при успехе X — номер
-; возрождаемого игрока (0/1), а управление передаётся в общий код возрождения.
+; Вход: MenuSelection, Player*Lives и Joy*Held; X/Y не используются.
+; Всегда вызывает UpdateHalfSecondPhaseFlag; тот меняет BackgroundPaletteIndex
+; только на соответствующей полусекундной фазе.
+; Без передачи жизни возвращается, портя A и флаги. При успехе переносит одну
+; жизнь от живого игрока выбывшему, оставляет X=0/1 для возрождаемого игрока
+; и хвостовым переходом уходит в SpawnTank либо в integrity guard; этот путь
+; самостоятельно не возвращается.
 ShareLifeWithDefeatedPartner:
 LA553:  jsr     UpdateHalfSecondPhaseFlag
         lda     MenuSelection
@@ -44,112 +59,143 @@ LA58A:  rts
 ; Вход: X — слот игрока. Не возвращается: переходит в LE363 или NMI при ошибке.
 RespawnAfterSharedLife:
 LA58B:  jsr     ShouldRunIntegrityCheck
-        bcc     LA596
+        bcc     ContinueSharedLifeRespawn
         jmp     VerifyRespawnCodeAndContinue
 
 ; Неиспользуемый статически одношаговый hook: продолжает возрождение только при C=0.
-LA593:  bcc     LA596
+CarryGuardedRespawnHook:
+LA593:  bcc     ContinueSharedLifeRespawn
         rts
+ContinueSharedLifeRespawn:
 LA596:  jmp     SpawnTank
 
-; Проверяет XOR-контрольную сумму девяти байт $D343..$D34B.
+; Проверяет XOR девяти байтов GameText/OverText ($D343..$D34B): строку "GAME",
+; терминатор и первые четыре байта "OVER". Последний терминатор $D34C не входит.
 ; Выход: C=0 при совпадении, C=1 при ошибке; A — фактический XOR, Y=$FF.
 ; Портит ScratchPtrLo/Hi, A, Y; проверяемые байты не меняет.
+VerifyGameOverTextChecksum:
 VerifyD343Checksum:
-LA599:  lda     #$43
+LA599:  lda     #<GameText
         sta     ScratchPtrLo
-        lda     #$D3
+        lda     #>GameText
         sta     ScratchPtrHi
         lda     #$00
-        ldy     #$08
+        ldy     #(GameOverTextChecksumByteCount-1)
+XorNextGameOverTextByte:
 LA5A5:  eor     (ScratchPtrLo),y
         dey
-        bpl     LA5A5
-        cmp     #$9D
-        bne     LA5B0
+        bpl     XorNextGameOverTextByte
+        cmp     #GameOverTextChecksumExpected
+        bne     ReportGameOverTextChecksumFailure
         clc
         rts
 
+ReportGameOverTextChecksumFailure:
 LA5B0:  sec
         rts
 
-; Hook чтения $0101,X. На выбранных фазах кадра сначала проверяет ROM;
-; при ошибке намеренно зависает. Выход: A=$0101,X; портит флаги, а при проверке ещё Y и ScratchPtr.
+; Hook чтения PlayerUpgradeLevel,X. Когда ShouldRunIntegrityCheck возвращает
+; C=1, сначала проверяет машинный код шага по картам $EFC0..$EFCC; при ошибке
+; намеренно зависает. Выход: A=PlayerUpgradeLevel,X; X сохраняется. Портит
+; флаги, а на проверочном пути также Y и ScratchPtr.
 GuardedLoadObjectExtensionByte:
 LA5B2:  jsr     ShouldRunIntegrityCheck
-        bcc     LA5BF
-        jsr     VerifyEfc0Checksum
-        bcc     LA5BF
-LA5BC:  jmp     LA5BC
+        bcc     LoadGuardedObjectExtensionByte
+        jsr     VerifyStageAdvanceCodeChecksum
+        bcc     LoadGuardedObjectExtensionByte
+HaltOnStageAdvanceChecksumFailure:
+LA5BC:  jmp     HaltOnStageAdvanceChecksumFailure
 
+LoadGuardedObjectExtensionByte:
 LA5BF:  lda     PlayerUpgradeLevel,x
         rts
 
-; Вторая XOR-контрольная сумма: $EFC0..$EFCC (13 байт).
-; Выход: C=0 при совпадении, C=1 при ошибке; портит ScratchPtrLo/Hi, A, Y.
+; Проверяет XOR машинного кода $EFC0..$EFCC в LoadAndDrawStage: от
+; STA StageWrapOffset до младшего байта операнда JMP AdvanceToSelectedStage.
+; Старший байт адреса перехода по $EFCD в checksum не входит.
+; Выход: C=0 при совпадении, C=1 при ошибке; A — фактический XOR, Y=$FF.
+; Портит ScratchPtrLo/Hi, A, Y; X и проверяемый код сохраняются.
+VerifyStageAdvanceCodeChecksum:
 VerifyEfc0Checksum:
-LA5C3:  lda     #$C0
+LA5C3:  lda     #<StageAdvanceChecksumStart
         sta     ScratchPtrLo
-        lda     #$EF
+        lda     #>StageAdvanceChecksumStart
         sta     ScratchPtrHi
         lda     #$00
-        ldy     #$0C
+        ldy     #(StageAdvanceChecksumByteCount-1)
+XorNextStageAdvanceCodeByte:
 LA5CF:  eor     (ScratchPtrLo),y
         dey
-        bpl     LA5CF
-        cmp     #$11
-        bne     LA5DA
+        bpl     XorNextStageAdvanceCodeByte
+        cmp     #StageAdvanceChecksumExpected
+        bne     ReportStageAdvanceChecksumFailure
         clc
         rts
+ReportStageAdvanceChecksumFailure:
 LA5DA:  sec
         rts
 
-; Hook инициализации $89,X значением $0A. На выбранных фазах проверяет ROM;
-; при ошибке намеренно зависает. Портит A; при проверке также Y и ScratchPtr.
+; Hook инициализации PlayerShieldTimer,X. На выбранных score-фазах проверяет
+; семь байтов level data; при ошибке намеренно зависает.
+; Вход: X — индекс таймера. Выход: A=InitialPlayerShieldTimerValue, X сохраняется.
+; Записывает PlayerShieldTimer,X; портит флаги, а на проверочном пути также Y
+; и ScratchPtr.
 GuardedInitializeObjectTimer:
 LA5DC:  jsr     ShouldRunIntegrityCheck
-        bcc     LA5E9
-        jsr     Verify8D12Checksum
-        bcc     LA5E9
-LA5E6:  jmp     LA5E6
+        bcc     InitializeGuardedPlayerShieldTimer
+        jsr     VerifyTankLevelDataChecksum
+        bcc     InitializeGuardedPlayerShieldTimer
+HaltOnTankLevelDataChecksumFailure:
+LA5E6:  jmp     HaltOnTankLevelDataChecksumFailure
 
-LA5E9:  lda     #$0A
+InitializeGuardedPlayerShieldTimer:
+LA5E9:  lda     #InitialPlayerShieldTimerValue
         sta     PlayerShieldTimer,x
         rts
 
-; XOR-контрольная сумма $8D12..$8D18 (область данных уровней).
-; Выход: C=0 при совпадении, C=1 при ошибке; портит ScratchPtrLo/Hi, A, Y.
+; Проверяет XOR семи байтов $8D12..$8D18 внутри TankLevels. Их структурное
+; назначение сверх принадлежности данным карт не установлено.
+; Выход: C=0 при совпадении, C=1 при ошибке; A — фактический XOR, Y=$FF.
+; Портит ScratchPtrLo/Hi, A, Y; X и данные уровней сохраняются.
+VerifyTankLevelDataChecksum:
 Verify8D12Checksum:
-LA5EE:  lda     #$12
+LA5EE:  lda     #<TankLevelDataChecksumStart
         sta     ScratchPtrLo
-        lda     #$8D
+        lda     #>TankLevelDataChecksumStart
         sta     ScratchPtrHi
         lda     #$00
-        ldy     #$06
+        ldy     #(TankLevelDataChecksumByteCount-1)
+XorNextTankLevelDataByte:
 LA5FA:  eor     (ScratchPtrLo),y
         dey
-        bpl     LA5FA
-        cmp     #$BB
-        bne     LA605
+        bpl     XorNextTankLevelDataByte
+        cmp     #TankLevelDataChecksumExpected
+        bne     ReportTankLevelDataChecksumFailure
         clc
         rts
+ReportTankLevelDataChecksumFailure:
 LA605:  sec
         rts
-; Проверка перед возрождением: при ошибке передаёт управление NMI, иначе — LE363.
+
+; Проверка перед возрождением. При успехе хвостом переходит в SpawnTank. При
+; ошибке входит в NmiHandler обычным JMP, поэтому его RTI использует текущий
+; стек вместо аппаратного NMI-кадра; к вызывающему пути процедура не возвращается.
 VerifyRespawnCodeAndContinue:
-LA607:  jsr     VerifyD343Checksum
-        bcc     LA60F
+LA607:  jsr     VerifyGameOverTextChecksum
+        bcc     ContinueRespawnAfterChecksum
         jmp     NmiHandler
 
+ContinueRespawnAfterChecksum:
 LA60F:  jmp     SpawnTank
 
-; Записывает $20 в $0101,X при $46 >= 3, иначе 0.
-; Вход: X — индекс; выход: A — записанное значение; портит флаги.
+; Записывает ModeExtensionEnabledValue в PlayerUpgradeLevel,X при
+; GameVariant>=3 (беззнаковое сравнение), иначе 0.
+; Вход: X — индекс; выход: A — записанное значение; X/Y сохраняются.
 SetIndexedModeExtensionByte:
 LA612:  lda     GameVariant
         cmp     #$03
         bcc     ClearIndexedModeExtension
-        lda     #$20
+        lda     #ModeExtensionEnabledValue
         bne     StoreIndexedModeExtension
 ClearIndexedModeExtension:
 LA61C:  lda     #$00
@@ -157,12 +203,13 @@ StoreIndexedModeExtension:
 LA61E:  sta     PlayerUpgradeLevel,x
         rts
 
-; Неиндексированный вариант SetIndexedModeExtensionByte для $0101.
+; Неиндексированный вариант SetIndexedModeExtensionByte для первого элемента
+; PlayerUpgradeLevel. Выход и сохранность регистров совпадают с ним.
 SetPlayerOneModeExtensionByte:
 LA622:  lda     GameVariant
         cmp     #$03
         bcc     ClearPlayerOneModeExtension
-        lda     #$20
+        lda     #ModeExtensionEnabledValue
         bne     StorePlayerOneModeExtension
 ClearPlayerOneModeExtension:
 LA62C:  lda     #$00
@@ -179,8 +226,11 @@ LA62E:  sta     PlayerUpgradeLevel
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF,$FF,$FF
         .byte   $FF,$FF,$FF,$FF,$FF,$FF
-; Для слотов игроков (X=0/1) вызывает два UI-обработчика; для остальных ничего не делает.
-; Побочные эффекты LD9BE/LD138 зависят от их контрактов; регистры не сохраняются.
+; Для слотов игроков X=0/1 прибавляет ScoreIncrementDigits к соответствующему
+; счёту, затем проверяет пороги дополнительных жизней обоих игроков. Может
+; изменить Player*Score, Player*Lives, PlayerExtraLifeAwarded и запросы двух
+; аудиоканалов extra-life. Возвращает X=$FF для P1 либо $07 для P2, Y=$FF;
+; при исходном X>=PlayerTankCount RAM и A/X/Y не меняет, флаги задаёт CPX.
 UpdatePlayerSlotUi:
 LA680:  cpx     #PlayerTankCount
         bcs     FinishPlayerSlotUiUpdate
@@ -190,8 +240,11 @@ FinishPlayerSlotUiUpdate:
 LA68A:  rts
 
         .byte   $FF,$FF,$FF,$FF,$FF
-; Ждёт кадр; при удержании A+B первым игроком снимает адрес возврата,
-; записывает маркер $AB в $46 и перезапускает игру. Без комбинации обычно возвращается.
+; Ждёт кадр и проверяет удержание A+B первым игроком. Без комбинации возвращается
+; после WaitForNextFrame, портя A и флаги; X/Y сохраняются, а кадровое/input-
+; состояние успевает обновиться через NMI. При комбинации снимает со стека двухбайтный адрес возврата,
+; записывает reset-маркер $AB в GameVariant и хвостом уходит в ResetHandler;
+; этот путь не возвращается.
 HandleResetChord:
 LA690:  jsr     WaitForNextFrame
         lda     Joy1Held
@@ -224,7 +277,7 @@ LA69C:  pla
         .byte   $08,$02,$04,$06,$09,$01,$04,$06
         .byte   $01,$09,$04,$06,$06,$04
 ; Периодический gate для проверок целостности.
-; Вход: десятитысячные цифры Player1Score+2 и Player2Score+2.
+; Вход: десятичные цифры десятков тысяч Player1Score+2 и Player2Score+2.
 ; Выход: C=1, если их сумма равна 3, 6 или 9; иначе C=0.
 ; Портит A и флаги; X/Y и RAM не меняет.
 ShouldRunIntegrityCheck:
@@ -232,13 +285,14 @@ LA728:  clc
         lda     Player1Score+2
         adc     Player2Score+2
         cmp     #$03
-        beq     LA73B
+        beq     EnableScheduledIntegrityCheck
         cmp     #$06
-        beq     LA73B
+        beq     EnableScheduledIntegrityCheck
         cmp     #$09
-        beq     LA73B
+        beq     EnableScheduledIntegrityCheck
         clc
         rts
 
+EnableScheduledIntegrityCheck:
 LA73B:  sec
         rts

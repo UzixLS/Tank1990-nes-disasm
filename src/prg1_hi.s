@@ -2,10 +2,6 @@
 
 .segment "PRG1_HI": absolute
 
-; Локальные роли $5A в непересекающихся проходах high-bank.
-PowerUpTargetSlot    = $5A
-ExtensionObjectSlot = $5A
-
 .include "frontend_extensions.s"
 
 .include "runtime_integrity.s"

@@ -28,7 +28,7 @@ LDC6B:  lda     ObjectState,x
         sta     ObjectState,x
         and     #$0C
         bne     ReturnFromTankIdlePhase
-        lda     #$A0
+        lda     #TankStateActiveClass
         jsr     SetTankStateClass
 ReturnFromTankIdlePhase:
 LDC7B:  rts
@@ -53,6 +53,9 @@ TankLogicStateA:
         jsr     ChooseEnemyTankAiMode
         rts
 
+; Общий хвост классов $8/$A. Вход: X=слот, направление в ObjectState.
+; Вычисляет ProposedTankX/Y и две точки передней границы, затем маршрутизирует
+; terrain-класс либо фиксирует/отменяет движение. Портит A/X/Y и ScratchPtr.
 AdvanceTankMovement:
 LDC97:  lda     ObjectState,x
         and     #DirectionMask
@@ -145,11 +148,13 @@ LDD11:  ldx     CurrentTankSlot
         jsr     NextRandomByte
         and     #$03
         beq     ReverseEnemyTankDirection
-        lda     #$80
+        lda     #TankStateIdleClass
         jsr     SetTankStateClass
         lda     #$08
         ora     ObjectState,x
         sta     ObjectState,x
+; Переключает bit2 ObjectFrame,X как фазу гусениц.
+; Вход/выход: X=слот, A=новый ObjectFrame; Y сохраняется.
 ToggleTankAnimationFrame:
 LDD29:  lda     ObjectFrame,x
         eor     #$04
@@ -166,7 +171,7 @@ LDD30:  lda     ObjectX,x
         lda     ObjectY,x
         and     #$07
         bne     CommitReversedEnemyDirection
-        lda     #$90
+        lda     #TankStateTurningClass
         jsr     SetTankStateClass
 CommitReversedEnemyDirection:
 LDD41:  lda     ObjectState,x
@@ -196,7 +201,7 @@ LDD5E:  lda     ObjectState,x
         sbc     #$01
 CommitRandomEnemyTurn:
 LDD63:  and     #DirectionMask
-        ora     #$A0
+        ora     #TankStateActiveClass
         sta     ObjectState,x
         rts
 

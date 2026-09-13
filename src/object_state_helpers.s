@@ -1,5 +1,7 @@
 ; Общие операции над состоянием танков и снарядов ($E3EF-$E42A).
 
+TankStateClassCandidate = $00
+
 ; Переводит танк X в state=$73 и очищает его extension $0170,X. Выход: A=0; X/Y не меняются.
 DestroyTankAndClearExtension:
 LE3EF:  lda     #TankStateDestroyed

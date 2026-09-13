@@ -195,6 +195,7 @@ LDA13:  sta     ByteToDecimalInput
 ; Отдельных ссылок на этот вход не найдено. Он удваивает A и пытается вычесть 10
 ; с накоплением DecimalTens. JMP $DA1C попадает на последний байт предыдущей
 ; JMP-инструкции; смысл намеренного входа в середину инструкции не подтверждён.
+UnreferencedDoubleDecimalDigit:
 LDA1D:  asl     a
         bcc     StoreDecimalOnes
         sec

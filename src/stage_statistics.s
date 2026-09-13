@@ -1,18 +1,37 @@
 ; Экран и анимация послеэтапной статистики ($CCD4-$D137).
 
+; Scratch-поля принадлежат экрану статистики и перекрываются с рабочими
+; переменными других экранов/подсистем.
+StatisticsPlayer1Count = $5D
+StatisticsPlayer2Count = $5E
+StatisticsEnemyType    = $5A
+StatisticsRowActive    = $7C
+Player1StageKillTotal  = $7D
+Player2StageKillTotal  = $7E
+
+; Временные семизначные записи начисления за текущий тип противника.
+StatisticsPlayer1AwardDigits = $25
+StatisticsPlayer2AwardDigits = $2D
+StatisticsPlayer1AwardRecord = $02
+StatisticsPlayer2AwardRecord = $03
+StatisticsEnemyTypeCount     = $04
+
 ; Показывает и анимирует послеэтапную статистику.
 ; Player1KillCounts/Player2KillCounts — четыре счётчика уничтоженных типов;
-; их суммы сохраняются в Player1/Player2StageKillTotal. Для каждой категории процедура по одному
-; уменьшает исходные счётчики, увеличивает сценические счётчики $5D/$5E,
-; прибавляет награду ScoreAwardsByEnemyType к записям $25/$2D и обновляет UI.
-; После четырёх категорий выводит суммы. При $68!=0, режиме двух игроков и
+; их суммы сохраняются в Player1/Player2StageKillTotal. Для каждой категории
+; процедура по одному уменьшает исходные счётчики, увеличивает экранные
+; StatisticsPlayer1/2Count, накапливает награду ScoreAwardsByEnemyType во
+; временных StatisticsPlayer1/2AwardDigits и обновляет UI.
+; После четырёх категорий выводит суммы. При BattleState!=0, двух игроках и
 ; неравном результате живому игроку с большей суммой добавляет специальную
 ; награду PreparePackedScoreIncrement(0), то есть 1000 очков.
-; Побочно уничтожает исходные счётчики $73-$7A, меняет записи счёта $15-$32,
-; жизни/флаги награды, PPU/OAM, состояния аудиопотоков и рабочие
+; Входы: таблицы убийств и счёта заполнены завершившимся этапом; MenuSelection
+; задаёт число игроков. Выходов в регистрах нет.
+; Побочно уничтожает Player1/2KillCounts, меняет записи счёта и временных
+; наград, жизни/флаги награды, PPU/OAM, состояния аудиопотоков и рабочие
 ; StatisticsEnemyType/StatisticsPlayer*Count/StatisticsRowActive и итоговые счётчики.
 ; A/X/Y не сохраняются; работа занимает много кадров и завершается с
-; NametableBits=0, $4D=$60=$6B=0.
+; NametableBits, BackgroundPaletteIndex, TileTranslationOffset и DigitBlankMode=0.
 ShowStageStatistics:
 LCCD4:  jsr     BuildStageStatisticsScreen
         ldx     #$1E
@@ -35,12 +54,12 @@ LCCD4:  jsr     BuildStageStatisticsScreen
         sta     Player2StageKillTotal
         lda     #$00
         sta     StatisticsEnemyType
-NextEnemyStatisticsRow:
+BeginEnemyStatisticsRow:
 LCCFA:  jsr     WaitForNextFrame
         jsr     DrawStatisticsEnemyIcons
-        ldx     #$25
+        ldx     #StatisticsPlayer1AwardDigits
         jsr     ResetEightByteRecord
-        ldx     #$2D
+        ldx     #StatisticsPlayer2AwardDigits
         jsr     ResetEightByteRecord
         lda     #$00
         sta     StatisticsPlayer1Count
@@ -55,39 +74,41 @@ LCD10:  jsr     WaitForNextFrame
         jsr     PreparePackedScoreIncrement
         ldx     StatisticsEnemyType
         lda     Player1KillCounts,x
-        beq     ProcessPlayer2StatisticsCount
+        beq     ConsumePlayer2Kill
         lda     #AudioStateStartRequested
         sta     StatisticsCountPulseAudioState
         sta     StatisticsCountNoiseAudioState
         dec     Player1KillCounts,x
         inc     StatisticsPlayer1Count
-        ldx     #$02
+        ldx     #StatisticsPlayer1AwardRecord
         jsr     AddScoreDigitsToRecord
         lda     #$01
         sta     StatisticsRowActive
         jsr     AwardScoreThresholdLives
-ProcessPlayer2StatisticsCount:
+ConsumePlayer2Kill:
 LCD40:  ldx     StatisticsEnemyType
         lda     Player2KillCounts,x
-        beq     RenderStatisticsRowValues
+        beq     QueueStatisticsRowValues
         lda     #AudioStateStartRequested
         sta     StatisticsCountPulseAudioState
         sta     StatisticsCountNoiseAudioState
         dec     Player2KillCounts,x
         inc     StatisticsPlayer2Count
-        ldx     #$03
+        ldx     #StatisticsPlayer2AwardRecord
         jsr     AddScoreDigitsToRecord
         lda     #$01
         sta     StatisticsRowActive
         jsr     AwardScoreThresholdLives
-RenderStatisticsRowValues:
-LCD5E:  ldy     #$16
+; Перерисовывает общий счёт игрока, начисление за текущий тип и число уже
+; обработанных убийств. QueueTranslatedTileString пишет только в PPU-очередь.
+QueueStatisticsRowValues:
+LCD5E:  ldy     #(Player1Score+1)
         ldx     #$05
         jsr     SelectVisibleDigits
         ldy     #$09
         jsr     QueueTranslatedTileString
         ldx     #$01
-        ldy     #$26
+        ldy     #(StatisticsPlayer1AwardDigits+1)
         jsr     SelectVisibleDigits
         lda     StatisticsEnemyType
         asl     a
@@ -101,7 +122,7 @@ LCD5E:  ldy     #$16
         lda     StatisticsPlayer1Count
         jsr     ByteToDisplayDigits
         ldx     #$08
-        ldy     #$36
+        ldy     #(ScoreIncrementDigits+1)
         jsr     SelectVisibleDigits
         lda     StatisticsEnemyType
         asl     a
@@ -112,14 +133,14 @@ LCD5E:  ldy     #$16
         tay
         jsr     QueueTranslatedTileString
         lda     MenuSelection
-        beq     DelayAfterStatisticsUpdate
-        ldy     #$1E
+        beq     WaitAfterStatisticsRowStep
+        ldy     #(Player2Score+1)
         ldx     #$17
         jsr     SelectVisibleDigits
         ldy     #$09
         jsr     QueueTranslatedTileString
         ldx     #$13
-        ldy     #$2E
+        ldy     #(StatisticsPlayer2AwardDigits+1)
         jsr     SelectVisibleDigits
         lda     StatisticsEnemyType
         asl     a
@@ -133,7 +154,7 @@ LCD5E:  ldy     #$16
         lda     StatisticsPlayer2Count
         jsr     ByteToDisplayDigits
         ldx     #$0E
-        ldy     #$36
+        ldy     #(ScoreIncrementDigits+1)
         jsr     SelectVisibleDigits
         lda     StatisticsEnemyType
         asl     a
@@ -143,70 +164,71 @@ LCD5E:  ldy     #$16
         adc     #$0C
         tay
         jsr     QueueTranslatedTileString
-DelayAfterStatisticsUpdate:
+WaitAfterStatisticsRowStep:
 LCDD8:  ldx     #$08
         jsr     DelayWithStatisticsIcons
         lda     StatisticsRowActive
-        beq     FinishEnemyStatisticsRow
+        beq     AdvanceStatisticsEnemyType
         jmp     AnimateEnemyStatisticsRow
 
-FinishEnemyStatisticsRow:
+AdvanceStatisticsEnemyType:
 LCDE4:  inc     StatisticsEnemyType
         lda     StatisticsEnemyType
-        cmp     #$04
-        beq     ShowStatisticsTotals
+        cmp     #StatisticsEnemyTypeCount
+        beq     QueueStatisticsTotals
         ldx     #$14
         jsr     DelayWithStatisticsIcons
-        jmp     NextEnemyStatisticsRow
+        jmp     BeginEnemyStatisticsRow
 
-ShowStatisticsTotals:
+QueueStatisticsTotals:
 LCDF4:  ldx     #$1E
         jsr     DelayWithStatisticsIcons
         lda     Player1StageKillTotal
         jsr     ByteToDisplayDigits
-        ldy     #$36
+        ldy     #(ScoreIncrementDigits+1)
         ldx     #$08
         jsr     SelectVisibleDigits
         ldy     #$17
         jsr     QueueTranslatedTileString
         lda     MenuSelection
-        beq     DelayBeforeStatisticsBonus
+        beq     WaitBeforeStatisticsWinnerBonus
         lda     Player2StageKillTotal
         jsr     ByteToDisplayDigits
-        ldy     #$36
+        ldy     #(ScoreIncrementDigits+1)
         ldx     #$0E
         jsr     SelectVisibleDigits
         ldy     #$17
         jsr     QueueTranslatedTileString
-DelayBeforeStatisticsBonus:
+WaitBeforeStatisticsWinnerBonus:
 LCE1F:  ldx     #$0F
         jsr     DelayWithStatisticsIcons
         lda     MenuSelection
-        bne     AwardStatisticsWinnerBonus
+        bne     CheckStatisticsWinnerBonus
         jmp     FinishStageStatistics
 
-; Бонус сравнивается только для двух игроков и только при ненулевом $68.
-AwardStatisticsWinnerBonus:
+; Бонус сравнивается только для двух игроков и только при ненулевом BattleState.
+; Ничья, ноль жизней у кандидата или нулевой BattleState оставляют счёт прежним.
+CheckStatisticsWinnerBonus:
 LCE2B:  lda     BattleState
-        bne     AwardPlayerOneStatisticsBonus
+        bne     TryAwardPlayerOneStatisticsBonus
         jmp     FinishStageStatistics
 
-AwardPlayerOneStatisticsBonus:
+TryAwardPlayerOneStatisticsBonus:
 LCE32:  lda     Player2StageKillTotal
         cmp     Player1StageKillTotal
-        bcs     AwardPlayerTwoStatisticsBonus
+        bcs     TryAwardPlayerTwoStatisticsBonus
         lda     Player1Lives
-        beq     AwardPlayerTwoStatisticsBonus
+        beq     TryAwardPlayerTwoStatisticsBonus
         lda     #$00
         jsr     PreparePackedScoreIncrement
         ldx     #$00
         jsr     AddScoreDigitsToRecord
-        ldy     #$16
+        ldy     #(Player1Score+1)
         ldx     #$05
         jsr     SelectVisibleDigits
         ldy     #$09
         jsr     QueueTranslatedTileString
-        ldy     #$36
+        ldy     #(ScoreIncrementDigits+1)
         ldx     #$01
         jsr     SelectVisibleDigits
         ldy     #$1A
@@ -227,12 +249,14 @@ LCE32:  lda     Player2StageKillTotal
         jsr     QueueTileAtCoordinates
         lda     #AudioStateStartRequested
         sta     StatisticsWinnerBonusAudioState
+; Одновременно перезаписывает channel/control записи потока паузы значением 1;
+; зачем это требуется экрану статистики, по статическому коду не установлено.
         sta     AudioStreamRecords
         sta     AudioStreamRecords+1
         jsr     AwardScoreThresholdLives
         jmp     FinishStageStatistics
 
-AwardPlayerTwoStatisticsBonus:
+TryAwardPlayerTwoStatisticsBonus:
 LCE8D:  lda     Player1StageKillTotal
         cmp     Player2StageKillTotal
         bcs     FinishStageStatistics
@@ -242,12 +266,12 @@ LCE8D:  lda     Player1StageKillTotal
         jsr     PreparePackedScoreIncrement
         ldx     #$01
         jsr     AddScoreDigitsToRecord
-        ldy     #$1E
+        ldy     #(Player2Score+1)
         ldx     #$17
         jsr     SelectVisibleDigits
         ldy     #$09
         jsr     QueueTranslatedTileString
-        ldy     #$36
+        ldy     #(ScoreIncrementDigits+1)
         ldx     #$14
         jsr     SelectVisibleDigits
         ldy     #$1A
@@ -268,6 +292,7 @@ LCE8D:  lda     Player1StageKillTotal
         jsr     QueueTileAtCoordinates
         lda     #AudioStateStartRequested
         sta     StatisticsWinnerBonusAudioState
+; Та же недокументированная запись в первые два байта записи потока паузы.
         sta     AudioStreamRecords
         sta     AudioStreamRecords+1
         jsr     AwardScoreThresholdLives
@@ -288,8 +313,11 @@ LCEE5:  ldx     #$78
 ; противников и поля счётчиков для одного или двух игроков.
 ; Вход: MenuSelection определяет наличие второго столбца; StageNumber и записи
 ; Player1Score/Player2Score/HighScore используются для UI. Побочно меняет
-; A/X/Y, ScratchPtr, $04/NametablePpuOffset,
-; $60/$6B, $4D, VerticalScroll/NametableBits, shadow/attributes и PPU-очередь.
+; A/X/Y, ScratchPtr, RenderAttributes/NametablePpuOffset,
+; TileTranslationOffset/DigitBlankMode, BackgroundPaletteIndex,
+; VerticalScroll/NametableBits, shadow/attributes и PPU-очередь. Возвращается
+; после постановки footer в очередь; прямые записи PPU выполняются при отключённом
+; рендеринге, а NMI снова разрешён до построения текстовых полей.
 BuildStageStatisticsScreen:
 LCEF7:  jsr     WaitForNextFrame
         lda     #$01
@@ -316,7 +344,7 @@ LCEF7:  jsr     WaitForNextFrame
         ldx     #$08
         ldy     #$03
         jsr     QueueTileAtCoordinates
-        ldy     #$3E
+        ldy     #(HighScore+1)
         ldx     #$12
         jsr     SelectVisibleDigits
         ldy     #$03
@@ -330,7 +358,7 @@ LCEF7:  jsr     WaitForNextFrame
         jsr     QueueTileAtCoordinates
         lda     StageNumber
         jsr     ByteToDisplayDigits
-        ldy     #$36
+        ldy     #(ScoreIncrementDigits+1)
         ldx     #$0E
         jsr     SelectVisibleDigits
         ldy     #$05
@@ -343,7 +371,7 @@ LCEF7:  jsr     WaitForNextFrame
         ldx     #$03
         ldy     #$07
         jsr     QueueTileAtCoordinates
-        ldy     #$16
+        ldy     #(Player1Score+1)
         ldx     #$05
         jsr     SelectVisibleDigits
         ldy     #$09
@@ -386,7 +414,7 @@ LCEF7:  jsr     WaitForNextFrame
         ldx     #$15
         ldy     #$07
         jsr     QueueTileAtCoordinates
-        ldy     #$1E
+        ldy     #(Player2Score+1)
         ldx     #$17
         jsr     SelectVisibleDigits
         ldy     #$09
@@ -502,7 +530,8 @@ LD096:  jsr     WaitForNextFrame
         rts
 ; Выводит четыре двухтайловых изображения типов противников на экране
 ; статистики. Фиксированный X=$81; Y=$64,$7C,$94,$AC; базовые тайлы
-; $80,$A0,$C0,$E0; атрибуты $02. Меняет A/X/Y, $04/$53-$55 и OAM.
+; $80,$A0,$C0,$E0; атрибуты $02. Добавляет восемь спрайтов в OAM shadow.
+; Меняет A/X/Y, RenderAttributes/OamTile/OamPairX/OamPairY и OamBufferPos.
 DrawStatisticsEnemyIcons:
 LD0B8:  lda     #$02
         sta     RenderAttributes
@@ -522,7 +551,8 @@ LD0B8:  lda     #$02
 
 ; Заполняет выбранные байты shadow attribute table для двух колонок экрана
 ; статистики. Остальные байты должны быть заранее обнулены.
-; Выход A=$05; X/Y не меняются.
+; Вход: NametableAttributes уже очищена. Выход A=$05; X/Y не меняются.
+; Побочный эффект ограничен перечисленными байтами shadow attribute table.
 InitializeStatisticsAttributes:
 LD0D9:  lda     #$50
         sta     NametableAttributes+$00
@@ -558,7 +588,8 @@ LD0D9:  lda     #$50
 
 ; Адаптер вывода одного двухтайлового значка статистики.
 ; Вход: A — базовый tile, Y — экранная координата; X принудительно $81,
-; $04 уже содержит атрибуты. Меняет A/X/Y, $53-$55 и OAM.
+; RenderAttributes уже содержит атрибуты. Добавляет два горизонтально соседних
+; спрайта в OAM shadow; меняет A/X/Y, OamTile/OamPairX/OamPairY и OamBufferPos.
 DrawStatisticsEnemyIcon:
 LD130:  sta     OamTile
         ldx     #$81

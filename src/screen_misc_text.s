@@ -4,6 +4,7 @@
 ; Байты $4F..$48 во втором попадают в буквенный диапазон экранного шрифта, но смысл строки не утверждается.
 UnreferencedScreenTextFragments:
 LD334:  .byte   $4F,$50,$45,$4E,$6B,$52,$45,$41,$43,$48,$FF
+UnreferencedScreenTextFragment2:
 LD33F:  .byte   $69,$FF
 ; Двухбайтная строка значка жизней используется UpdateLivesHud в двух позициях.
 LivesHudIconText:

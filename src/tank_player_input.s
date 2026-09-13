@@ -39,7 +39,7 @@ LDB9D:  lda     Joy1Held,x
         bpl     ApplyPlayerDirection
 ; Без принятого направления переводит танк в класс $8 с флагом бита 3.
 SetPlayerTankIdleState:
-LDBA6:  lda     #$80
+LDBA6:  lda     #TankStateIdleClass
         jsr     SetTankStateClass
         lda     #$08
         ora     ObjectState,x
@@ -49,7 +49,7 @@ LDBA6:  lda     #$80
 ApplyPlayerDirection:
 LDBB4:  lda     PlayerIceState,x
         bpl     AlignPlayerTankForTurn
-        and     #$1F
+        and     #PlayerIcePhaseMask
         bne     AlignPlayerTankForTurn
         lda     #PlayerIceReloadValue
         sta     PlayerIceState,x
@@ -76,7 +76,7 @@ LDBC7:  lda     ObjectState,x
         sta     ObjectY,x
 CommitPlayerTankDirection:
 LDBE7:  lda     PlayerDirectionCandidate
-        ora     #$A0
+        ora     #TankStateActiveClass
         sta     ObjectState,x
 AdvanceToPreviousPlayer:
 LDBED:  dex

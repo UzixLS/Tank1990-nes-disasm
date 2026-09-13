@@ -10,9 +10,14 @@ MenuOptionText1:
         .byte   $31,$35,$5D,$32,$38,$FF
 
 ; Выводит один из двух текстов пункта меню в позицию (21,3) и ждёт кадр.
-; Вход: AllPowerUpsEnabled=0/!=0 выбирает MenuOptionText0/1. Портит
-; ScratchPtr, A, X, Y;
-; QueueTileAtCoordinates/WaitForNextFrame меняют PPU-очередь и кадровое состояние.
+; Вход: AllPowerUpsEnabled=0/!=0 выбирает MenuOptionText0/1.
+; Записывает ScratchPtr, ставит строку в PPU-очередь и shadow nametable,
+; меняет AuxPtr и синхронизируется с кадром; портит A/X/Y и флаги.
+; После возврата кадровое, PPU и input-состояние отражают
+; побочные эффекты QueueTileAtCoordinates/WaitForNextFrame.
+; Layout constraint: BEQ после загрузки MenuOptionText0 служит безусловным
+; переходом только пока младший байт адреса MenuOptionText0 равен нулю; обе
+; строки также должны оставаться на одной странице, так как старший байт общий.
 DrawSelectedMenuOption:
 LFD0C:  lda     AllPowerUpsEnabled
         bne     SelectEnabledPowerUpMenuText
@@ -30,9 +35,11 @@ LFD16:  sta     ScratchPtrLo
         jsr     WaitForNextFrame
         rts
 
-; Помещает переданный в ScratchPtr тайловый текст в столбец 11 меню.
+; Помещает переданный в ScratchPtr $FF-терминированный тайловый текст в столбец
+; 11 меню; сам текст не меняет.
 ; Строка вычисляется из GameVariant: 9+GameVariant для неотрицательных значений,
-; 16+(GameVariant & $0F) для отрицательных. Портит A, X, Y и PPU-очередь.
+; 16+(GameVariant & $0F) для отрицательных. Портит A/X/Y, AuxPtr, флаги,
+; PPU-очередь и соответствующие байты shadow nametable; ScratchPtr сохраняется.
 QueueVariantMenuText:
 LFD27:  ldx     #$0B
         lda     GameVariant
@@ -52,8 +59,9 @@ UnreferencedFd39Data:
         .byte   $DD,$DD,$D9,$99,$DD
 
 ; Выбирает начальное число жизней по состоянию меню/ввода.
-; Выход: A=$15 при TitleSecretInputCode=$0F, $08 при Down, $0B при Up, иначе $03.
-; RAM не меняет; X/Y сохраняет.
+; Приоритет условий: TitleSecretInputCode=$0F, удержание Down, удержание Up,
+; значение по умолчанию. Выход: соответственно A=$15/$08/$0B/$03.
+; RAM и X/Y не меняет; портит флаги.
 SelectInitialLifeCount:
 LFD46:  lda     TitleSecretInputCode
         cmp     #$0F
@@ -79,9 +87,11 @@ ReturnDefaultInitialLives:
 LFD61:  lda     #$03
         rts
 
-; Секретная комбинация продолжения: P1 A и P2 A+B. Если один из игроков выбыл,
-; восстанавливает ему 3 жизни, включает двух игроков и GameMode=$07.
-; Всегда переходит в SelectStage; портит A и флаги.
+; Секретная комбинация продолжения: P1 A и P2 A+B. Если P1 выбыл, ему
+; восстанавливаются 3 жизни; иначе то же делается для выбывшего P2. Только после
+; восстановления включает двух игроков и GameMode=$07. Если оба живы или chord
+; неполон, состояние не меняется. Всегда хвостом переходит в SelectStage и сама
+; не возвращается; портит A и флаги, X/Y сохраняет до перехода.
 HandleSecretContinueChord:
 LFD64:  lda     Joy1Held
         and     #BUTTON_A

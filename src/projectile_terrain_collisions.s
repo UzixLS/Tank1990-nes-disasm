@@ -6,13 +6,21 @@ TerrainAxisYMagnitude = $55
 TerrainFarYOffset     = $64
 TerrainFarXOffset     = $65
 
+TerrainTileSteel         = $10
+TerrainTileBoundary      = $11
+TerrainTileBaseClass     = $C8
+BattleStateBaseDestroyed = $27
+
 ; Проверяет активные снаряды 9..0 против местности в теневой nametable.
 ; Активен state-class $40. Снаряды с нулевым ProjectileFlags проверяются
 ; через кадр по чётности slot^FrameCounter, остальные — каждый кадр.
 ; Для направления из младших двух битов ProjectileState вычисляются две
 ; передние стороны снаряда; каждая сторона может затронуть две соседние
 ; 4x4-подобласти местности. Это позволяет разрушать соответствующую часть кирпича.
-; Побочно меняет A/X/Y, ScratchPtr, terrain scratch aliases,
+; Вход: состояния/координаты снарядов и playfield shadow.
+; Выход: TerrainProjectileSlot=$FF; A/X/Y не определены.
+; Портит ScratchPtr, CollisionPointX/Y, TerrainSubcellMask и локальные
+; terrain scratch aliases; также может менять
 ; состояние базы BattleState, shadow/PPU-очередь, состояния снарядов и
 ; состояния соответствующих аудиопотоков уничтожения, удара и рикошета.
 UpdateProjectileTerrainCollisions:
@@ -61,7 +69,7 @@ LE63C:  sta     TerrainAxisYMagnitude
         lda     ProjectileX,x
         tax
         jsr     ProbeProjectileTerrainAtPixel
-        beq     ProbeOppositeProjectileEdge
+        beq     ProbeSecondProjectileEdge
         ldx     TerrainProjectileSlot
         lda     ProjectileY,x
         clc
@@ -72,7 +80,7 @@ LE63C:  sta     TerrainAxisYMagnitude
         adc     TerrainFarXOffset
         sta     CollisionPointX
         jsr     ResolveProjectileTerrainHit
-ProbeOppositeProjectileEdge:
+ProbeSecondProjectileEdge:
 LE65F:  ldx     TerrainProjectileSlot
         lda     ProjectileY,x
         sec
@@ -109,24 +117,33 @@ LE692:  rts
 ; Проверяет terrain в пиксельной точке X/Y.
 ; Сохраняет координаты в CollisionPointX/Y, вычисляет ScratchPtr и маску подобласти,
 ; затем проваливается в ResolveProjectileTerrainHit.
-; Возвращает A=1 только при частичном разрушении обычного terrain; A=0 для
-; отсутствия столкновения, целого уничтожения тайла, стали/границы и базы.
+; Возвращает A=1 после очистки выбранной 4x4-подобласти обычного terrain
+; (она может оказаться последним установленным битом); A=0 для отсутствия
+; столкновения, пути полного уничтожения тайла, стали/границы и базы.
+; Вход: X/Y — пиксельные координаты. Выход: Z отражает A; X/Y не определены.
+; Побочные эффекты совпадают с ResolveProjectileTerrainHit.
 ProbeProjectileTerrainAtPixel:
 LE693:  stx     CollisionPointX
         sty     CollisionPointY
         jsr     PixelCoordinatesToShadowPointer
 ResolveProjectileTerrainHit:
+; Альтернативный вход после вычисления ScratchPtr и CollisionPointX/Y.
+; Предусловия: ScratchPtr/Y указывают shadow tile, CollisionPointX/Y содержат
+; исходный пиксель, TerrainProjectileSlot — текущий снаряд.
+; Выход: A=1 после ClearTerrainSubcellQueued, иначе A=0; Z соответствует A.
+; Может изменить ProjectileState, BattleState, terrain shadow,
+; PPU update buffer и audio states; PPU-регистры и OAM напрямую не трогает.
 LE69A:  jsr     RecomputeTerrainSubcellMask
         jsr     TestTerrainSubcell
         beq     FinishTerrainProbeWithoutPartialDamage
         lda     (ScratchPtrLo),y
         and     #$FC
-        cmp     #$C8
+        cmp     #TerrainTileBaseClass
         bne     ClassifyProjectileTerrainTile
         ; $C8-$CB — четыре тайла целой базы.
         lda     BattleState
         beq     ClassifyProjectileTerrainTile
-        lda     #$27
+        lda     #BattleStateBaseDestroyed
         sta     BattleState
         lda     #AudioStateStartRequested
         sta     BaseDestructionToneAudioState
@@ -147,19 +164,24 @@ LE6CB:  .byte   $EA
 ; Общий путь попадания в непроходимый terrain: переводит снаряд в state $33.
 ; $11 — неразрушаемая граница; $10 — сталь, которую разрушает только флаг $02.
 ; Остальные значения < $12 теряют выбранный бит 4x4-подобласти.
+; Вход: TerrainProjectileSlot, ScratchPtr/Y и TerrainSubcellMask подготовлены;
+; X может быть произвольным. Выход: A=0 или 1 по контракту resolve, X получает
+; TerrainProjectileSlot. Меняет ProjectileState и при разрушении shadow/PPU/audio.
 DestroyProjectileOnTerrain:
 LE6CC:  ldx     TerrainProjectileSlot
         lda     #ProjectileStateImpact
         sta     ProjectileState,x
         lda     (ScratchPtrLo),y
-        cmp     #$11
+        cmp     #TerrainTileBoundary
         beq     MaybePlayProjectileRicochet
         lda     ProjectileFlags,x
-        and     #$02
+        and     #ProjectileFlagBreakSteel
         beq     DamageProjectileTerrain
 ; Очищает весь байт terrain и запрашивает BrickHitAudioState. Сам ProjectileState не
 ; меняет: обычный усиленный выстрел приходит сюда уже со state $33, а особый
 ; путь tile $22 входит напрямую и потому сохраняет летящий снаряд.
+; Вход: ScratchPtr/Y указывают tile. Выход: A=0, X/Y сохраняются относительно
+; StoreAndQueueShadowTile; меняет shadow, PPU update buffer и BrickHitAudioState.
 DestroyWholeTerrainTile:
 LE6DE:  lda     #$00
         jsr     StoreAndQueueShadowTile
@@ -169,7 +191,7 @@ LE6DE:  lda     #$00
 
 DamageProjectileTerrain:
 LE6EB:  lda     (ScratchPtrLo),y
-        cmp     #$10
+        cmp     #TerrainTileSteel
         beq     MaybePlayProjectileRicochet
         cpx     #FirstEnemyTankSlot
         bcs     DestroyTerrainSubcell

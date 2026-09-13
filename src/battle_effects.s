@@ -1,5 +1,8 @@
 ; Отрисовка усиления, щита игроков и эффектов базы ($E23B-$E362).
 
+ShieldPlayerSlot     = $5A
+BaseSpriteTileOffset = $69
+
 ; Рисует лежащее усиление с миганием либо короткий маркер уже подобранного
 ; усиления. По окончании PowerUpPickupDisplayTimer удаляет объект (PowerUpX=0).
 ; Портит A/X/Y и рабочее состояние OAM-рендера.
@@ -33,6 +36,8 @@ LE259:  lda     FrameCounter
         clc
         adc     #$81
         sta     OamTile
+; Общий хвост обоих вариантов усиления. Вход: OamTile/RenderAttributes заданы;
+; выводит пару в PowerUpX/Y без terrain-priority, затем ставит маску $20.
 EmitPowerUpSprites:
 LE26C:  ldx     PowerUpX
         ldy     PowerUpY
@@ -106,6 +111,8 @@ LE2BD:  lda     BaseFortificationTimer
 
 DrawBrickBaseEnclosureNow:
 LE2CF:  jsr     DrawBrickBaseEnclosure
+; Альтернативный вход после обработки ограждения: уменьшает положительный
+; BattleState и диспетчеризует соответствующий кадр базы/взрыва.
 UpdateBaseExplosion:
 LE2D2:  lda     BattleState
         beq     FinishBaseEffects
@@ -159,9 +166,11 @@ LE317:  lda     #$F5
 
 DrawBaseExplosionFrame3:
 LE31C:  lda     #$F9
+; Общий хвост трёх кадров: A=tile-base; задаёт координаты центра базы.
 PositionBaseExplosionFrame:
 LE31E:  ldx     #$78
         ldy     #$D8
+; Альтернативный вход: A=tile, X/Y=координаты. Выводит двухспрайтовую пару.
 EmitBaseSpritePair:
 LE322:  sta     OamTile
         jsr     EmitTwoTileOamPair

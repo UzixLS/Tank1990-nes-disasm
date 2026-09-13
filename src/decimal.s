@@ -11,6 +11,7 @@ ByteToDecimalDigits:
 CountDecimalHundreds:
 LC03C:  cmp     #$64
         bcc     CountDecimalTens
+SubtractOneHundred:
 LC040:  sec
         sbc     #$64
         inc     DecimalHundreds
