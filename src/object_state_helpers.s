@@ -1,8 +1,11 @@
 ; Общие операции над состоянием танков и снарядов ($E3EF-$E42A).
 
-TankStateClassCandidate = $00
+TankStateClassCandidate          = $00
+SpecialMergedTankAttributes      = $E7
+NormalizedSpecialTankAttributes  = $E4
 
-; Переводит танк X в state=$73 и очищает его extension $0170,X. Выход: A=0; X/Y не меняются.
+; Переводит танк X в TankStateDestroyed и очищает ObjectSpecialState,X.
+; Выход: A=0; X/Y не меняются.
 DestroyTankAndClearExtension:
 LE3EF:  lda     #TankStateDestroyed
         sta     ObjectState,x
@@ -12,13 +15,15 @@ LE3EF:  lda     #TankStateDestroyed
 ; Сохранённый байт между RTS и следующим entry point; статических ссылок нет.
 UnreferencedE3f9Byte:
 LE3F9:  .byte   $03
-; Объединяет входные биты A с ObjectAttributes,X. Единственная специальная комбинация $E7 заменяется на $E4.
+; Объединяет входные биты A с ObjectAttributes,X. Единственная специальная
+; комбинация SpecialMergedTankAttributes нормализуется в
+; NormalizedSpecialTankAttributes.
 ; Записывает результат, обнуляет ObjectFrame,X; выход A=0, X/Y сохраняются.
 MergeTankAttributeBits:
 LE3FA:  ora     ObjectAttributes,x
-        cmp     #$E7
+        cmp     #SpecialMergedTankAttributes
         bne     StoreMergedTankAttributes
-        lda     #$E4
+        lda     #NormalizedSpecialTankAttributes
 StoreMergedTankAttributes:
 LE402:  sta     ObjectAttributes,x
         lda     #$00
@@ -53,7 +58,7 @@ SetTankStateClass:
 ; портит TankStateClassCandidate и флаги, X/Y не меняет. Вход A здесь не маскируется.
 LE420:  sta     TankStateClassCandidate
         lda     ObjectState,x
-        and     #$0F
+        and     #StateLowNibbleMask
         ora     TankStateClassCandidate
         sta     ObjectState,x
         rts

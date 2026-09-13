@@ -1,19 +1,32 @@
 ; Обработка boot marker и меню выбора варианта ($C49C-$C59C).
 
-; Вход: A — $46. Возвращается без изменений, если A!=$AB; иначе открывает модальное меню вариантов.
+VariantStandardCount       = $07
+VariantExtendedFirst       = $80
+VariantExtendedPastLast    = $87
+VariantExtendedBeforeFirst = $7F
+VariantMenuRowCount        = $0E
+VariantMenuTextStride      = $08
+VariantMenuRepeatMask      = $0F
+
+; Вход: A=GameVariant. Если A!=BootVariantMarker, возвращает его без изменений
+; (флаги задаёт CMP, X/Y и RAM сохраняются). При маркере синхронно запускает
+; модальное меню и возвращается только после START; UI/PPU и A/X/Y изменяются.
 HandleBootVariantMarker:
-LC49C:  cmp     #$AB
+LC49C:  cmp     #BootVariantMarker
         beq     RunVariantSelectionMenu
         rts
 
 VariantMenuRow       = TitleSecretInputCode
 VariantMenuTextPtrLo = ConstructionMapFlag
 
-; Рисует пункты вариантов, выбирает GameVariant по Up/Down в двух диапазонах 0..6/$80..$86,
-; SELECT переключает AllPowerUpsEnabled. START возвращается. Меняет nametable/PPU-очередь,
-; FrameCounter, GameVariant, VariantMenuRow/TextPtrLo и UI-флаги; портит A/X/Y.
+; Рисует 14 пунктов и выбирает GameVariant по Up/Down в двух диапазонах
+; 0..6/$80..$86. SELECT переключает AllPowerUpsEnabled, START возвращается.
+; Меняет shadow/PPU-очередь, FrameCounter, GameVariant, MenuSelection,
+; VariantMenuRow/TextPtrLo и UI-флаги; портит A/X/Y и ScratchPtr.
+; Layout constraint: 14 восьмибайтных записей VariantMenuTankNames должны
+; оставаться на одной странице: цикл меняет только младший байт указателя.
 RunVariantSelectionMenu:
-LC4A1:  lda     #$80
+LC4A1:  lda     #VariantExtendedFirst
         sta     GameVariant
         jsr     DisableRenderingForBulkUpdate
         lda     #$1C
@@ -24,9 +37,9 @@ LC4A1:  lda     #$80
         jsr     ClearNametableBuffer
         jsr     UploadNametableBuffer
         jsr     EnableNmiAfterVblank
-        lda     #$C5
+        lda     #>VariantMenuHeaderText
         sta     ScratchPtrHi
-        lda     #$C9
+        lda     #<VariantMenuHeaderText
         sta     ScratchPtrLo
         ldy     #$03
         ldx     #$07
@@ -59,7 +72,7 @@ LC4F9:  lda     #>VariantMenuTankNames
         lda     VariantMenuTextPtrLo
         sta     ScratchPtrLo
         clc
-        adc     #$08
+        adc     #VariantMenuTextStride
         sta     VariantMenuTextPtrLo
         lda     VariantMenuRow
         clc
@@ -70,7 +83,7 @@ LC4F9:  lda     #>VariantMenuTankNames
         jsr     WaitForNextFrame
         inc     VariantMenuRow
         lda     VariantMenuRow
-        cmp     #$0E
+        cmp     #VariantMenuRowCount
         bcc     DrawNextVariantMenuRow
 DrawVariantMenuCursor:
 LC51C:  lda     #>VariantMenuSelectionCursor
@@ -85,11 +98,11 @@ LC527:  lda     Joy1Held
         jsr     WaitVariantMenuRepeatAndEraseCursor
         inc     GameVariant
         lda     GameVariant
-        cmp     #$07
-        bne     WrapVariantMenuAfterSix
-        lda     #$80
-WrapVariantMenuAfterSix:
-LC53A:  cmp     #$87
+        cmp     #VariantStandardCount
+        bne     CheckVariantMenuExtendedUpperBound
+        lda     #VariantExtendedFirst
+CheckVariantMenuExtendedUpperBound:
+LC53A:  cmp     #VariantExtendedPastLast
         bne     CommitVariantMenuSelection
         lda     #$00
 CommitVariantMenuSelection:
@@ -104,12 +117,12 @@ LC545:  lda     Joy1Held
         dec     GameVariant
         lda     GameVariant
         cmp     #$FF
-        bne     WrapVariantMenuBeforeExtendedRange
-        lda     #$86
-WrapVariantMenuBeforeExtendedRange:
-LC558:  cmp     #$7F
+        bne     CheckVariantMenuExtendedLowerBound
+        lda     #(VariantExtendedPastLast-1)
+CheckVariantMenuExtendedLowerBound:
+LC558:  cmp     #VariantExtendedBeforeFirst
         bne     CommitPreviousVariantSelection
-        lda     #$06
+        lda     #(VariantStandardCount-1)
 CommitPreviousVariantSelection:
 LC55E:  sta     GameVariant
         jmp     DrawVariantMenuCursor
@@ -128,16 +141,17 @@ LC572:  lda     Joy1Pressed
         beq     VariantMenuInputLoop
         rts
 
-; Debounce/autorepeat меню: сбрасывает FrameCounter, ждёт фазу mod16=0,
-; запрашивает поток RicochetOrMenuStepAudioState
-; и помещает строку $E8B2 в позицию текущего пункта. Портит A/X/Y, ScratchPtr и PPU-очередь.
+; Debounce/autorepeat: сбрасывает FrameCounter, ждёт следующую фазу mod16=0,
+; запрашивает RicochetOrMenuStepAudioState и заменяет курсор строкой
+; VariantMenuBlankCursorText в позиции текущего пункта. Портит A/X/Y,
+; ScratchPtr, FrameCounter и PPU-очередь.
 WaitVariantMenuRepeatAndEraseCursor:
 LC579:  lda     #$00
         sta     FrameCounter
 WaitForVariantMenuRepeatPhase:
 LC57D:  jsr     WaitForNextFrame
         lda     FrameCounter
-        and     #$0F
+        and     #VariantMenuRepeatMask
         bne     WaitForVariantMenuRepeatPhase
         lda     #AudioStateStartRequested
         sta     RicochetOrMenuStepAudioState

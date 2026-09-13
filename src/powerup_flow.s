@@ -15,7 +15,7 @@ LC5FB:  lda     RestrictedPowerUpTypeTable,y
         rts
 
 ; Для игрока X<2 и AllPowerUpsEnabled!=0 увеличивает PlayerExtendedUpgrade,X
-; на $20, затем всегда переходит в ApplyPowerUpEffect3. Для противника или
+; на PlayerUpgradeLevel1, затем всегда переходит в ApplyPowerUpEffect3. Для противника или
 ; ограниченного набора сразу идёт в общую часть. Самостоятельно не возвращается.
 PowerUpEffect3:
 LC5FF:  cpx     #FirstEnemyTankSlot
@@ -24,13 +24,13 @@ LC5FF:  cpx     #FirstEnemyTankSlot
         beq     ApplyCommonPowerUpEffect3
         lda     PlayerExtendedUpgrade,x
         clc
-        adc     #$20
+        adc     #PlayerUpgradeLevel1
         sta     PlayerExtendedUpgrade,x
 ApplyCommonPowerUpEffect3:
 LC610:  jmp     ApplyPowerUpEffect3
 
 ; Для игрока X<2 и AllPowerUpsEnabled!=0 увеличивает PlayerExtendedUpgrade,X
-; на $60, затем переходит в SetMaximumObjectUpgrade. Для остальных слотов и
+; на PlayerUpgradeLevel3, затем переходит в SetMaximumObjectUpgrade. Для остальных слотов и
 ; вариантов выполняет только общую часть. Самостоятельно не возвращается.
 PowerUpEffect6:
 LC613:  cpx     #FirstEnemyTankSlot
@@ -39,7 +39,7 @@ LC613:  cpx     #FirstEnemyTankSlot
         beq     ApplyCommonPowerUpEffect6
         lda     PlayerExtendedUpgrade,x
         clc
-        adc     #$60
+        adc     #PlayerUpgradeLevel3
         sta     PlayerExtendedUpgrade,x
 ApplyCommonPowerUpEffect6:
 LC624:  jmp     SetMaximumObjectUpgrade

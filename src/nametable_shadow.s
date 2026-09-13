@@ -2,7 +2,10 @@
 
 ; Передаёт всю теневую nametable $0400-$07FF в PPU. NametablePpuOffset задаёт
 ; смещение старшего байта (обычно $1C для $2000 или $20 для $2400).
-; Предполагает отключённый рендеринг. Выход: ScratchPtr=$0800, Y=0; A и PPU latch/data изменены.
+; Предполагает отключённый рендеринг и корректную первую фазу PPU_ADDR latch.
+; Выход: ScratchPtr=$0800, Y=0, A=$08; X сохраняется. Меняет PPU_ADDR/PPU_DATA,
+; но не shadow и PPU queue. Внутренний VRAM address остаётся сразу после
+; последнего записанного байта.
 UploadNametableBuffer:  lda     #$00
         sta     ScratchPtrLo
         tay
@@ -20,8 +23,9 @@ LD7BD:  jsr     UploadShadowByteDirect
 ; Готовит shadow nametable для игрового поля: заполняет её тайлом $11,
 ; обнуляет NametableAttributes и затем очищает прямоугольник по нулевым тайлам.
 ; Вход: NametableRectX/Y -- начало в тайлах, NametableRectHeight/Width -- размер.
-; Нулевая высота или ширина не поддерживаются. Меняет A/X/Y, ScratchPtr
-; и NametableRectHeight.
+; Нулевая высота или ширина не поддерживаются. Выход: NametableRectHeight=0;
+; A/X/Y и ScratchPtr не определены. Перезаписывает весь NametableShadow,
+; затем NametableAttributes и прямоугольник; PPU queue/registers не меняет.
 InitializePlayfieldShadow:
 LD7CC:  ldx     #$00
         lda     #$11

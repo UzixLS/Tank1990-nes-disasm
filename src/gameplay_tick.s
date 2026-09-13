@@ -1,8 +1,14 @@
 ; Диспетчер одного logic tick и полусекундная фаза ($C2E6-$C330).
 
+HalfSecondFrameMask        = $3F
+SecondHalfSecondFrame      = $20
+FirstHalfSecondPhaseValue  = $02
+SecondHalfSecondPhaseValue = $01
+
 ; Один полный шаг игровой логики: игроки, танки, снаряды, столкновения, бонусы,
 ; появление противников и расширения Tank 1990.
-; Хвостовым JMP передаётся UpdateTank1990Extensions. Почти вся игровая RAM и A/X/Y могут измениться;
+; Хвостовым JMP передаётся UpdateTank1990Extensions: его RTS возвращает сразу
+; вызывающему RunGameplayLogicTick. Почти вся игровая RAM и A/X/Y могут измениться;
 ; PPU-очередь, OAM shadow и состояния аудиопотоков также могут быть обновлены.
 RunGameplayLogicTick:
 LC2E6:  jsr     MarkTankOccupiedTiles
@@ -27,20 +33,22 @@ LC2E6:  jsr     MarkTankOccupiedTiles
 ; Недостижимый байт RTS между процедурами; статических ссылок нет.
 UnreferencedRtsByteC31c:
         .byte   $60
-; На фазах FrameCounter mod 64 = 0/32 записывает в $4D значения 2/1; на прочих кадрах не меняет $4D.
-; Портит A и флаги; X/Y и прочая RAM не меняются.
+; На фазах FrameCounter mod 64 = 0/32 записывает в BackgroundPaletteIndex
+; значения 2/1; на прочих кадрах не меняет его. Выход: X/Y сохраняются;
+; A=2/1 на точных фазах, иначе A=FrameCounter&HalfSecondFrameMask.
+; Портит флаги; прочую RAM не меняет.
 UpdateHalfSecondPhaseFlag:
 LC31D:  lda     FrameCounter
-        and     #$3F
+        and     #HalfSecondFrameMask
         beq     SelectFirstHalfSecondPhase
-        cmp     #$20
+        cmp     #SecondHalfSecondFrame
         bne     KeepHalfSecondPhase
-        lda     #$01
+        lda     #SecondHalfSecondPhaseValue
         sta     BackgroundPaletteIndex
         rts
 
 SelectFirstHalfSecondPhase:
-LC32C:  lda     #$02
+LC32C:  lda     #FirstHalfSecondPhaseValue
         sta     BackgroundPaletteIndex
 KeepHalfSecondPhase:
 LC330:  rts

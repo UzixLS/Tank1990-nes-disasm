@@ -1,5 +1,10 @@
 ; Настройка свойств снаряда для выбранного варианта игры ($FFC1-$FFF0).
 
+StrongProjectileAttributeClass = $60
+StrongProjectileAttributeBit   = $08
+VariantNormalProjectileClassMin= $A0
+ProjectileClassExclusionBit    = $80
+
 ; Настраивает ProjectileFlags,X по режиму $46 и ObjectAttributes,X.
 ; В базовом режиме передаёт старшую тетраду атрибутов в
 ; DecodeProjectileFlagsFromAttributes. В расширенном режиме ($46<0)
@@ -10,32 +15,32 @@ InitializeProjectileFlagsForVariant:
 LFFC1:  lda     GameVariant
         bmi     DecodeExtendedVariantProjectileFlags
         lda     ObjectAttributes,x
-        and     #$F0
+        and     #ObjectAttributeClassMask
         jmp     DecodeProjectileFlagsFromAttributes
 
 DecodeExtendedVariantProjectileFlags:
 LFFCC:  lda     ObjectAttributes,x
-        and     #$08
+        and     #StrongProjectileAttributeBit
         beq     DecodeProjectileFlagsFromUpgradeClass
         jmp     SetStrongProjectileFlags
 
 DecodeProjectileFlagsFromUpgradeClass:
 LFFD5:  lda     ObjectAttributes,x
-        and     #$F0
+        and     #ObjectAttributeClassMask
         beq     FinishProjectileFlagInitialization
-        cmp     #$A0
+        cmp     #VariantNormalProjectileClassMin
         bcs     SetVariantNormalProjectileFlags
-        cmp     #$60
+        cmp     #StrongProjectileAttributeClass
         beq     SetStrongProjectileFlagsDirect
-        and     #$80
+        and     #ProjectileClassExclusionBit
         bne     FinishProjectileFlagInitialization
 SetVariantNormalProjectileFlags:
-LFFE7:  lda     #$01
+LFFE7:  lda     #ProjectileFlagFast
         sta     ProjectileFlags,x
         rts
 
 SetStrongProjectileFlagsDirect:
-LFFEC:  lda     #$03
+LFFEC:  lda     #ProjectileFlagsMaximum
         sta     ProjectileFlags,x
 FinishProjectileFlagInitialization:
 LFFF0:  rts

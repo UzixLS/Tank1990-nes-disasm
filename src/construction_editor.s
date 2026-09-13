@@ -5,11 +5,19 @@
 ConstructionMetatileIndex    = $5C
 ConstructionMoveRepeatTimer = $7B
 ConstructionEditLatch        = $81
+ConstructionMetatileCount    = $0E
+ConstructionCursorStartX     = $10
+ConstructionCursorStartY     = $18
+ConstructionCursorState      = $84
 ConstructionMode:
-; Вход: ConstructionMapFlag=0 для первичной отрисовки. Объект 0 используется как мигающий курсор.
-; D-pad двигает его по сетке 16 px; A/B выбирают TSA $00..$0D и вызывают DrawMetatile.
-; START поднимает ConstructionMapFlag и
-; возвращается в главное меню. Меняет объект 0, тень nametable, PPU-очередь и рабочую RAM; портит A/X/Y.
+; Вход: ConstructionMapFlag=0 требует первичной очистки/отрисовки поля;
+; ненулевое значение повторно использует уже построенную shadow-карту. Объект 0
+; становится мигающим курсором. D-pad двигает его по сетке 16 px; A/B выбирают
+; TSA $00..$0D. Первый A/B после перемещения только рисует текущий TSA,
+; последующие нажатия циклически меняют его; движение сбрасывает
+; ConstructionEditLatch. START увеличивает ConstructionMapFlag и хвостом
+; переходит в EnterTitleMenu. Процедура сама не возвращается; меняет объект 0,
+; shadow nametable, PPU-очередь и рабочую RAM, портит A/X/Y.
 LC0AE:  lda     ConstructionMapFlag
         bne     InitializeConstructionEditor
         jsr     DisableRenderingForBulkUpdate
@@ -18,11 +26,11 @@ LC0AE:  lda     ConstructionMapFlag
         jsr     EnableNmiAfterVblank
 InitializeConstructionEditor:
 LC0BE:  jsr     ClearTankStates
-        lda     #$10
+        lda     #ConstructionCursorStartX
         sta     ObjectX
-        lda     #$18
+        lda     #ConstructionCursorStartY
         sta     ObjectY
-        lda     #$84
+        lda     #ConstructionCursorState
         sta     ObjectState
         lda     #$00
         sta     ObjectAttributes
@@ -61,7 +69,7 @@ LC0FC:  lda     Joy1Held
 SelectNextConstructionTile:
 LC111:  inc     ConstructionMetatileIndex
         lda     ConstructionMetatileIndex
-        cmp     #$0E
+        cmp     #ConstructionMetatileCount
         bne     PaintConstructionTile
         lda     #$00
         sta     ConstructionMetatileIndex
@@ -81,7 +89,7 @@ LC12F:  dec     ConstructionMetatileIndex
         lda     ConstructionMetatileIndex
         cmp     #$FF
         bne     PaintConstructionTile
-        lda     #$0D
+        lda     #(ConstructionMetatileCount-1)
         sta     ConstructionMetatileIndex
         jmp     PaintConstructionTile
 

@@ -1,21 +1,30 @@
 ; Логика заглавного меню и курсора ($C9C0-$CA90).
 
+TitleMenuItemCount       = $03
+TitleAttractDelayTicks   = $0A
+TitleVariantMenuCode     = $2E
+TitleSecretHighStep      = $10
+TitleCursorX             = $48
+TitleCursorFirstY        = $8B
+TitleCursorRowStep       = $10
 ; Активный экран заголовка и главного меню.
 ; Использует слот танка 0 как мигающий курсор; SELECT циклически выбирает
 ; 1 PLAYER / 2 PLAYERS / CONSTRUCTION, START передаёт управление через таблицу.
-; Если ConstructionMapFlag=0, после десяти тиков SlowFrameCounter возвращается для запуска демо-цикла.
-; Скрытая комбинация ввода меняет TitleSecretInputCode; значение $2E при START открывает variant-меню.
-; Побочно меняет состояние танков, MenuSelection, SlowFrameCounter/TitleSecretInputCode, scroll/nametable,
-; палитру и OAM. A/X/Y не сохраняются. Ветви START снимают со стека адрес
-; вызова TitleScreen и потому не возвращаются обычным RTS.
+; Если ConstructionMapFlag=0, после TitleAttractDelayTicks приращений
+; SlowFrameCounter (одно приращение на 64 кадра) возвращается для запуска демо.
+; Скрытая комбинация меняет TitleSecretInputCode; TitleVariantMenuCode при START
+; открывает variant-меню. Побочно меняет слот Object 0, MenuSelection,
+; SlowFrameCounter/TitleSecretInputCode, scroll/nametable, палитру и OAM.
+; Обычный выход по тайм-ауту портит A/X/Y. Ветви START снимают со стека адрес
+; вызова TitleScreen и передают управление верхнему сценарию без обычного RTS.
 TitleScreen:
 LC9C0:  lda     #$03
         sta     BackgroundPaletteIndex
         jsr     ClearTankStates
-        lda     #$48
+        lda     #TitleCursorX
         sta     ObjectX
         jsr     UpdateTitleCursor
-        lda     #$83
+        lda     #(TankStateIdleClass | DIRECTION_RIGHT)
         sta     ObjectState
         lda     #$00
         sta     SlowFrameCounter
@@ -51,7 +60,7 @@ LCA04:  lda     Joy1Held
         and     #BUTTON_A
         beq     CheckTitleSecretRightB
         ; Down удерживается, A нажата в этом кадре: старший ниббл TitleSecretInputCode растёт.
-        lda     #$10
+        lda     #TitleSecretHighStep
         clc
         adc     TitleSecretInputCode
         sta     TitleSecretInputCode
@@ -66,14 +75,14 @@ LCA17:  lda     Joy1Held
         dec     TitleSecretInputCode
 NormalizeTitleMenuSelection:
 LCA25:  lda     MenuSelection
-        cmp     #$03
+        cmp     #TitleMenuItemCount
         bcc     UpdateTitleMenuCursor
         lda     #$00
         sta     MenuSelection
 UpdateTitleMenuCursor:
 LCA2F:  jsr     UpdateTitleCursor
         lda     SlowFrameCounter
-        cmp     #$0A
+        cmp     #TitleAttractDelayTicks
         bne     CheckTitleStartInput
         lda     ConstructionMapFlag
         bne     CheckTitleStartInput
@@ -83,14 +92,16 @@ LCA3D:  lda     Joy1Pressed
         and     #BUTTON_START
         beq     TitleMenuLoop
         lda     TitleSecretInputCode
-        cmp     #$2E
+        cmp     #TitleVariantMenuCode
         bne     DispatchTitleMenuSelection
         jsr     RunVariantSelectionMenu
         pla
         pla
         jmp     MainFrontendLoop
 
-        .byte   $EA
+; Недостижимый байт между безусловным JMP и отдельным входом dispatch.
+UnreferencedCa51Nop:
+LCA51:  .byte   $EA
 DispatchTitleMenuSelection:
 LCA52:  lda     #$00
         sta     BackgroundPaletteIndex
@@ -107,31 +118,32 @@ LCA52:  lda     #$00
         sta     ScratchPtrHi
         jmp     (ScratchPtrLo)
 
-; Три адреса безвозвратной диспетчеризации по MenuSelection=0..2.
+; Три little-endian адреса безвозвратной диспетчеризации по MenuSelection=0..2.
 MenuSelectionHandlers:
 LCA69:  .word   StartOnePlayer, StartTwoPlayers, StartConstruction
 
-; GameMode=$05, новая игровая сессия и переход к выбору этапа.
+; GameMode=OnePlayerGameMode, новая игровая сессия и переход к выбору этапа.
 StartOnePlayer:
-        lda     #$05
+        lda     #OnePlayerGameMode
         jmp     StartSelectedGameMode
 
-; GameMode=$07, новая игровая сессия и переход к выбору этапа.
+; GameMode=TwoPlayerGameMode, новая игровая сессия и переход к выбору этапа.
 StartTwoPlayers:
-        lda     #$07
+        lda     #TwoPlayerGameMode
 StartSelectedGameMode:
 LCA76:  sta     GameMode
         jsr     InitializeGameSession
         jmp     SelectStage
 
-; Переходит в редактор Construction с GameMode=$07; сессию не инициализирует.
+; Переходит в редактор Construction с TwoPlayerGameMode; сессию не инициализирует.
 StartConstruction:
-        lda     #$07
+        lda     #TwoPlayerGameMode
         sta     GameMode
         jmp     ConstructionMode
 
 ; Преобразует MenuSelection=0..2 в Y курсора:
-; ObjectY=$8B+MenuSelection*$10. Возвращает это же значение в A; X/Y сохраняет.
+; ObjectY=TitleCursorFirstY+MenuSelection*TitleCursorRowStep.
+; Выход: A=ObjectY; X/Y и прочая RAM сохраняются.
 UpdateTitleCursor:
 LCA85:  lda     MenuSelection
         asl     a
@@ -139,6 +151,6 @@ LCA85:  lda     MenuSelection
         asl     a
         asl     a
         clc
-        adc     #$8B
+        adc     #TitleCursorFirstY
         sta     ObjectY
         rts

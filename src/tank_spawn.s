@@ -1,10 +1,13 @@
 ; Размещение танков в точках появления ($E363-$E3B7).
 ; Файл включается из projectiles.s в исходной позиции для сохранения адресов ROM.
 
+EnemySpawnPointCount = 3
+TankSpawnMetatile     = $0F
+
 ; Создаёт танк в слоте X в TankStateSpawning. Игроки 0/1 используют
 ; PlayerSpawnX/Y; противники циклически используют три EnemySpawnX/Y.
 ; Обнуляет attributes, для игроков также PlayerStunTimer,X; рисует spawn-
-; метатайл $0F. Портит A/X/Y, ScratchPtr, render/terrain scratch,
+; TankSpawnMetatile. Портит A/X/Y, ScratchPtr, render/terrain scratch,
 ; EnemySpawnColumn для противника, nametable shadow и PPU-очередь.
 SpawnTank:
 LE363:  lda     #$00
@@ -22,7 +25,7 @@ LE363:  lda     #$00
 SelectEnemySpawnPosition:
 LE37C:  inc     EnemySpawnColumn
         ldy     EnemySpawnColumn
-        cpy     #$03
+        cpy     #EnemySpawnPointCount
         bne     LoadEnemySpawnPosition
         lda     #$00
         sta     EnemySpawnColumn
@@ -38,7 +41,7 @@ LE393:  lda     #TankStateSpawning
         ldy     ObjectY,x
         lda     ObjectX,x
         tax
-        lda     #$0F
+        lda     #TankSpawnMetatile
         jsr     DrawMetatile
         rts
 
@@ -61,6 +64,6 @@ LE3A3:  sta     ObjectAttributes,x
         ldy     ObjectY,x
         lda     ObjectX,x
         tax
-        lda     #$0F
+        lda     #TankSpawnMetatile
         jsr     DrawMetatile
         rts

@@ -2,10 +2,17 @@
 ; В первой фазе хранит отношение цели по X, затем индекс направления 0..8.
 TankTargetDirectionIndex = $64
 TankTargetYRelation       = $65
+BaseTargetX                    = $78
+BaseTargetY                    = $D8
+TargetRelationIndexBias        = 1
+TargetDirectionAlternateOffset = 9
+PlayerTargetAxisPhaseBit       = $02
+EnemyTargetAxisRandomMask      = $01
 
 ; Классы $B-$D выбирают цель и сразу сводятся к классу $A с направлением из
 ; TankAiDirectionStateTable. $D целится в игрока 1 (слот 0), $C — в игрока 2
-; (слот 1), $B — в базу в точке ($78,$D8). Портят A/Y, TankTargetX/Y и рабочие
+; (слот 1), $B — в базу в точке BaseTargetX/BaseTargetY. Портят A/Y,
+; TankTargetX/Y и рабочие
 ; поля выбора направления; X сохраняется.
 TankLogicStateD:
         lda     ObjectX
@@ -22,9 +29,9 @@ TankLogicStateC:
         jmp     ChooseDirectionTowardSelectedTarget
 
 TankLogicStateB:
-        lda     #$78
+        lda     #BaseTargetX
         sta     TankTargetX
-        lda     #$D8
+        lda     #BaseTargetY
         sta     TankTargetY
 ChooseDirectionTowardSelectedTarget:
 LDD9C:  jsr     ChooseTankStateTowardTarget
@@ -32,8 +39,9 @@ LDD9C:  jsr     ChooseTankStateTowardTarget
         rts
 
 ; Выбирает направление к TankTargetX/Y. Знаки разностей X/Y кодируются значениями
-; 0..2, образуют индекс 0..8, а альтернативная половина таблицы используется по
-; кадровому/случайному условию. Выход: A — готовое состояние из
+; 0..2, образуют индекс 0..8, а альтернативная половина таблицы со смещением
+; TargetDirectionAlternateOffset используется по кадровому/случайному условию.
+; Выход: A — готовое состояние из
 ; TankAiDirectionStateTable. Портит A/Y, TankTargetDirectionIndex и
 ; TankTargetYRelation; для противника также RNG. X сохраняет.
 ChooseTankStateTowardTarget:
@@ -42,14 +50,14 @@ LDDA2:  lda     TankTargetX
         sbc     ObjectX,x
         jsr     NormalizeSubtractionSign
         clc
-        adc     #$01
+        adc     #TargetRelationIndexBias
         sta     TankTargetDirectionIndex
         lda     TankTargetY
         sec
         sbc     ObjectY,x
         jsr     NormalizeSubtractionSign
         clc
-        adc     #$01
+        adc     #TargetRelationIndexBias
         sta     TankTargetYRelation
         asl     a
         clc
@@ -62,16 +70,16 @@ LDDA2:  lda     TankTargetX
         txa
         asl     a
         eor     SlowFrameCounter
-        and     #$02
+        and     #PlayerTargetAxisPhaseBit
         beq     UsePrimaryTargetDirection
         jmp     UseAlternateTargetDirection
 
 ChooseRandomEnemyAxisPriority:
 LDDD4:  jsr     NextRandomByte
-        and     #$01
+        and     #EnemyTargetAxisRandomMask
         beq     UsePrimaryTargetDirection
 UseAlternateTargetDirection:
-LDDDB:  lda     #$09
+LDDDB:  lda     #TargetDirectionAlternateOffset
         clc
         adc     TankTargetDirectionIndex
         tay

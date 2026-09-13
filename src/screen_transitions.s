@@ -3,8 +3,18 @@
 CurtainRowIndex      = $57
 NametableRowFillTile = $63
 
-; За 64 кадра переносит NametableAttributes в PPU $23C0-$23FF,
-; по одному байту за кадр. Меняет A/X/Y, ScratchPtr и PPU-очередь.
+NametableAttributeByteCount    = $40
+NametableRowTileCount          = $20
+NametableLastVisibleRow        = $1D
+NametableCurtainPairCount      = $10
+NametableCurtainTile           = $11
+ShadowToPrimaryNametableOffset = $1C
+
+; За 64 кадровые итерации ставит NametableAttributes в PPU-очередь по адресам
+; $23C0-$23FF, по одному байту за итерацию. WaitForNextFrame в начале следующей
+; итерации передаёт предыдущую команду; последний байт остаётся в очереди до
+; следующего NMI. Выход: ScratchPtr=$2400, Y=$40; A/X и PpuBufferPos отражают
+; последнюю команду. Меняет input/audio/frame state через ожидания, но shadow не меняет.
 UploadAttributesGradually:
 LCC27:  ldy     #$00
         lda     #$23
@@ -30,14 +40,16 @@ LCC31:  jsr     WaitForNextFrame
         stx     PpuBufferPos
         lda     #$01
         jsr     AddAToPointer
-        cpy     #$40
+        cpy     #NametableAttributeByteCount
         bne     UploadNextAttributeByte
         rts
 
 ; Ставит в PPU-очередь полную 32-тайловую строку nametable.
 ; Вход: Y — номер строки; если NametableRowFillTile=0, данные берутся из
-; shadow, иначе вся строка заполняется этим тайлом. Меняет A/X/Y, ScratchPtr,
-; scratch $00 и PPU-очередь.
+; shadow, иначе вся строка заполняется этим тайлом (поэтому заполнить строку
+; константой 0 через этот интерфейс нельзя). Адрес назначения всегда относится
+; к основной nametable $2000. Выход: A=$FF, Y=$20, X=PpuBufferPos.
+; Меняет ScratchPtr, scratch $00 и PPU update buffer; shadow и PPU напрямую не меняет.
 QueueNametableRow:
 LCC5C:  ldx     #$00
         jsr     TileCoordinatesToShadowAddress
@@ -46,7 +58,7 @@ LCC5C:  ldx     #$00
         ldx     PpuBufferPos
         lda     ScratchPtrHi
         clc
-        adc     #$1C
+        adc     #ShadowToPrimaryNametableOffset
         sta     PpuUpdateBuffer,x
         inx
         lda     ScratchPtrLo
@@ -61,7 +73,7 @@ StoreNametableTile:
 LCC7E:  sta     PpuUpdateBuffer,x
         inx
         iny
-        cpy     #$20
+        cpy     #NametableRowTileCount
         bne     QueueNextNametableTile
         lda     #$FF
         sta     PpuUpdateBuffer,x
@@ -69,11 +81,13 @@ LCC7E:  sta     PpuUpdateBuffer,x
         stx     PpuBufferPos
         rts
 
-; Шторка перед выбором этапа: за 16 кадров заполняет тайлом $11 парные строки,
-; двигаясь от верхнего/нижнего краёв к центру. Меняет
-; CurtainRowIndex/NametableRowFillTile и PPU-очередь.
+; Шторка перед выбором этапа: за 16 кадров ставит в очередь парные строки,
+; заполненные тайлом $11, двигаясь от краёв 0/29 к центру. Строки 14/15
+; ставятся дважды на последних двух итерациях. Последняя пара остаётся в очереди
+; до следующего NMI. Выход: CurtainRowIndex=$10, NametableRowFillTile=$11.
+; Портит A/X/Y, ScratchPtr и PPU update buffer; shadow не меняет.
 CloseNametableCurtain:
-LCC90:  lda     #$11
+LCC90:  lda     #NametableCurtainTile
         sta     NametableRowFillTile
         lda     #$00
         sta     CurtainRowIndex
@@ -81,30 +95,32 @@ CloseCurtainNextRowPair:
 LCC98:  jsr     WaitForNextFrame
         ldy     CurtainRowIndex
         jsr     QueueNametableRow
-        lda     #$1D
+        lda     #NametableLastVisibleRow
         sec
         sbc     CurtainRowIndex
         tay
         jsr     QueueNametableRow
         inc     CurtainRowIndex
         lda     CurtainRowIndex
-        cmp     #$10
+        cmp     #NametableCurtainPairCount
         bne     CloseCurtainNextRowPair
         rts
 
 ; Обратная шторка: восстанавливает пары строк из shadow, двигаясь от центра
 ; к краям. Центральная пара при первых двух проходах записывается дважды.
-; Меняет CurtainRowIndex/NametableRowFillTile и PPU-очередь.
+; Последняя пара остаётся в очереди до следующего NMI. Выход:
+; CurtainRowIndex=$FF, NametableRowFillTile=0. Портит A/X/Y, ScratchPtr и
+; PPU update buffer; shadow не меняет.
 OpenNametableCurtain:
 LCCB2:  lda     #$00
         sta     NametableRowFillTile
-        lda     #$0F
+        lda     #(NametableCurtainPairCount-1)
         sta     CurtainRowIndex
 OpenCurtainNextRowPair:
 LCCBA:  jsr     WaitForNextFrame
         ldy     CurtainRowIndex
         jsr     QueueNametableRow
-        lda     #$1D
+        lda     #NametableLastVisibleRow
         sec
         sbc     CurtainRowIndex
         tay

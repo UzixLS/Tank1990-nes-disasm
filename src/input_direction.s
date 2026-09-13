@@ -1,5 +1,7 @@
 ; Декодирование кнопок направления ($E451-$E46B).
 
+NoDirectionButton = $FF
+
 ; Преобразует первый установленный бит Right/Left/Down/Up в направление 3/1/2/0.
 DecodeDirectionButtons:
 ; Вход: A — байт кнопок. Приоритет Right, Left, Down, Up. Выход: A=direction 3/1/2/0 или $FF, если D-pad не нажат.
@@ -27,5 +29,5 @@ LE463:  asl     a
         rts
 
 ReturnNoDirectionButton:
-LE469:  lda     #$FF
+LE469:  lda     #NoDirectionButton
         rts

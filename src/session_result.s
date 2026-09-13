@@ -2,7 +2,9 @@
 
 ; Показывает экран нового рекорда/окончания сессии, запускает три потока
 ; музыки результата и ждёт завершения pulse-1 потока.
-; В цикле меняет $4D от 5 до 8 по младшим битам FrameCounter. Меняет nametable/PPU и рабочую RAM; портит A/X/Y.
+; В цикле меняет BackgroundPaletteIndex от 5 до 8 по младшим битам
+; FrameCounter. Выход: A=0, BackgroundPaletteIndex=0; меняет shadow/PPU,
+; audio state и рабочую RAM, портит X/Y и флаги.
 ShowSessionResultScreen:
 LC44B:  jsr     DisableRenderingForBulkUpdate
         lda     #$1C
@@ -15,9 +17,9 @@ LC44B:  jsr     DisableRenderingForBulkUpdate
         stx     RasterStringX
         ldy     #$32
         sty     RasterStringY
-        lda     #$D2
+        lda     #>HighScoreText
         sta     AuxPtrHi
-        lda     #$B5
+        lda     #<HighScoreText
         sta     AuxPtrLo
         jsr     RasterizeTileStringToShadow
         jsr     RenderLargeScoreRecord

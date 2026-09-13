@@ -1,15 +1,21 @@
 ; Выбор этапа, основной цикл боя и разбор исхода ($C159-$C2B2).
 
+StageSelectionRepeatMask       = $07
+StageSelectionNametableOffset  = $1C
+StageTransitionFinishedCounter = $02
+
 ; Экран выбора этапа. Удержание A/B повторяет изменение через
 ; FrameCounter, START подтверждает StageNumber.
 SelectStage:
 ; Вход: StageNumber — текущий этап, ConstructionMapFlag!=0 обозначает карту Construction.
 ; A/B листают этапы с автоповтором,
 ; START подтверждает. Далее загружает/рисует карту, инициализирует объекты и выполняет кадровый цикл до исхода этапа.
-; Меняет почти всё игровое состояние, PPU/OAM/APU и A/X/Y; в обычном потоке не возвращается к вызывающему.
+; Меняет почти всё игровое состояние, PPU/OAM/APU и A/X/Y. Все выходы идут
+; через gameplay/result/frontend continuations; к непосредственному вызывающему
+; процедура не возвращается.
 LC159:  jsr     WaitForNextFrame
         jsr     ResetAudioEngine
-        lda     #$1C
+        lda     #StageSelectionNametableOffset
         sta     NametablePpuOffset
         lda     #$00
         sta     VerticalScroll
@@ -40,16 +46,16 @@ LC172:  jsr     UpdateStageNumberDisplay
         and     #BUTTON_A
         beq     CheckStageSelectionBackward
         lda     FrameCounter
-        and     #$07
+        and     #StageSelectionRepeatMask
         bne     CheckStageSelectionBackward
 AdvanceStageSelection:
 LC191:  lda     #$00
         sta     FrameCounter
         jsr     AdvanceStageNumber
         nop
-        cmp     #$33
+        cmp     #(StandardStageUpperBound+1)
         bne     StageSelectionInputLoop
-        lda     #$01
+        lda     #FirstStageNumber
         sta     StageNumber
         jmp     StageSelectionInputLoop
 
@@ -61,7 +67,7 @@ LC1A4:  lda     Joy1Pressed
         and     #BUTTON_B
         beq     StageSelectionInputLoop
         lda     FrameCounter
-        and     #$07
+        and     #StageSelectionRepeatMask
         bne     StageSelectionInputLoop
 RetreatStageSelection:
 LC1B6:  lda     #$00
@@ -75,7 +81,7 @@ LC1B6:  lda     #$00
 ; Подтверждён этап: запрашивает три потока вступительной музыки, рисует
 ; обычную или уже построенную Construction-карту и запускает игру.
 ; Вход: StageNumber и ConstructionMapFlag. Не возвращается: после подготовки
-; переходит в MainGameplayFrameLoop. Меняет PPU/shadow, игровые объекты,
+; проваливается в MainGameplayFrameLoop. Меняет PPU/shadow, игровые объекты,
 ; состояния трёх аудиопотоков и A/X/Y.
 BeginSelectedStage:
 LC1C5:  lda     #AudioStateStartRequested
@@ -104,7 +110,9 @@ LC1E5:  lda     #$00
 ; Основной кадровый цикл. PauseState!=0 приостанавливает игровую логику, но
 ; оставляет отрисовку; START переключает паузу и её аудиопоток. При завершении
 ; этапа сбрасывает loop-аудио и входит в TransitionObjectFrameLoop.
-; Не возвращается; меняет игровую RAM, PPU/OAM/audio state и A/X/Y.
+; Вызванный как самостоятельная процедура не возвращается: дальнейшие пути
+; заканчиваются новым выбором этапа либо переходом во frontend. Меняет игровую
+; RAM, PPU/OAM/audio state и A/X/Y.
 MainGameplayFrameLoop:
 LC1F9:  jsr     WaitForNextFrame
         lda     PauseState
@@ -145,7 +153,7 @@ LC238:  jsr     WaitForNextFrame
         jsr     DrawProjectiles
         jsr     UpdateHalfSecondPhaseFlag
         lda     SlowFrameCounter
-        cmp     #$02
+        cmp     #StageTransitionFinishedCounter
         bne     TransitionObjectFrameLoop
         jsr     ResetAudioEngine
         jsr     ShowStageStatistics
@@ -153,9 +161,11 @@ LC238:  jsr     WaitForNextFrame
         lda     StageNumber
         cmp     #$FF
         bne     ResolveStageOutcome
-        lda     #$01
+        lda     #FirstStageNumber
         sta     StageNumber
-; После сброса звука и экрана результата выбирает продолжение, секретный continue или возврат в главное меню.
+; После экрана статистики выбирает продолжение либо возврат во frontend.
+; HandleSecretContinueChord проверяет chord, но независимо от него хвостом
+; переходит в SelectStage; chord влияет только на восстановление выбывшего игрока.
 ResolveStageOutcome:
 LC265:  lda     Player1Lives
         clc
@@ -166,8 +176,9 @@ LC265:  lda     Player1Lives
         bne     ReturnToTitleAfterStage
         jmp     HandleSecretContinueChord
 
-; Альтернативный хвост продолжения: ожидает в A жизни P1, добавляет Player2Lives и при $68=$80 переходит в SelectStage.
-; Прямых ссылок на LC275 нет; при неуспехе проваливается в общий возврат к главному меню.
+; Статически неиспользуемый альтернативный continuation: ожидает в A число
+; жизней P1, добавляет Player2Lives и при BattleStateActive хвостом переходит
+; в SelectStage. При неуспехе проваливается в ReturnToTitleAfterStage.
 UnusedContinueTail:
 LC275:  clc
         adc     Player2Lives
@@ -186,9 +197,9 @@ LC283:  jsr     ClearScreenAndAudio
 RebuildTitleAfterStage:
 LC292:  jmp     RebuildTitleNametable
 
-; Гасит рендеринг, очищает shadow RAM, загружает её в текущую nametable,
-; выбранную через $05, и снова включает NMI.
-; Портит A/X и PPU state; Y не гарантируется из-за вызываемых процедур.
+; Гасит рендеринг, очищает shadow nametable, загружает её в nametable,
+; выбранную NametableBits, и снова включает NMI.
+; Портит A/X/Y, ScratchPtr и PPU state; OAM/APU не меняет.
 ClearScreenAndResumeNmi:
 LC295:  jsr     DisableRenderingForBulkUpdate
         jsr     ClearNametableBuffer
@@ -196,7 +207,8 @@ LC295:  jsr     DisableRenderingForBulkUpdate
         jsr     EnableNmiAfterVblank
         rts
 
-; Обнуляет held/pressed обоих контроллеров, если $68!=$80. Портит A и флаги.
+; Обнуляет held/pressed обоих контроллеров, если BattleState!=BattleStateActive.
+; Выход: X/Y сохраняются; A=BattleState на активном пути, иначе A=0. Портит флаги.
 SuppressInputOutsideActiveStage:
 LC2A2:  lda     BattleState
         cmp     #BattleStateActive

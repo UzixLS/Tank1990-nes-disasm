@@ -5,6 +5,10 @@ PpuAttributeRowOffset    = $00
 PpuAttributePreserveMask = $01
 PpuAttributePaletteBits  = $02
 
+AttributePpuAddressHigh = $23
+AttributeTableAddressLo = $C0
+AttributeQueueTerminator = $FF
+
 ; Преобразует координаты тайла X=0..31, Y=0..31 в адрес shadow nametable:
 ;   A = $04 + Y / 8, Y = X + (Y & 7) * 32.
 ; Меняет A/Y и PpuTileRowBits; X сохраняет.
@@ -29,30 +33,35 @@ LD5FB:  lda     #$00
 ; Обновляет атрибут палитры для тайла X/Y и добавляет однобайтовую
 ; запись $23C0+index в PPU-очередь. Вход: X/Y -- координаты 8x8-тайла,
 ; RenderAttributes -- палитра 0..3.
-; Побочно: меняет attribute scratch, NametableAttributes,
-; PpuUpdateBuffer/PpuBufferPos; A/X/Y изменены.
+; Выход: A=$FF, X=PpuBufferPos после четырёх добавленных байтов, Y — индекс
+; attribute table. Меняет attribute scratch, NametableAttributes и PPU queue;
+; ScratchPtr, PPU registers и nametable tile shadow не меняет. Capacity буфера
+; вызывающий должен обеспечить заранее.
 QueueAttributeByteForTile:
 LD612:  jsr     UpdateAttributeShadow
         ldx     PpuBufferPos
-        lda     #$23
+        lda     #AttributePpuAddressHigh
         sta     PpuUpdateBuffer,x
         inx
         tya
         clc
-        adc     #$C0
+        adc     #AttributeTableAddressLo
         sta     PpuUpdateBuffer,x
         inx
         lda     NametableAttributes,y
         sta     PpuUpdateBuffer,x
         inx
-        lda     #$FF
+        lda     #AttributeQueueTerminator
         sta     PpuUpdateBuffer,x
         inx
         stx     PpuBufferPos
         rts
 
 ; Вставляет два бита RenderAttributes в нужный квадрант attribute byte.
-; Вход: X/Y -- координаты 8x8-тайла. Выход: Y -- индекс attribute table, A -- новый байт.
+; Вход: X/Y -- координаты 8x8-тайла, RenderAttributes=0..3.
+; Выход: Y — индекс attribute table, A — новый и уже записанный байт; X
+; сохраняется. Портит четыре attribute scratch-байта и flags, PPU queue/registers
+; не меняет.
 UpdateAttributeShadow:
 LD635:  lda     RenderAttributes
         jsr     ExpandPaletteBits
@@ -104,7 +113,7 @@ LD662:  sta     PpuAttributePreserveMask
         rts
 
 ; Один шаг A=(A*4)|RenderAttributes. Три вызова размножают двухбитовую палитру
-; по всем четырём квадрантам attribute byte. Меняет A/флаги.
+; по всем четырём квадрантам attribute byte. X/Y и RAM сохраняет; меняет A/flags.
 ExpandPaletteBits:
 LD684:  asl     a
         asl     a

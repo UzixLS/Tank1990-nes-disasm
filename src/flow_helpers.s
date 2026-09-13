@@ -1,7 +1,8 @@
 ; Общие helpers очистки, усилений и границ этапов ($C5D9-$C641).
 
-; Гасит рендеринг, очищает nametable shadow/PPU, снова включает NMI и сбрасывает audio engine.
-; Портит A/X/Y, PPU/APU и звуковую RAM.
+; Гасит рендеринг, выбирает основной nametable offset, очищает shadow nametable,
+; загружает его в PPU, снова включает NMI и сбрасывает audio engine.
+; Портит A/X/Y, ScratchPtr, PPU/APU и звуковую RAM; OAM shadow не меняет.
 ClearScreenAndAudio:
 LC5D9:  jsr     DisableRenderingForBulkUpdate
         lda     #$1C
@@ -16,17 +17,18 @@ LC5D9:  jsr     DisableRenderingForBulkUpdate
         rts
 
 .include "powerup_flow.s"
-; Подкладывает в StageNumber верхнюю границу для декремента: $76 при ($46&$0F)=6, иначе $32.
-; Выход: A — записанное StageNumber; X/Y не меняются.
+; Подкладывает в StageNumber верхнюю границу для циклического декремента:
+; ExtendedStageUpperBound при (GameVariant&$0F)=ExtendedStageVariant, иначе
+; StandardStageUpperBound. Выход: A=StageNumber; X/Y и прочая RAM не меняются.
 WrapStageNumberBackward:
 LC627:  lda     GameVariant
-        and     #$0F
-        cmp     #$06
+        and     #GameVariantIndexMask
+        cmp     #ExtendedStageVariant
         beq     SelectExtendedStageUpperBound
-        lda     #$32
+        lda     #StandardStageUpperBound
         bne     StoreStageUpperBound
 SelectExtendedStageUpperBound:
-LC633:  lda     #$76
+LC633:  lda     #ExtendedStageUpperBound
 StoreStageUpperBound:
 LC635:  sta     StageNumber
         rts

@@ -1,29 +1,37 @@
 ; Построение nametable заглавного экрана ($D16A-$D254).
 
+PrimaryNametableOffset = $1C        ; shadow $04xx -> PPU $20xx
+TitleNametableOffset   = $24        ; shadow $04xx -> PPU $28xx
+TitleBackgroundPalette = $03
+TitleScoreTileBias     = $30
+
 ; Очищает основную nametable $2000: отключает рендеринг/NMI, обнуляет shadow,
 ; напрямую загружает 1 KiB и снова включает NMI. Выбирает фоновую палитру 3.
-; Меняет A/X/Y, ScratchPtr, NametablePpuOffset, BackgroundPaletteIndex,
-; shadow и PPU.
+; Входов/регистровых результатов нет. Меняет A/X/Y, ScratchPtr,
+; NametablePpuOffset=PrimaryNametableOffset, BackgroundPaletteIndex,
+; весь nametable shadow и PPU address/data/control state; NMI включён на выходе.
 ClearPrimaryNametableScreen:
 LD16A:  jsr     DisableRenderingForBulkUpdate
-        lda     #$03
+        lda     #TitleBackgroundPalette
         sta     BackgroundPaletteIndex
-        lda     #$1C
+        lda     #PrimaryNametableOffset
         sta     NametablePpuOffset
         jsr     ClearNametableBuffer
         jsr     UploadNametableBuffer
         jsr     EnableNmiAfterVblank
         rts
-; Один раз строит статическую nametable заглавного экрана в $2400.
+; Один раз строит статическую nametable заглавного экрана в $2800.
 ; При отключённом рендеринге очищает shadow, добавляет крупный логотип через
-; внешний LE3D8 и крупную строку из CHR через LD8D2, затем загружает весь 1 KiB.
+; DrawVariantTitleData и крупную строку из CHR через RasterizeTileStringToShadow,
+; затем напрямую загружает весь 1 KiB.
 ; После включения NMI ставит в очередь подписи рекорда, игроков и трёх пунктов
 ; меню; MenuSelection определяет наличие строки второго игрока.
-; Побочно меняет A/X/Y, ScratchPtr/AuxPtr, NametablePpuOffset, $56/$57,
-; TileTranslationOffset, shadow, PPU и очередь.
+; Побочно меняет A/X/Y, ScratchPtr/AuxPtr, NametablePpuOffset=TitleNametableOffset,
+; RasterStringX/Y, TileTranslationOffset=0, score-format scratch, shadow, PPU и
+; update buffer. Последняя строка copyright остаётся в очереди до следующего NMI.
 BuildTitleNametable:
 LD17F:  jsr     DisableRenderingForBulkUpdate
-        lda     #$24
+        lda     #TitleNametableOffset
         sta     NametablePpuOffset
         jsr     ClearNametableBuffer
         ldx     #$1A
@@ -31,6 +39,8 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         ldy     #$2E
         sty     RasterStringY
         jsr     DrawVariantTitleData
+; Восемь исполняемых NOP сохраняют исходную задержку/layout после расширенного
+; обработчика заголовка; отдельных entry points внутри последовательности нет.
         nop
         nop
         nop
@@ -50,7 +60,7 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         jsr     RasterizeTileStringToShadow
         jsr     UploadNametableBuffer
         jsr     EnableNmiAfterVblank
-        lda     #$30
+        lda     #TitleScoreTileBias
         sta     TileTranslationOffset
         lda     #>PlayerOneScorePrefix
         sta     ScratchPtrHi
@@ -59,7 +69,7 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         ldx     #$02
         ldy     #$03
         jsr     QueueTileAtCoordinates
-        ldy     #$16
+        ldy     #(Player1Score+1)
         ldx     #$04
         jsr     SelectVisibleDigits
         ldy     #$03
@@ -71,7 +81,7 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         ldx     #$0B
         ldy     #$03
         jsr     QueueTileAtCoordinates
-        ldy     #$3E
+        ldy     #(HighScore+1)
         ldx     #$0E
         jsr     SelectVisibleDigits
         ldy     #$03
@@ -85,7 +95,7 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         ldx     #$15
         ldy     #$03
         jsr     QueueTileAtCoordinates
-        ldy     #$1E
+        ldy     #(Player2Score+1)
         ldx     #$17
         jsr     SelectVisibleDigits
         ldy     #$03

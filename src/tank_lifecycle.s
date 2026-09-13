@@ -1,5 +1,15 @@
 ; Разрушение, удаление, появление и переходные состояния танков ($DDEA-$DE71).
 
+TankDestructionClassStep        = $10
+DefaultTankDestructionPhase     = $03
+IntermediateDestructionPhase    = $06
+PlayerOneTransitionX            = $20
+PlayerTwoTransitionX            = $C0
+PlayerTransitionY               = $D8
+PlayerTransitionDuration        = $0D
+TankTransitionCompletionPhase   = $0E
+TankStateEInitialValue          = $E0
+
 ; Классы $1-$7 -- обратный фазовый отсчёт. Класс уменьшается, когда младшая
 ; тетрада после DEC достигает нуля; после $2 следует промежуточная фаза $16,
 ; остальные получают младшую фазу 3.
@@ -10,19 +20,19 @@
 TankLogicStates1To7:
         dec     ObjectState,x
         lda     ObjectState,x
-        and     #$0F
+        and     #StateLowNibbleMask
         bne     ReturnFromTankDestructionUpdate
         lda     ObjectState,x
         sec
-        sbc     #$10
+        sbc     #TankDestructionClassStep
         beq     FinishTankDestruction
-        cmp     #$10
+        cmp     #TankDestructionClassStep
         bne     SetDefaultDestructionPhase
-        ora     #$06
+        ora     #IntermediateDestructionPhase
         jmp     CommitNextDestructionPhase
 
 SetDefaultDestructionPhase:
-LDE02:  ora     #$03
+LDE02:  ora     #DefaultTankDestructionPhase
 CommitNextDestructionPhase:
 LDE04:  sta     ObjectState,x
         rts
@@ -42,19 +52,19 @@ LDE15:  dec     EnemiesRemaining
 
 ; Если в специальном состоянии $68=$80 один игрок окончательно выбыл, но партнёр жив,
 ; готовит TransitionObjectX..TransitionObjectTimer для переходной анимации.
-; Смысл кодов $01/$03 и
-; координат $20/$C0 следует из поведения, их пользовательское название не закреплено.
+; TransitionObjectDirection направляет объект к живому партнёру, а начальные
+; X-координаты заданы PlayerOneTransitionX/PlayerTwoTransitionX.
 PrepareSurvivingPlayerTransition:
 LDE18:  lda     BattleState
         cmp     #BattleStateActive
         bne     ReturnFromTankDestructionUpdate
-        cpx     #$01
+        cpx     #(PlayerTankCount-1)
         beq     PreparePlayerTwoTransition
         lda     Player2Lives
         beq     ReturnFromTankDestructionUpdate
-        lda     #$03
+        lda     #DIRECTION_RIGHT
         sta     TransitionObjectDirection
-        lda     #$20
+        lda     #PlayerOneTransitionX
         sta     TransitionObjectX
         jsr     InitializePlayerTransitionRecord
         rts
@@ -62,20 +72,21 @@ LDE18:  lda     BattleState
 PreparePlayerTwoTransition:
 LDE34:  lda     Player1Lives
         beq     ReturnFromTankDestructionUpdate
-        lda     #$01
+        lda     #DIRECTION_LEFT
         sta     TransitionObjectDirection
-        lda     #$C0
+        lda     #PlayerTwoTransitionX
         sta     TransitionObjectX
         jsr     InitializePlayerTransitionRecord
 ReturnFromTankDestructionUpdate:
 LDE45:  rts
 
 InitializePlayerTransitionRecord:
-; Завершает создание переходного объекта: timer=13, Y=$D8 и FrameCounter=0.
+; Завершает создание переходного объекта: timer=PlayerTransitionDuration,
+; Y=PlayerTransitionY и FrameCounter=0.
 ; Выход: A=0; X/Y сохраняет. Меняет только перечисленные поля.
-LDE46:  lda     #$0D
+LDE46:  lda     #PlayerTransitionDuration
         sta     TransitionObjectTimer
-        lda     #$D8
+        lda     #PlayerTransitionY
         sta     TransitionObjectY
         lda     #$00
         sta     FrameCounter
@@ -87,10 +98,10 @@ LDE46:  lda     #$0D
 TankLogicStateF:
         inc     ObjectState,x
         lda     ObjectState,x
-        and     #$0F
-        cmp     #$0E
+        and     #StateLowNibbleMask
+        cmp     #TankTransitionCompletionPhase
         bne     ReturnFromTankLogicStateF
-        lda     #$E0
+        lda     #TankStateEInitialValue
         sta     ObjectState,x
 ReturnFromTankLogicStateF:
 LDE63:  rts
@@ -101,8 +112,8 @@ LDE63:  rts
 TankLogicStateE:
         inc     ObjectState,x
         lda     ObjectState,x
-        and     #$0F
-        cmp     #$0E
+        and     #StateLowNibbleMask
+        cmp     #TankTransitionCompletionPhase
         bne     ReturnFromTankLogicStateE
         jsr     InitializeTankState
 ReturnFromTankLogicStateE:

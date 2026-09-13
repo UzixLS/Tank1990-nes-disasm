@@ -2,9 +2,10 @@
 
 ; Обрабатывает попадание снаряда в игрока X с нулевым PlayerShieldTimer,X.
 ; Ненулевой ObjectSpecialState,X поглощается/очищается. Без него объект
-; переводится в TankStateDestroyed, кроме PlayerUpgradeLevel,X=$63: тогда
-; запрашивается ArmorHitAudioState, а $40 записывается в PlayerUpgradeLevel,
-; PlayerExtendedUpgrade и ObjectAttributes. Не возвращается.
+; переводится в TankStateDestroyed, кроме уровня PlayerUpgradeMaximum: тогда
+; запрашивается ArmorHitAudioState, а PlayerUpgradeLevel2 записывается в
+; PlayerUpgradeLevel, PlayerExtendedUpgrade и ObjectAttributes. Ни одна ветвь
+; не возвращается непосредственно: обе уходят в продолжение collision pass.
 HandleProjectileHitOnPlayer:
 LFF66:  lda     ObjectSpecialState,x
         beq     ApplyUnshieldedProjectileHit
@@ -14,7 +15,7 @@ LFF66:  lda     ObjectSpecialState,x
 
 ApplyUnshieldedProjectileHit:
 LFF73:  lda     PlayerUpgradeLevel,x
-        cmp     #$63
+        cmp     #PlayerUpgradeMaximum
         beq     DowngradeMaximumPlayerArmor
         lda     #TankStateDestroyed
         sta     ObjectState,x
@@ -23,14 +24,14 @@ LFF73:  lda     PlayerUpgradeLevel,x
 DowngradeMaximumPlayerArmor:
 LFF81:  lda     #AudioStateStartRequested
         sta     ArmorHitAudioState
-        lda     #$40
+        lda     #PlayerUpgradeLevel2
         sta     PlayerUpgradeLevel,x
         sta     PlayerExtendedUpgrade,x
         sta     ObjectAttributes,x
         jmp     AdvancePlayerCollisionPassOrBeginEnemyPass
 
 ; Запрашивает PlayerOrBaseDestructionNoiseAudioState и возвращает в A
-; модификатор $20 при отрицательном GameVariant, иначе 0.
+; ExtendedVariantPlayerHitAttributeBits при отрицательном GameVariant, иначе 0.
 ; X/Y не меняет; портит флаги.
 RequestPlayerDestructionAudioAndGetVariantBits:
 LFF93:  lda     #AudioStateStartRequested
@@ -41,7 +42,7 @@ LFF93:  lda     #AudioStateStartRequested
         rts
 
 ReturnExtendedVariantAttributeBits:
-LFF9F:  lda     #$20
+LFF9F:  lda     #ExtendedVariantPlayerHitAttributeBits
         rts
 
 ; Одиночный байт $01 по $FFA2; статических ссылок нет.

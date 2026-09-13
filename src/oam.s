@@ -6,22 +6,29 @@ OamSavedY = $48
 OamPairX  = $54
 OamPairY  = $55
 
+OamEntrySize         = $04
+OamHiddenY           = $F0
+OamHardwareYBias     = $08
+OamTerrainProbeXBias = $03
+
 ; Добавляет один 8x8-спрайт в OamShadow через OamBufferPos и OamBufferStep.
 ; Вход: X/Y -- экранные X и базовый Y, OamTile -- tile,
 ; RenderAttributes -- attributes, SpriteBehindTerrainMask -- добавочные
 ; attributes для тайла $22 в shadow под спрайтом. В OAM пишутся
 ; (Y-8, tile, attributes, X). Побочно меняет OamSavedX/Y, ScratchPtr,
 ; TerrainSubcellMask и OamBufferPos; для shadow-тайла $22 также
-; RenderAttributes. A/X/Y изменены.
+; RenderAttributes. Выход: A=новый OamBufferPos, X=старый OamBufferPos,
+; Y=0. OamTile сохраняется; PPU queue/registers не меняет. Проверки выхода
+; OamBufferPos за пределы shadow нет.
 EmitOamSprite:
 LDA2B:  txa
         sta     OamSavedX
         clc
-        adc     #$03
+        adc     #OamTerrainProbeXBias
         tax
         tya
         sec
-        sbc     #$08
+        sbc     #OamHardwareYBias
         sta     OamSavedY
         jsr     PixelCoordinatesToShadowPointer
         lda     (ScratchPtrLo),y
@@ -48,7 +55,7 @@ LDA47:  ldx     OamBufferPos
 
 ; Выбирает тайл OamTile+2*A, сдвигает X на -5 и выводит один спрайт.
 ; Используется для направленных однотайловых объектов. Входы и побочные
-; эффекты как у EmitOamSprite.
+; эффекты как у EmitOamSprite; по выходу OamTile содержит выбранный tile.
 EmitDirectionalOamSprite:
 LDA64:  asl     a
         clc
@@ -65,7 +72,8 @@ LDA64:  asl     a
 ; с тайлами base и base+2. Вход: A -- кадр, X/Y -- позиция;
 ; OamTile/RenderAttributes/SpriteBehindTerrainMask как у EmitOamSprite.
 ; Сохраняет исходные X/Y в OamPairX/Y, но по выходу регистры изменены вторым
-; вызовом; дважды применяются все побочные эффекты EmitOamSprite.
+; вызовом; дважды применяются все побочные эффекты EmitOamSprite. По выходу
+; OamTile=base+2, OamBufferPos продвинут на две записи.
 EmitTwoTileOamObject:
 LDA73:  asl     a
         asl     a
@@ -79,7 +87,7 @@ LDA7B:  stx     OamPairX
         sty     OamPairY
         txa
         sec
-        sbc     #$08
+        sbc     #OamHardwareYBias
         tax
         jsr     EmitOamSprite
         inc     OamTile
@@ -92,7 +100,10 @@ LDA7B:  stx     OamPairX
 ; Завершает OAM-кадр: меняет знак OamBufferStep и пишет Y=$F0 в
 ; неиспользованные записи между OamBufferPos и слотом 1. Чередование
 ; направления выдачи OAM-слотов меняет приоритет спрайтов между кадрами.
-; Выход: OamBufferPos=4, OamBufferStep=-OamBufferStep; A=$F0, X=4.
+; Вход: OamBufferStep равен +4 или -4, позиции выровнены по OamEntrySize.
+; Выход: OamBufferPos=OamEntrySize, OamBufferStep=-OamBufferStep;
+; A=OamHiddenY, X=OamEntrySize, Y сохранён. Меняет только Y-байты
+; неиспользованных OAM entries; аппаратный OAM/PPU не трогает.
 FinishAlternatingOamFrame:
 LDA93:  ldx     OamBufferPos
         lda     OamBufferStep
@@ -105,9 +116,9 @@ LDA9E:  txa
         clc
         adc     OamBufferStep
         tax
-        lda     #$F0
+        lda     #OamHiddenY
         sta     OamShadow,x
-        cpx     #$04
+        cpx     #OamEntrySize
         bne     HideNextUnusedOamEntry
         stx     OamBufferPos
         rts

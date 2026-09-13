@@ -1,7 +1,10 @@
 ; Сохранённый RAM inspector и прокрутка заставки ($C755-$C7C7).
 
-; Статически неиспользуемый RAM-инспектор: рисует индекс $0109 и байт $00+index.
-; SELECT/B/A меняют индекс на +1/-1/+16. Портит A/X/Y, ScratchPtr, $39..$3B, PPU-очередь и $0109.
+; Статически неиспользуемый RAM-инспектор: рисует DebugRamIndex и байт
+; zero-page[DebugRamIndex]. SELECT/B/A последовательно меняют индекс на
+; +1/-1/+16, поэтому несколько кнопок в одном кадре складывают эффекты.
+; Портит A/X/Y, ScratchPtr, ScoreIncrementDigits/decimal scratch,
+; TileTranslationOffset, PPU-очередь и DebugRamIndex.
 UnusedRamInspector:
 LC755:  lda     DebugRamIndex
         jsr     PreparePackedScoreIncrement
@@ -46,8 +49,10 @@ LC79B:  lda     Joy1Pressed
 FinishRamInspector:
 LC7AA:  rts
 ; Прокручивает заставку вертикально от 0 до $F0 по одному пикселю за кадр.
-; SELECT/START прерывают вызывающую процедуру через PLA/PLA и переходят в главное меню.
-; Меняет VerticalScroll/NametableBits; портит A и флаги.
+; При достижении $F0 возвращается обычным RTS. SELECT/START снимают со стека
+; двухбайтный адрес возврата от JSR ScrollIntroUntilInput и хвостом переходят
+; в EnterTitleMenu, поэтому к RestartTitleAttractCycle этот путь не возвращается.
+; Меняет VerticalScroll/NametableBits; портит A и флаги, X/Y сохраняет.
 ScrollIntroUntilInput:
 LC7AB:  lda     #$00
         sta     VerticalScroll

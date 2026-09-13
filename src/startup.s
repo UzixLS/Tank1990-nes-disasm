@@ -3,16 +3,22 @@
 ; Восемь байтов ASCII "COPYRIGH" перед первой процедурой банка.
 Prg1CopyrightPrefix:
         .byte   $43,$4F,$50,$59,$52,$49,$47,$48
+
+ResetStackTop        = $6F
+
 BootHook:
-; Вход: X — начало восьмибайтной записи. Очищает её и записывает загрузочный маркер $AB в $46.
-; Вызывается InitializeCoreRuntime при несовпадении RAM-маркера; портит A/X и флаги.
+; Вход: X — начало восьмибайтной записи. Очищает её и записывает
+; BootVariantMarker в GameVariant. Вызывается InitializeCoreRuntime при
+; несовпадении RAM-маркера. Выход: A=BootVariantMarker, X сохраняется;
+; обнуляет семь байтов с X по X+6 и записывает $FF в X+7, портит флаги.
         jsr     ResetEightByteRecord
-        lda     #$AB
+        lda     #BootVariantMarker
         sta     GameVariant
         rts
 
-; Включает NMI и обрабатывает загрузочный маркер $46. Если это $AB, открывает экран выбора варианта.
-; Портит A и PPU_CTRL; обработчик маркера может изменить большую часть UI-состояния.
+; Включает NMI и передаёт GameVariant обработчику загрузочного маркера. При
+; BootVariantMarker синхронно открывает меню вариантов и возвращается после START.
+; Портит A и флаги, меняет PPU_CTRL; меню может изменить UI/PPU state и X/Y.
 EnableNmiAndHandleBootMarker:
 LC010:  jsr     EnableNmiAfterVblank
         lda     GameVariant
@@ -21,11 +27,14 @@ LC010:  jsr     EnableNmiAfterVblank
 
 ; Маршрутизирует ввод огня игрока X в FirePlayerProjectile либо
 ; AdvancePlayerFiringLoop.
-; В обычных режимах A срабатывает по фронту, B — по удержанию; в GameMode=6 любая из A/B — по фронту.
-; Не возвращается; портит A и флаги, X остаётся индексом игрока.
+; В обычных режимах A срабатывает по фронту, B — по удержанию; в
+; CombinedFireGameMode любая из A/B — по фронту. Это continuation
+; UpdatePlayerFiring: хвостом переходит в FirePlayerProjectile либо
+; AdvancePlayerFiringLoop и самостоятельно не возвращается. Портит A и флаги;
+; X остаётся индексом игрока, Y и RAM до выбранного хвоста не меняются.
 DispatchPlayerFireInput:
 LC019:  lda     GameMode
-        cmp     #$06
+        cmp     #CombinedFireGameMode
         beq     CheckCombinedFirePress
         lda     Joy1Pressed,x
         and     #BUTTON_A
@@ -55,9 +64,11 @@ UnreferencedAuthorText:
         .byte   $20
 
 ResetHandler:
-; RESET/IRQ entry: запрещает IRQ, отключает NMI/рендеринг, ждёт два vblank, ставит SP=$6F и полностью
-; инициализирует рабочее состояние, PPU, OAM и звук. Затем запускает цикл заглавного экрана,
-; демо и меню. Не возвращается; все регистры и RAM считаются изменёнными.
+; RESET/IRQ entry: запрещает IRQ, отключает NMI/рендеринг, ждёт два vblank,
+; ставит SP=ResetStackTop и полностью инициализирует рабочее состояние, PPU,
+; OAM и звук. IRQ/BRK также используют этот вектор, поэтому прежний стек
+; намеренно отбрасывается. Затем запускает frontend loop. Не возвращается;
+; все регистры и рабочая RAM считаются изменёнными.
         sei
         lda     #$10
         sta     PPU_CTRL
@@ -70,7 +81,7 @@ LC079:  lda     PPU_STATUS
         sta     PPU_MASK
         dex
         bne     WaitResetVblank
-        ldx     #$6F
+        ldx     #ResetStackTop
         txs
         jsr     ResetExtensionState
         lda     #$00
@@ -79,7 +90,9 @@ LC079:  lda     PPU_STATUS
 MainFrontendLoop:
 ; Верхнеуровневый UI-цикл: строит title nametable, прокручивает заставку,
 ; обслуживает меню и attract mode. Не возвращается; каждый полный перезапуск
-; очищает признак Construction-карты. Меняет всё состояние UI/PPU и A/X/Y.
+; очищает ConstructionMapFlag. EnterTitleMenu — общий continuation для
+; досрочного выхода из intro/attract и тоже не является отдельной процедурой.
+; Меняет всё состояние UI/PPU и A/X/Y.
 LC092:  jsr     EnableNmiAndHandleBootMarker
 RebuildTitleNametable:
 LC095:  jsr     BuildTitleNametable

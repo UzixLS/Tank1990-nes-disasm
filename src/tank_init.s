@@ -1,6 +1,10 @@
 ; Инициализация активного состояния танка ($E4EC-$E55A).
 ; Файл включается из projectiles.s в исходной позиции для сохранения адресов ROM.
 
+InitialPlayerShieldTimer          = $03
+EnemyAttributeStageThreshold     = 12
+EnemyAttributeWideTableIndexMask = $07
+
 ; Заполняет начальное состояние танка. Для противников дополнительные свойства
 ; выбираются псевдослучайно из таблиц типа, bonus-флага и младших битов
 ; атрибутов; точная игровая трактовка каждого младшего бита не предполагается.
@@ -15,7 +19,7 @@ LE4EC:  lda     InitialTankStateBySlot,x
         sta     ObjectState,x
         cpx     #FirstEnemyTankSlot
         bcs     InitializeEnemyTankAttributes
-        lda     #$03
+        lda     #InitialPlayerShieldTimer
         sta     PlayerShieldTimer,x
         lda     PlayerUpgradeLevel,x
         ora     ObjectAttributes,x
@@ -32,7 +36,7 @@ LE505:  jsr     NextRandomByte
         ora     ObjectAttributes,x
         sta     ObjectAttributes,x
         lda     StageNumber
-        cmp     #$0C
+        cmp     #EnemyAttributeStageThreshold
         bcc     SelectEarlyStageBonusAttributeIndex
         jsr     NextRandomByte
         and     #DirectionMask
@@ -40,17 +44,17 @@ LE505:  jsr     NextRandomByte
 
 SelectEarlyStageBonusAttributeIndex:
 LE520:  jsr     NextRandomByte
-        and     #$07
+        and     #EnemyAttributeWideTableIndexMask
 ApplyEnemyBonusAttributeBits:
 LE525:  tay
         lda     EnemyBonusAttributeBits,y
         ora     ObjectAttributes,x
         sta     ObjectAttributes,x
         lda     StageNumber
-        cmp     #$0C
+        cmp     #EnemyAttributeStageThreshold
         bcc     SelectEarlyStageLowAttributeIndex
         jsr     NextRandomByte
-        and     #$07
+        and     #EnemyAttributeWideTableIndexMask
         jmp     ApplyEnemyLowAttributeBits
 
 SelectEarlyStageLowAttributeIndex:

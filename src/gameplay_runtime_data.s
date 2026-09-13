@@ -20,14 +20,19 @@ LC5BF:  .byte   $04,$04,$00,$00,$00,$00,$00,$00
 ; Два нулевых байта без статических ссылок отделяют таблицу от checksum-блока.
 UnreferencedC5c7Prefix:
 LC5C7:  .byte   $00,$00
-; Семь байт входят в runtime XOR и остаются в ScratchPtr как цель аварийного
-; JMP при несовпадении $8D/$8C. Первый байт $40 есть RTI: такой переход не возвращается
-; по обычной цепочке JSR. Смысл остальных шести байт отдельно не подтверждён.
+; Этот $FF-терминированный поток используется как заголовок variant menu и
+; продолжается через $C5D0 до первого $FF по $C5D5. Одновременно первые семь
+; байтов входят в runtime XOR и остаются в ScratchPtr как цель аварийного JMP.
+; Первый байт $40 есть RTI: такой переход не возвращается по обычной цепочке
+; JSR. Смысл отдельных тайлов потока сверх экранного использования не уточняется.
+VariantMenuHeaderText:
 RuntimeChecksumFailureTarget:
 LC5C9:  .byte   $40,$20,$59,$69,$53,$20,$31
-; Хвост после checksum-блока не входит в семибайтный XOR и не имеет подтверждённых ссылок.
-UnreferencedC5d0Tail:
+; Продолжение variant-menu потока; в семибайтный checksum-блок не входит.
+VariantMenuHeaderTextTail:
 LC5D0:  .byte   $39,$39,$30,$69,$32
-; Четыре $FF заполняют остаток до следующей процедуры $C5D9.
+; Первый $FF завершает VariantMenuHeaderText, ещё три заполняют остаток до $C5D9.
 PaddingBeforeClearScreenAndAudio:
-LC5D5:  .byte   $FF,$FF,$FF,$FF
+VariantMenuHeaderTextTerminator:
+LC5D5:  .byte   $FF
+        .byte   $FF,$FF,$FF

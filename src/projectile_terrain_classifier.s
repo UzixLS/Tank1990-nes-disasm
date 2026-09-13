@@ -1,14 +1,17 @@
 ; Variant-классификация местности для снаряда ($EA12-$EA38).
 
 TerrainClearingUpgradeMin = $A0
+ClearableSpecialTerrainTile = $22
+ProjectileBlockingTileLimit = $12
 
 ; Классифицирует tile, прочитанный ProbeProjectileTerrainAtPixel.
 ; Вход: A=tile, TerrainProjectileSlot=projectile slot;
 ; ScratchPtr/Y и TerrainSubcellMask указывают подобласть.
 ; Для player slots 0,1,8,9 и PlayerExtendedUpgrade,owner не ниже
-; TerrainClearingUpgradeMin tile $22 может быть
-; полностью очищен без остановки снаряда. Tile >=$12 в остальных случаях
-; пропускает снаряд; tile <$12 передаётся DestroyProjectileOnTerrain.
+; TerrainClearingUpgradeMin tile ClearableSpecialTerrainTile может быть
+; полностью очищен без остановки снаряда. Tile не ниже
+; ProjectileBlockingTileLimit в остальных случаях пропускает снаряд;
+; меньший tile передаётся DestroyProjectileOnTerrain.
 ; Выход и побочные эффекты совпадают с ResolveProjectileTerrainHit.
 ClassifyTerrainForProjectile:
 LEA12:  pha
@@ -23,14 +26,14 @@ LEA12:  pha
         bcc     RestoreTerrainTileForClassification
         nop
         pla
-        cmp     #$22
+        cmp     #ClearableSpecialTerrainTile
         bne     ClassifyTerrainTileRange
         jmp     DestroyWholeTerrainTile
 
 RestoreTerrainTileForClassification:
 LEA2E:  pla
 ClassifyTerrainTileRange:
-LEA2F:  cmp     #$12
+LEA2F:  cmp     #ProjectileBlockingTileLimit
         bcc     DispatchDestructibleTerrainHit
         jmp     FinishTerrainProbeWithoutPartialDamage
 

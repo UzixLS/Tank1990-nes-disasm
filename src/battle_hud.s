@@ -1,12 +1,22 @@
 ; Обновление номера этапа в HUD ($CA91-$CAF4).
 
+StageNumberHudColumn  = $0C
+StageNumberHudRow     = $0E
+StageNumberDigitColumn= $0E
+StageNumberTileBias   = $6E
+
 ; На границе кадра формирует PPU-команды для надписи и десятичного StageNumber.
-; Сначала пишет тайлы $23..$27,$11,$11 с ($0C,$0E), затем число с bias $6E.
-; Меняет A/X/Y, ScratchPtr, $00, $35-$3C, $60 и PPU-очередь; на выходе $60=0.
+; Сначала ставит тайлы $23..$27,$11,$11 в (StageNumberHudColumn,
+; StageNumberHudRow), затем число с StageNumberTileBias. Обе записи обходят
+; nametable shadow и попадают только в PPU update buffer.
+; Вход: StageNumber. Выход: TileTranslationOffset=0; A=0.
+; Портит X/Y, ScratchPtr, ByteToDecimalInput/ScoreIncrementDigits,
+; DecimalHundreds/Tens/Ones, PpuBufferPos и PpuUpdateBuffer. WaitForNextFrame
+; также обслуживает input, audio, OAM DMA и счётчики кадра.
 UpdateStageNumberDisplay:
 LCA91:  jsr     WaitForNextFrame
-        ldx     #$0C
-        ldy     #$0E
+        ldx     #StageNumberHudColumn
+        ldy     #StageNumberHudRow
         jsr     TileCoordinatesToShadowAddress
         ldx     PpuBufferPos
         clc
@@ -41,14 +51,14 @@ LCA91:  jsr     WaitForNextFrame
         sta     PpuUpdateBuffer,x
         inx
         stx     PpuBufferPos
-        lda     #$6E
+        lda     #StageNumberTileBias
         sta     TileTranslationOffset
         lda     StageNumber
         jsr     ByteToDisplayDigits
-        ldy     #$36
-        ldx     #$0E
+        ldy     #(ScoreIncrementDigits+1)
+        ldx     #StageNumberDigitColumn
         jsr     SelectVisibleDigits
-        ldy     #$0E
+        ldy     #StageNumberHudRow
         jsr     QueueTranslatedTileString
         lda     #$00
         sta     TileTranslationOffset

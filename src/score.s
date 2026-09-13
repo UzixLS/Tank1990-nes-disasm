@@ -1,21 +1,29 @@
 ; Форматирование, сравнение и начисление счёта ($D934-$DA2A).
 ; Файл включается из ppu.s в исходной позиции, чтобы сохранять адреса ROM.
 
+ScoreDigitCount = $07
+ScoreRecordSize = $08
+ScoreTerminator = $FF
+ZeroPageRecordBase     = $00
+ScoreDigit6Offset      = $06
+ScoreTerminatorOffset  = $07
+
 ; Подавляет ведущие нули в нулевой странице и готовит указатель на печатаемую
 ; часть цифровой $FF-терминированной записи. Вход: Y -- адрес первой цифры,
 ; X -- начальная колонка, DigitBlankMode -- режим сдвига пустого числа.
 ; Выход: ScratchPtr=$00:Y, X сдвинут на число пропущенных знаков, A=0.
-; Саму запись не меняет.
+; Y указывает первую ненулевую цифру либо выбранную позицию пустой записи.
+; Саму запись и PPU/OAM не меняет; требует достижимый ScoreTerminator.
 SelectVisibleDigits:
 SkipNextLeadingZero:
-LD934:  lda     $00,y
+LD934:  lda     ZeroPageRecordBase,y
         bne     HandleFirstVisibleDigit
         iny
         inx
         jmp     SkipNextLeadingZero
 
 HandleFirstVisibleDigit:
-LD93E:  cmp     #$FF
+LD93E:  cmp     #ScoreTerminator
         bne     StoreVisibleDigitsPointer
         lda     DigitBlankMode
         bne     AdjustBlankDigitPosition
@@ -33,7 +41,8 @@ LD94A:  lda     #$00
 ; Рисует текущую семизначную запись HighScore крупными CHR-знаками.
 ; Ведущие нули смещают начало на $20 пикселей. Использует CHR bias $30 и
 ; позицию ($10,$64). Меняет A/X/Y, AuxPtr, RasterStringX/Y,
-; TileTranslationOffset и области RasterizeTileStringToShadow.
+; TileTranslationOffset и области RasterizeTileStringToShadow. По выходу
+; TileTranslationOffset=0; HighScore не меняет, PPU queue/OAM не трогает.
 RenderLargeScoreRecord:
 LD951:  lda     #$10
         sta     RasterStringX
@@ -43,7 +52,7 @@ LD951:  lda     #$10
         sta     TileTranslationOffset
         ldy     #HighScore
 SkipNextHighScoreLeadingZero:
-LD95F:  lda     $00,y
+LD95F:  lda     ZeroPageRecordBase,y
         bne     RasterizeVisibleHighScore
         iny
         lda     RasterStringX
@@ -64,7 +73,9 @@ LD96F:  lda     #$00
 ; Сравнивает две семизначные записи Player1Score/Player2Score с HighScore.
 ; Сравнение лексикографическое от старшей цифры; большая запись копируется в
 ; HighScore. Возвращает Y=1, если рекорд обновил P1; Y=$FF -- P2; Y=0 -- никто.
-; A/X и флаги содержат промежуточный результат последнего сравнения/копирования.
+; Если оба превосходят старый рекорд, остаётся P2 только когда он больше уже
+; скопированного P1. Меняет лишь HighScore; A/X/flags зависят от последнего
+; сравнения/копирования, PPU/OAM/audio не трогает.
 UpdateHighScoreRecord:
 LD97D:  ldx     #$00
         ldy     #$00
@@ -73,7 +84,7 @@ LD981:  lda     Player1Score,x
         cmp     HighScore,x
         bne     EvaluatePlayer1ScoreDifference
         inx
-        cpx     #$07
+        cpx     #ScoreDigitCount
         beq     ComparePlayer2Score
         jmp     ComparePlayer1ScoreDigit
 
@@ -84,7 +95,7 @@ CopyNextPlayer1ScoreDigit:
 LD993:  lda     Player1Score,x
         sta     HighScore,x
         inx
-        cpx     #$07
+        cpx     #ScoreDigitCount
         bne     CopyNextPlayer1ScoreDigit
         ldy     #$01
 ComparePlayer2Score:
@@ -94,7 +105,7 @@ LD9A0:  lda     Player2Score,x
         cmp     HighScore,x
         bne     EvaluatePlayer2ScoreDifference
         inx
-        cpx     #$07
+        cpx     #ScoreDigitCount
         beq     FinishHighScoreUpdate
         jmp     ComparePlayer2ScoreDigit
 
@@ -105,7 +116,7 @@ CopyNextPlayer2ScoreDigit:
 LD9B2:  lda     Player2Score,x
         sta     HighScore,x
         inx
-        cpx     #$07
+        cpx     #ScoreDigitCount
         bne     CopyNextPlayer2ScoreDigit
         ldy     #$FF
 FinishHighScoreUpdate:
@@ -114,16 +125,18 @@ LD9BD:  rts
 ; Прибавляет семизначное десятичное ScoreIncrementDigits к записи игрока.
 ; Вход: X -- индекс записи (0 -> Player1Score, 1 -> Player2Score).
 ; Сложение идёт от младшей цифры с переносом по основанию 10; переполнение за
-; семь цифр теряется. Выход X указывает на байт перед записью, Y=$FF.
+; семь цифр теряется. Выход: X указывает байт перед записью, Y=$FF, A — новая
+; старшая цифра, C — потерянный перенос за пределами записи. Меняет только
+; выбранный score record; ScoreIncrementDigits сохраняет.
 AddScoreDigitsToRecord:
 LD9BE:  txa
         asl     a
         asl     a
         asl     a
         clc
-        adc     #$06
+        adc     #(ScoreDigitCount-1)
         tax
-        ldy     #$06
+        ldy     #(ScoreDigitCount-1)
         clc
 AddNextScoreDigit:
 LD9C9:  lda     ScoreIncrementDigits,y
@@ -170,17 +183,18 @@ LD9F9:  lda     #$01
         rts
 
 ; Инициализирует восьмибайтовую запись: семь нулей и завершающий $FF.
-; Вход: X -- базовый адрес в нулевой странице. Выход A=$FF; X/Y не меняются.
+; Вход: X -- базовый адрес в нулевой странице. Выход A=ScoreTerminator;
+; X/Y сохраняются. Пишет ровно ScoreRecordSize байтов начиная с X.
 ResetEightByteRecord:  lda     #$00
-        sta     $00,x
+        sta     ZeroPageRecordBase,x
         sta     $01,x
         sta     $02,x
         sta     $03,x
         sta     $04,x
         sta     $05,x
-        sta     Joy1Held,x
-        lda     #$FF
-        sta     Joy2Held,x
+        sta     ScoreDigit6Offset,x
+        lda     #ScoreTerminator
+        sta     ScoreTerminatorOffset,x
         rts
 
 ; Преобразует беззнаковый байт A в DecimalHundreds/Tens/Ones,

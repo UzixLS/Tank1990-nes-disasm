@@ -3,11 +3,13 @@
 ; $FF-терминированные строки экранного шрифта. ASCII-подобные байты совпадают
 ; с видимыми латинскими буквами; значения вне этого диапазона — специальные
 ; тайлы/значки, поэтому ниже они не интерпретируются как управляющий язык.
+; QueueTileAtCoordinates копирует строку и в shadow, и в PPU update buffer;
+; терминатор служит только потоку и в shadow не записывается.
 CreditsWrittenByText:
 LD284:  .byte   $57,$52,$49,$54,$54,$45,$4E,$20,$42,$59,$FF
 CreditsCopyrightText:
 LD28F:  .byte   $40,$20,$59,$53,$20,$31,$39,$39,$30,$FF
-TitleDecorativeTileRow:
+; Шеститайловая нижняя строка голой базы для специальной ветви PowerUpEffect2.
 IntactBaseLowerRow:
 LD299:  .byte   $00,$00,$C9,$CB,$00,$00,$FF
 TitleCityText:
@@ -16,12 +18,14 @@ PlayerOneScorePrefix:
 LD2A5:  .byte   $5E,$6B,$FF
 PlayerTwoScorePrefix:
 LD2A8:  .byte   $5F,$6B,$FF
+; Компактные двухтайловые метки игроков для боевого HUD.
 PlayerOneCompactMarker:
 LD2AB:  .byte   $58,$13,$FF
 PlayerTwoCompactMarker:
 LD2AE:  .byte   $5A,$13,$FF
 HighScoreCompactPrefix:
 LD2B1:  .byte   $48,$49,$6B,$FF
+; Полная и сокращённая подписи рекорда используются разными экранами.
 HighScoreText:
 LD2B5:  .byte   $48,$49,$53,$43,$4F,$52,$45,$FF
 HighScoreStatisticsPrefix:

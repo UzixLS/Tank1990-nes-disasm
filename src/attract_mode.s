@@ -1,8 +1,13 @@
 ; Подготовка и кадровый цикл attract mode ($C3B5-$C44A).
 
-; Готовит демо-этап для attract mode: сбрасывает сессию, загружает служебную карту StageNumber=$FF,
-; затем ставит StageNumber=$1E, StageSetLength=2, рисует демо-экран и запускает игру с GameMode=5.
-; Меняет всю session/game RAM, PPU/OAM и A/X/Y.
+AttractLoadedStageSentinel = $FF
+AttractDisplayedStage      = $1E
+
+; Готовит демо-этап: сохраняет score records, но сбрасывает остальную сессию;
+; загружает служебную карту через StageNumber=$FF, затем выставляет видимый этап
+; 30 и StageSetLength=2 как attract-маркер. Рисует заголовок варианта/год,
+; инициализирует runtime и возвращает с GameMode=OnePlayerGameMode.
+; Выход: A=OnePlayerGameMode; меняет почти всю session/game RAM, shadow/PPU и A/X/Y.
 InitializeAttractMode:
 LC3B5:  lda     #$01
         sta     PauseState
@@ -17,12 +22,12 @@ LC3B5:  lda     #$01
         sta     SlowFrameCounter
         sta     FrameCounter
         jsr     InitializePlayfieldRectangle
-        lda     #$FF
+        lda     #AttractLoadedStageSentinel
         sta     StageNumber
         jsr     LoadAndDrawStage
-        lda     #$1E
+        lda     #AttractDisplayedStage
         sta     StageNumber
-        lda     #$02
+        lda     #AttractStageSetMarker
         sta     StageSetLength
         jsr     DisableRenderingForBulkUpdate
         ldx     #$1A
@@ -52,12 +57,15 @@ LC3B5:  lda     #$01
         jsr     InitializeStageRuntime
         jsr     DrawBrickBaseEnclosure
         jsr     WaitForNextFrame
-        lda     #$05
+        lda     #OnePlayerGameMode
         sta     GameMode
         rts
 
-; Кадровый цикл демо-режима. Генерирует ввод ботов и выполняет обычные шаги логики/отрисовки до исхода этапа.
-; SELECT/START снимают адрес возврата со стека, очищают экран и сразу возвращаются к title. Портит всю game RAM и A/X/Y.
+; Кадровый цикл демо: генерирует ввод и выполняет обычные logic/render passes.
+; При штатном завершении этапа очищает PpuBufferPos и возвращается вызывающему.
+; SELECT/START снимают со стека двухбайтный адрес возврата от JSR RunAttractMode,
+; очищают экран и хвостом переходят в EnterTitleMenu; этот путь не возвращается.
+; Портит игровую RAM, shadow/PPU/OAM/audio state и A/X/Y.
 RunAttractMode:
 LC41D:  jsr     WaitForNextFrame
         lda     Joy1Pressed

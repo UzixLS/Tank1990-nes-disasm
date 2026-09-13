@@ -1,5 +1,8 @@
 ; Изменение номера этапа из экрана выбора ($E9F2-$EA0E).
 
+ExtendedStageVariantIndex = ExtendedStageVariant
+ExtendedStageEndSentinel  = ExtendedStageUpperBound + 1
+
 ; Увеличивает StageNumber. Обычно возвращает новое значение в A.
 ; Для (GameVariant & $0F)=6 диапазон равен 1..$76: $77 заменяется на 1.
 ; В этом варианте процедура всегда снимает адрес возврата и переходит прямо в
@@ -7,17 +10,17 @@
 AdvanceStageNumber:
 LE9F2:  inc     StageNumber
         lda     GameVariant
-        and     #$0F
-        cmp     #$06
+        and     #GameVariantIndexMask
+        cmp     #ExtendedStageVariantIndex
         beq     WrapExtendedStageRange
         lda     StageNumber
         rts
 
 WrapExtendedStageRange:
 LE9FF:  lda     StageNumber
-        cmp     #$77
+        cmp     #ExtendedStageEndSentinel
         bne     ResumeStageSelectionAfterIncrement
-        lda     #$01
+        lda     #FirstStageNumber
         sta     StageNumber
 ResumeStageSelectionAfterIncrement:
 LEA09:  pla

@@ -1,13 +1,21 @@
 ; PAUSE, переходный объект и прямоугольник поля ($C8F9-$C9BF).
 
-; При $6D!=0 мигает пятью двухтайловыми знаками в центре экрана на фазе FrameCounter&$10.
+PauseVisibleFrameBit          = $10
+TransitionMoveTimerThreshold = $0A
+TransitionUpdateFrameMask    = $0F
+PlayfieldRectangleOrigin     = $02
+PlayfieldRectangleSize       = $1A
+
+; При PauseState!=0 рисует пять однотайловых OAM-знаков в центре экрана на
+; фазе FrameCounter&PauseVisibleFrameBit.
 ; На время отрисовки сбрасывает SpriteBehindTerrainMask и затем восстанавливает
-; $20; портит A/X/Y, $04/OamTile и OAM shadow.
+; его в $20 (не прежнее значение). На невидимой фазе ничего не меняет кроме
+; A/флагов; при отрисовке портит A/X/Y, ScratchPtr, render/OAM scratch и OAM shadow.
 DrawPauseOverlay:
 LC8F9:  lda     PauseState
         beq     FinishPauseOverlay
         lda     FrameCounter
-        and     #$10
+        and     #PauseVisibleFrameBit
         beq     FinishPauseOverlay
         lda     #$03
         sta     RenderAttributes
@@ -43,9 +51,10 @@ LC8F9:  lda     PauseState
 FinishPauseOverlay:
 LC946:  rts
 
-; Рисует двухчастный переходный объект по TransitionObjectX/Y и кодам $79/$7D.
-; Портит A/X/Y, $04, OamTile, SpriteBehindTerrainMask и OAM shadow;
-; восстанавливает SpriteBehindTerrainMask=$20.
+; Рисует переходный объект из двух двухспрайтовых пар по TransitionObjectX/Y
+; с базовыми тайлами $79/$7D. Координаты и timer не меняет. Портит A/X/Y,
+; ScratchPtr, render/OAM scratch, SpriteBehindTerrainMask и OAM shadow;
+; в конце устанавливает SpriteBehindTerrainMask=$20 независимо от входа.
 DrawTransitionObject:
 LC947:  lda     #$03
         sta     RenderAttributes
@@ -69,26 +78,28 @@ LC947:  lda     #$03
         rts
 
 ; Обновляет переходную анимацию TransitionObjectX..TransitionObjectTimer,
-; кроме attract mode (StageSetLength=2).
+; кроме attract mode (StageSetLength=AttractStageSetMarker).
 ; Каждые 16 кадров уменьшает TransitionObjectTimer; пока он >=$0A, двигает
-; объект по TransitionObjectDirection, затем рисует.
-; При обнулении прячет объект при Y=$F0. Портит A/X/Y и OAM shadow при отрисовке.
+; объект на один пиксель по TransitionObjectDirection, затем рисует.
+; При обнулении ставит Y=$F0 и последний раз рисует за экраном. При timer=0
+; либо attract-маркере возвращается без отрисовки. Портит A/X/Y, ScratchPtr,
+; transition/render scratch и OAM shadow при активной анимации; PPU не меняет.
 UpdateTransitionObject:
 LC972:  lda     TransitionObjectTimer
         beq     FinishTransitionObjectUpdate
         lda     StageSetLength
-        cmp     #$02
+        cmp     #AttractStageSetMarker
         beq     FinishTransitionObjectUpdate
         lda     FrameCounter
-        and     #$0F
+        and     #TransitionUpdateFrameMask
         bne     UpdateTransitionObjectPosition
         dec     TransitionObjectTimer
         bne     UpdateTransitionObjectPosition
-        lda     #$F0
+        lda     #StageEndObjectHiddenY
         sta     TransitionObjectY
 UpdateTransitionObjectPosition:
 LC98D:  lda     TransitionObjectTimer
-        cmp     #$0A
+        cmp     #TransitionMoveTimerThreshold
         bcc     DrawCurrentTransitionObject
         lda     TransitionObjectDirection
         tay
@@ -105,13 +116,14 @@ LC9AC:  jsr     DrawTransitionObject
 FinishTransitionObjectUpdate:
 LC9AF:  rts
 
-; Готовит параметры прямоугольника (2,2), 26x26 тайлов и вызывает InitializePlayfieldShadow.
-; Портит A/X/Y, NametableRect* и nametable shadow/PPU work state по контракту вызываемой процедуры.
+; Готовит параметры прямоугольника (2,2), 26x26 тайлов и вызывает
+; InitializePlayfieldShadow. Портит A/X/Y, NametableRect*,
+; ScratchPtr и shadow/PPU work state по контракту вызываемой процедуры.
 InitializePlayfieldRectangle:
-LC9B0:  lda     #$02
+LC9B0:  lda     #PlayfieldRectangleOrigin
         sta     NametableRectX
         sta     NametableRectY
-        lda     #$1A
+        lda     #PlayfieldRectangleSize
         sta     NametableRectHeight
         sta     NametableRectWidth
         jsr     InitializePlayfieldShadow

@@ -8,6 +8,13 @@ TankCenterShadowOffset  = $21
 
 TankOccupancyBelowFlag = $80
 TankOccupancyRightFlag = $40
+TankHalfExtentPixels    = $08
+TileAlignmentMask       = $07
+ShadowPageIndexMask     = $03
+NametableShadowBasePage = $04
+ShadowRowStride         = $20
+TileOccupiedFlag        = $80
+TileUnoccupiedMask      = $7F
 
 ; Перед движением помечает в nametable shadow клетки активных танков 7..0.
 ; PixelCoordinatesToShadowPointer возвращает адрес для точки
@@ -26,18 +33,18 @@ LE185:  ldx     OccupancyTankSlot
         bcs     AdvanceTankOccupancySlot
         lda     ObjectY,x
         sec
-        sbc     #$08
+        sbc     #TankHalfExtentPixels
         tay
         lda     ObjectX,x
         sec
-        sbc     #$08
+        sbc     #TankHalfExtentPixels
         tax
         jsr     PixelCoordinatesToShadowPointer
         ldx     OccupancyTankSlot
         lda     ScratchPtrLo
         sta     TankShadowPtrLo,x
         lda     ScratchPtrHi
-        and     #$03
+        and     #ShadowPageIndexMask
         sta     TankShadowPtrHiAndFlags,x
         ldy     #TankCenterShadowOffset
         cpx     #FirstEnemyTankSlot
@@ -57,16 +64,16 @@ LE1C1:  lda     PlayerIceState,x
 MarkTankCenterOccupied:
 LE1C9:  jsr     SetTileOccupiedFlag
         lda     ObjectX,x
-        and     #$07
+        and     #TileAlignmentMask
         bne     CheckTankVerticalAlignment
         lda     TankShadowPtrHiAndFlags,x
         ora     #TankOccupancyBelowFlag
         sta     TankShadowPtrHiAndFlags,x
-        ldy     #$20
+        ldy     #ShadowRowStride
         jsr     SetTileOccupiedFlag
 CheckTankVerticalAlignment:
 LE1DD:  lda     ObjectY,x
-        and     #$07
+        and     #TileAlignmentMask
         bne     AdvanceTankOccupancySlot
         lda     TankShadowPtrHiAndFlags,x
         ora     #TankOccupancyRightFlag
@@ -81,7 +88,7 @@ LE1EE:  dec     OccupancyTankSlot
 ; Вход: ScratchPtr+Y — байт nametable shadow. Ставит bit7; портит A и флаги.
 SetTileOccupiedFlag:
 LE1F3:  lda     (ScratchPtrLo),y
-        ora     #$80
+        ora     #TileOccupiedFlag
         sta     (ScratchPtrLo),y
         rts
 
@@ -99,15 +106,15 @@ LE1FE:  ldx     OccupancyTankSlot
         lda     TankShadowPtrLo,x
         sta     ScratchPtrLo
         lda     TankShadowPtrHiAndFlags,x
-        and     #$03
-        ora     #$04
+        and     #ShadowPageIndexMask
+        ora     #NametableShadowBasePage
         sta     ScratchPtrHi
         ldy     #TankCenterShadowOffset
         jsr     ClearTileOccupiedFlag
         lda     TankShadowPtrHiAndFlags,x
         and     #TankOccupancyBelowFlag
         beq     ClearTankVerticalOccupancy
-        ldy     #$20
+        ldy     #ShadowRowStride
         jsr     ClearTileOccupiedFlag
 ClearTankVerticalOccupancy:
 LE224:  lda     TankShadowPtrHiAndFlags,x
@@ -123,6 +130,6 @@ LE22F:  dec     OccupancyTankSlot
 ; Вход: ScratchPtr+Y — байт nametable shadow. Снимает bit7; портит A и флаги.
 ClearTileOccupiedFlag:
 LE234:  lda     (ScratchPtrLo),y
-        and     #$7F
+        and     #TileUnoccupiedMask
         sta     (ScratchPtrLo),y
         rts

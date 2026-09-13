@@ -33,9 +33,9 @@ LD2F8:  lda     #$00
         sta     ScratchPtrHi
         jsr     XorSevenByteBlock
         lda     #RuntimeChecksumExpectedValue
-; Legacy screen helper starts at the operand byte of the following zero-page
-; STA and treats machine code from there as a $FF-terminated tile stream.
-; The +1 is intentional: the STA opcode itself is at the current address.
+; Legacy-обработчик экрана начинает строковый поток с operand следующего
+; zero-page STA и трактует машинный код оттуда как $FF-терминированные тайлы.
+; Смещение +1 намеренно: по текущему адресу находится сам opcode STA.
 LegacyChecksumCodeStreamStart = * + 1
         sta     RuntimeChecksumExpected
         rts

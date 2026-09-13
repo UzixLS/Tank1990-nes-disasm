@@ -3,13 +3,21 @@
 ; Проверяет power-up в (PowerUpX,PowerUpY) против активных танков.
 ; PowerUpX=0 означает отсутствие объекта; ненулевой PowerUpPickupDisplayTimer
 ; запрещает повторную проверку. BeginPowerUpCollectorScan выбирает слоты 1..0
-; при GameVariant<=7 или 7..0 при GameVariant>7. Квадрат захвата: |dx|<12,
-; |dy|<12. PowerUpType=$FF используется SpawnPowerUp как проверка свободного места.
+; при GameVariant<=7 или 7..0 при GameVariant>7. Квадрат захвата:
+; |dx| и |dy| меньше PowerUpPickupHalfExtent. Отрицательный PowerUpType
+; используется SpawnPowerUp как проверка свободного места без применения эффекта.
 ; При настоящем подборе обычно начисляет игроку 500 очков и запускает звук;
-; PowerUpScoreSuppressionState=$06 пропускает награду и звук, но не сам эффект.
+; PowerUpScoreSuppressionValue в PowerUpScoreSuppressionState пропускает
+; награду и звук, но не сам эффект.
 ; Dispatch снимает со стека адрес возврата UpdatePowerUpPickup: RTS обработчика
 ; возвращает вызывающему её caller-а и тем самым пропускает остаток caller-а.
+; Вне короткого прохода pickup этот адрес является ProjectileY+4; отдельного
+; постоянного поля для suppression state в RAM нет.
 PowerUpScoreSuppressionState = $C6
+PowerUpPickupHalfExtent      = 12
+PowerUpPickupDisplayDuration = $32
+PowerUpPackedScoreAward      = $50
+PowerUpScoreSuppressionValue = $06
 UpdatePowerUpPickup:
 LE972:  lda     PowerUpX
         beq     FinishPowerUpPickupScan
@@ -34,7 +42,7 @@ LE97E:  ldx     PowerUpCollectorSlot
         clc
         adc     #$01
 PowerUpXDistanceReady:
-LE994:  cmp     #$0C
+LE994:  cmp     #PowerUpPickupHalfExtent
         bcs     AdvancePowerUpCollectorScan
         lda     ObjectY,x
         sec
@@ -44,16 +52,16 @@ LE994:  cmp     #$0C
         clc
         adc     #$01
 PowerUpYDistanceReady:
-LE9A4:  cmp     #$0C
+LE9A4:  cmp     #PowerUpPickupHalfExtent
         bcs     AdvancePowerUpCollectorScan
-        lda     #$32
+        lda     #PowerUpPickupDisplayDuration
         sta     PowerUpPickupDisplayTimer
         lda     PowerUpType
         bmi     FinishPowerUpPickupScan
         lda     PowerUpScoreSuppressionState
-        cmp     #$06
+        cmp     #PowerUpScoreSuppressionValue
         beq     DispatchCollectedPowerUp
-        lda     #$50
+        lda     #PowerUpPackedScoreAward
         jsr     PreparePackedScoreIncrement
         ldx     PowerUpCollectorSlot
         ; AddPreparedScoreForPlayerSlot работает только для слотов игроков 0/1.

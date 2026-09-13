@@ -23,7 +23,7 @@ LE47E:  .byte   TankStateActiveClass | DIRECTION_UP
         .byte   TankStateActiveClass | DIRECTION_DOWN
         .byte   TankStateActiveClass | DIRECTION_DOWN
         .byte   TankStateActiveClass | DIRECTION_DOWN
-; Восемнадцать состояний $A0..$A3, используемых ИИ для выбора направления.
+; Восемнадцать записей состояний $A0..$A3, используемых ИИ для выбора направления.
 TankAiDirectionStateTable:
 LE486:  .byte   TankStateActiveClass | DIRECTION_UP
         .byte   TankStateActiveClass | DIRECTION_UP

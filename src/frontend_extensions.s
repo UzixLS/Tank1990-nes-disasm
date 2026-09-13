@@ -1,5 +1,15 @@
 ; Дополнительные данные и обработчики меню Tank 1990 ($FCFC-$FD93).
 
+VariantMenuTextColumn       = $0B
+StandardVariantMenuFirstRow = $09
+ExtendedVariantMenuRowBias  = $07
+SecretInitialLivesCode      = $0F
+SecretInitialLifeCount      = $15
+DownInitialLifeCount        = $08
+UpInitialLifeCount          = $0B
+DefaultInitialLifeCount     = $03
+TwoPlayerMenuSelection      = $01
+
 ; $FCFC..$FCFF — хвост неидентифицированного потока данных; статических ссылок нет.
 HiBankPrefixData:
         .byte   $20,$D2,$0D,$2D
@@ -41,14 +51,14 @@ LFD16:  sta     ScratchPtrLo
 ; 16+(GameVariant & $0F) для отрицательных. Портит A/X/Y, AuxPtr, флаги,
 ; PPU-очередь и соответствующие байты shadow nametable; ScratchPtr сохраняется.
 QueueVariantMenuText:
-LFD27:  ldx     #$0B
+LFD27:  ldx     #VariantMenuTextColumn
         lda     GameVariant
         clc
         bpl     FinishVariantMenuRow
-        and     #$0F
-        adc     #$07
+        and     #GameVariantIndexMask
+        adc     #ExtendedVariantMenuRowBias
 FinishVariantMenuRow:
-LFD32:  adc     #$09
+LFD32:  adc     #StandardVariantMenuFirstRow
         tay
         jsr     QueueTileAtCoordinates
         rts
@@ -59,37 +69,40 @@ UnreferencedFd39Data:
         .byte   $DD,$DD,$D9,$99,$DD
 
 ; Выбирает начальное число жизней по состоянию меню/ввода.
-; Приоритет условий: TitleSecretInputCode=$0F, удержание Down, удержание Up,
-; значение по умолчанию. Выход: соответственно A=$15/$08/$0B/$03.
+; Приоритет условий: TitleSecretInputCode=SecretInitialLivesCode, удержание
+; Down, удержание Up, значение по умолчанию. Выход: соответственно
+; SecretInitialLifeCount, DownInitialLifeCount, UpInitialLifeCount или
+; DefaultInitialLifeCount.
 ; RAM и X/Y не меняет; портит флаги.
 SelectInitialLifeCount:
 LFD46:  lda     TitleSecretInputCode
-        cmp     #$0F
+        cmp     #SecretInitialLivesCode
         bne     CheckInitialLivesDown
-        lda     #$15
+        lda     #SecretInitialLifeCount
         rts
 
 CheckInitialLivesDown:
 LFD4F:  lda     Joy1Held
         and     #BUTTON_DOWN
         beq     CheckInitialLivesUp
-        lda     #$08
+        lda     #DownInitialLifeCount
         rts
 
 CheckInitialLivesUp:
 LFD58:  lda     Joy1Held
         and     #BUTTON_UP
         beq     ReturnDefaultInitialLives
-        lda     #$0B
+        lda     #UpInitialLifeCount
         rts
 
 ReturnDefaultInitialLives:
-LFD61:  lda     #$03
+LFD61:  lda     #DefaultInitialLifeCount
         rts
 
 ; Секретная комбинация продолжения: P1 A и P2 A+B. Если P1 выбыл, ему
-; восстанавливаются 3 жизни; иначе то же делается для выбывшего P2. Только после
-; восстановления включает двух игроков и GameMode=$07. Если оба живы или chord
+; восстанавливаются DefaultInitialLifeCount жизней; иначе то же делается для
+; выбывшего P2. Только после восстановления включает двух игроков и
+; GameMode=TwoPlayerGameMode. Если оба живы или chord
 ; неполон, состояние не меняется. Всегда хвостом переходит в SelectStage и сама
 ; не возвращается; портит A и флаги, X/Y сохраняет до перехода.
 HandleSecretContinueChord:
@@ -104,19 +117,19 @@ LFD64:  lda     Joy1Held
         beq     FinishSecretContinue
         lda     Player1Lives
         bne     RestorePlayer2ForSecretContinue
-        lda     #$03
+        lda     #DefaultInitialLifeCount
         sta     Player1Lives
         bne     EnableSecretContinue
         nop
 RestorePlayer2ForSecretContinue:
 LFD81:  lda     Player2Lives
         bne     FinishSecretContinue
-        lda     #$03
+        lda     #DefaultInitialLifeCount
         sta     Player2Lives
 EnableSecretContinue:
-LFD89:  lda     #$01
+LFD89:  lda     #TwoPlayerMenuSelection
         sta     MenuSelection
-        lda     #$07
+        lda     #TwoPlayerGameMode
         sta     GameMode
 FinishSecretContinue:
 LFD91:  jmp     SelectStage

@@ -1,6 +1,10 @@
 ; Создание и позиционирование усиления на поле ($E8BE-$E90F).
 
 PowerUpCoordinateGridIndex = $00
+PowerUpCoordinateIndexMask = $03
+PowerUpRandomTypeIndexMask  = $07
+PowerUpPlacementProbeType  = $FF
+PowerUpCoordinateBaseUnits = 6
 
 ; Выбирает свободную позицию и тип появляющегося power-up.
 ; PowerUpX/Y получают одну из координат 48,96,144,192. Пока кандидат пересекается
@@ -14,14 +18,14 @@ LE8BE:  lda     #AudioStateStartRequested
         sta     PowerUpSpawnAudioState
 ChoosePowerUpCoordinates:
 LE8C3:  jsr     NextRandomByte
-        and     #$03
+        and     #PowerUpCoordinateIndexMask
         jsr     GridIndexToPowerUpCoordinate
         sta     PowerUpX
         jsr     NextRandomByte
-        and     #$03
+        and     #PowerUpCoordinateIndexMask
         jsr     GridIndexToPowerUpCoordinate
         sta     PowerUpY
-        lda     #$FF
+        lda     #PowerUpPlacementProbeType
         sta     PowerUpType
         lda     #$00
         sta     PowerUpPickupDisplayTimer
@@ -29,7 +33,7 @@ LE8C3:  jsr     NextRandomByte
         lda     PowerUpPickupDisplayTimer
         bne     ChoosePowerUpCoordinates
         jsr     NextRandomByte
-        and     #$07
+        and     #PowerUpRandomTypeIndexMask
         tay
         jsr     SelectPowerUpTypeForVariant
         sta     PowerUpType
@@ -52,7 +56,7 @@ LE902:  sta     PowerUpCoordinateGridIndex
         adc     PowerUpCoordinateGridIndex
         asl     a
         clc
-        adc     #$06
+        adc     #PowerUpCoordinateBaseUnits
         asl     a
         asl     a
         asl     a

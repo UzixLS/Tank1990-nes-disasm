@@ -1,7 +1,11 @@
 ; Рисование и движение курсора Construction ($C6C6-$C71D).
 
-; Рисует в Construction метатайл ConstructionMetatileIndex&$0F в координатах курсора ObjectX/ObjectY.
-; Портит A/X/Y и nametable shadow/PPU-очередь через DrawMetatile.
+ConstructionMoveInitialDelay = $14
+ConstructionMoveRepeatReload = $0F
+
+; Рисует метатайл ConstructionMetatileIndex&$0F в координатах ObjectX/ObjectY.
+; Входные RAM-поля не меняет; портит A/X/Y и ScratchPtr, изменяет shadow
+; nametable/атрибуты и PPU-очередь через DrawMetatile.
 DrawConstructionMetatile:
 LC6C6:  lda     ConstructionMetatileIndex
         and     #$0F
@@ -10,9 +14,10 @@ LC6C6:  lda     ConstructionMetatileIndex
         jsr     DrawMetatile
         rts
 
-; Двигает Construction-курсор на 16 px по фронту D-pad; после 20 кадров удержания включает автоповтор,
-; оставляя ConstructionMoveRepeatTimer=$0F между шагами. Меняет ObjectX/ObjectY,
-; ConstructionMoveRepeatTimer/ConstructionEditLatch; портит A/Y и флаги, X не меняет.
+; Двигает Construction-курсор на 16 px по фронту D-pad. После 20 вызовов
+; удержания включает повтор с периодом 5 вызовов: после каждого шага таймер
+; перезагружается значением 15. Любой удерживаемый D-pad обнуляет
+; ConstructionEditLatch. Портит A/Y и флаги, X сохраняет; PPU/OAM не меняет.
 UpdateConstructionCursor:
 LC6D2:  lda     Joy1Held
         and     #BUTTON_DIRECTIONS
@@ -27,7 +32,7 @@ LC6E1:  lda     #$00
         sta     ConstructionMoveRepeatTimer
 CheckConstructionMoveStep:
 LC6E5:  lda     ConstructionMoveRepeatTimer
-        cmp     #$14
+        cmp     #ConstructionMoveInitialDelay
         beq     RepeatConstructionCursorMove
         lda     Joy1Pressed
         and     #BUTTON_DIRECTIONS
@@ -38,7 +43,7 @@ LC6E5:  lda     ConstructionMoveRepeatTimer
         jmp     ApplyConstructionCursorMove
 
 RepeatConstructionCursorMove:
-LC6FB:  lda     #$0F
+LC6FB:  lda     #ConstructionMoveRepeatReload
         sta     ConstructionMoveRepeatTimer
         lda     Joy1Held
         jsr     DecodeDirectionButtons

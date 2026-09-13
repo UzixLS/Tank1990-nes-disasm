@@ -1,10 +1,16 @@
 ; Инициализация объектов и счётчиков выбранного этапа ($C331-$C3B4).
 
+EnemyCountPerStage          = $14
+FirstLateStageNumber        = $0C
+EarlyStageIntervalNumerator = $0C
+
 ; Инициализирует рабочее состояние выбранного этапа: очищает танки/снаряды, создаёт танки живых игроков,
-; задаёт 20 врагов в $7F/$80, сбрасывает таймеры/флаги, рисует HUD и включает активную фазу $68=$80.
+; задаёт EnemyCountPerStage в EnemiesToSpawn/EnemiesRemaining, сбрасывает
+; таймеры/флаги, рисует HUD и включает BattleStateActive.
 ; Для этапов 1..11 выбирает псевдослучайный EnemyActivityInterval из
 ; EarlyStageSpawnDelayTable, для поздних — 0.
-; Меняет объекты, HUD/PPU-очередь, RNG и рабочую RAM; портит A/X/Y.
+; Меняет объекты, HUD/PPU-очередь и рабочую RAM; для этапов 1..11 также RNG.
+; Портит A/X/Y и ScratchPtr; OAM/APU напрямую не меняет.
 InitializeStageRuntime:
 LC331:  jsr     ClearProjectileStates
         jsr     ClearTankStates
@@ -22,7 +28,7 @@ LC34A:  lda     Player2Lives
         ldx     #$01
         jsr     SpawnTank
 InitializeStageCounters:
-LC353:  lda     #$14
+LC353:  lda     #EnemyCountPerStage
         sta     EnemiesToSpawn
         sta     EnemiesRemaining
         lda     #$00
@@ -53,14 +59,16 @@ LC353:  lda     #$14
         sta     GameplayLoopAudioState
         sta     StageSelectionLocked
         lda     StageNumber
-        cmp     #$0C
+        cmp     #FirstLateStageNumber
         bcc     SelectEarlyStageActivityInterval
         lda     #$00
         sta     EnemyActivityInterval
         rts
 
 SelectEarlyStageActivityInterval:
-LC39C:  lda     #$0C
+; Вычисляет делитель 12-StageNumber, сводит случайный байт к остатку повторным
+; вычитанием и использует его как индекс EarlyStageSpawnDelayTable.
+LC39C:  lda     #EarlyStageIntervalNumerator
         sec
         sbc     StageNumber
         sta     EnemyActivityInterval
