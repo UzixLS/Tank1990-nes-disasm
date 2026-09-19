@@ -1,6 +1,8 @@
 ; Главный проход логики танков и dispatch состояний ($DBF1-$DC51).
 
 TankAlwaysUpdateAttributeClass = $A0
+EnemyFreezeTickMask            = $3F
+TankUpdateSlotParityMask       = $01
 
 ; Обновляет восемь танков в обратном порядке. Расписание пропускает часть объектов
 ; по чётности FrameCounter/слота; танки игроков обслуживаются по отдельному ритму.
@@ -13,7 +15,7 @@ LDBF1:  lda     #(TankSlotCount-1)
         lda     EnemyFreezeTimer
         beq     UpdateNextTank
         lda     FrameCounter
-        and     #$3F
+        and     #EnemyFreezeTickMask
         bne     UpdateNextTank
         dec     EnemyFreezeTimer
 UpdateNextTank:
@@ -21,10 +23,10 @@ LDC03:  ldx     CurrentTankSlot
         cpx     #FirstEnemyTankSlot
         bcs     CheckEnemyTankSchedule
         lda     FrameCounter
-        and     #$01
+        and     #PlayerTankScheduleOddFrameMask
         bne     RunTankLogicForSlot
         lda     FrameCounter
-        and     #$03
+        and     #PlayerTankScheduleModulo4Mask
         bne     SkipTankLogicForSlot
         jmp     RunTankLogicForSlot
 
@@ -37,12 +39,12 @@ LDC18:  lda     EnemyFreezeTimer
         bcc     SkipTankLogicForSlot
 ApplyTankUpdateSchedule:
 LDC25:  lda     ObjectAttributes,x
-        and     #$F0
+        and     #ObjectAttributeClassMask
         cmp     #TankAlwaysUpdateAttributeClass
         beq     RunTankLogicForSlot
         lda     CurrentTankSlot
         eor     FrameCounter
-        and     #$01
+        and     #TankUpdateSlotParityMask
         beq     SkipTankLogicForSlot
 RunTankLogicForSlot:
 LDC35:  jsr     DispatchTankLogic
@@ -59,7 +61,7 @@ LDC3D:  lda     ObjectState,x
         lsr     a
         lsr     a
         lsr     a
-        and     #$FE
+        and     #DispatchWordIndexMask
         tay
         lda     TankLogicHandlers,y
         sta     ScratchPtrLo

@@ -10,6 +10,16 @@ ProjectileFlagBreakSteel = $02
 ProjectileFlagsMaximum   = ProjectileFlagFast + ProjectileFlagBreakSteel
 PlayerDoubleShotClass    = $40
 PlayerProjectileSlotMask = $06
+ProjectileExplosionClassStep       = $10
+ProjectileExplosionPhaseDelay      = $03
+ProjectileExplosionRenderClassBias = $40
+ActiveProjectileRenderPalette      = $02
+ActiveProjectileTileBase           = $B1
+ProjectileNormalAttributeClass     = $C0
+ProjectileStrongAttributeClass     = $60
+ProjectileAttributeHighBit         = $80
+PlayerProjectileClassMask          = $C0
+EnemyFireRandomMask                = $1F
 
 UpdateProjectiles:
 ; Обновляет все 10 слотов снарядов от 9 до 0 через DispatchProjectileLogic.
@@ -34,7 +44,7 @@ LE03C:  lda     ProjectileState,x
         lsr     a
         lsr     a
         lsr     a
-        and     #$FE
+        and     #DispatchWordIndexMask
         tay
         lda     ProjectileLogicHandlers,y
         sta     ScratchPtrLo
@@ -79,14 +89,14 @@ ProjectileLogicStates1To3:
 ; портит A и флаги. Координаты и остальные поля снаряда не меняются.
         dec     ProjectileState,x
         lda     ProjectileState,x
-        and     #$0F
+        and     #StateLowNibbleMask
         bne     FinishProjectileExplosionTick
         lda     ProjectileState,x
         and     #StateClassMask
         sec
-        sbc     #$10
+        sbc     #ProjectileExplosionClassStep
         beq     StoreProjectileExplosionState
-        ora     #$03
+        ora     #ProjectileExplosionPhaseDelay
 StoreProjectileExplosionState:
 LE089:  sta     ProjectileState,x
 FinishProjectileExplosionTick:
@@ -142,11 +152,11 @@ LE0BF:  .byte   $F0
 DecodeProjectileFlagsFromAttributes:
 LE0C0:
         beq     FinishProjectileInitialization
-        cmp     #$C0
+        cmp     #ProjectileNormalAttributeClass
         beq     SetNormalProjectileFlags
-        cmp     #$60
+        cmp     #ProjectileStrongAttributeClass
         beq     SetStrongProjectileFlags
-        and     #$80
+        and     #ProjectileAttributeHighBit
         bne     FinishProjectileInitialization
 SetNormalProjectileFlags:
 LE0CE:  lda     #ProjectileFlagFast
@@ -181,7 +191,7 @@ LE0E6:  lda     ProjectileState,x
         lsr     a
         lsr     a
         lsr     a
-        and     #$FE
+        and     #DispatchWordIndexMask
         tay
         lda     ProjectileDrawHandlers,y
         sta     ScratchPtrLo
@@ -191,7 +201,8 @@ LE0E6:  lda     ProjectileState,x
 
 ProjectileDrawState4:
 ; Рисует активный снаряд в его ProjectileX/Y с кадром по direction. Портит
-; A/X/Y, ScratchPtr, $00, $04/$53, $0D, $47/$48 и OAM shadow.
+; A/X/Y, ScratchPtr, TerrainSubcellMask, RenderAttributes/OamTile,
+; OamBufferPos, OamSavedX/Y и OAM shadow.
 ; ProjectileState/X/Y/Flags и PPU-очередь не меняет.
         lda     ProjectileState,x
         and     #DirectionMask
@@ -199,9 +210,9 @@ ProjectileDrawState4:
         ldy     ProjectileY,x
         lda     ProjectileX,x
         tax
-        lda     #$02
+        lda     #ActiveProjectileRenderPalette
         sta     RenderAttributes
-        lda     #$B1
+        lda     #ActiveProjectileTileBase
         sta     OamTile
         pla
         jsr     EmitDirectionalOamSprite
@@ -209,7 +220,8 @@ ProjectileDrawState4:
 
 ProjectileDrawStates1To3:
 ; Рисует фазу взрыва снаряда по ProjectileState+$40 в ProjectileX/Y. Портит
-; A/X/Y, ScratchPtr, $00, $04/$53, $0D, $47/$48, $54/$55 и OAM shadow.
+; A/X/Y, ScratchPtr, TerrainSubcellMask, RenderAttributes/OamTile,
+; OamBufferPos, OamSavedX/Y, OamPairX/Y и OAM shadow.
 ; ProjectileState/X/Y/Flags и PPU-очередь не меняет.
         lda     ProjectileState,x
         pha
@@ -218,8 +230,8 @@ ProjectileDrawStates1To3:
         tax
         pla
         clc
-        adc     #$40
-        jsr     ComputeAndDrawTankTransitionFrame
+        adc     #ProjectileExplosionRenderClassBias
+        jsr     ComputeAndDrawSmallExplosionFrame
         rts
 
 ; Обходит игроков X=1..0, и для активных танков передаёт ввод в DispatchPlayerFireInput.
@@ -251,7 +263,7 @@ FirePlayerProjectile:
 ; Это continuation прохода, а не самостоятельная JSR-процедура: завершает
 ; обработку переходом к AdvancePlayerFiringLoop.
 LE136:  lda     ObjectAttributes,x
-        and     #$C0
+        and     #PlayerProjectileClassMask
         cmp     #PlayerDoubleShotClass
         bne     InitializeCurrentPlayerProjectile
         lda     ProjectileState,x
@@ -290,7 +302,7 @@ LE169:  lda     ObjectState,x
         cmp     #NonTargetableTankStateMin
         bcs     AdvanceEnemyFiringSlot
         jsr     NextRandomByte
-        and     #$1F
+        and     #EnemyFireRandomMask
         bne     AdvanceEnemyFiringSlot
         jsr     InitializeProjectileForTank
 AdvanceEnemyFiringSlot:

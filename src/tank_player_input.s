@@ -5,15 +5,17 @@ PlayerDirectionCandidate = $00
 ; Кадры FrameCounter mod 4 = 2 пропускаются. Ввод принимается только для активного
 ; танка с классом $8-$D. При повороте не на 180° X/Y привязываются к сетке 8 px.
 ; PlayerStunTimer+X и отрицательные значения PlayerIceState+X могут временно запретить ввод.
-; Побочные эффекты: ObjectState/ObjectX/ObjectY/ObjectFrame, два таймера игроков,
-; PlayerIceState[0..1] и состояние аудиопотока начала скольжения.
-; Портит A, X, PlayerDirectionCandidate.
+; Побочные эффекты: ObjectState/ObjectX/ObjectY, PlayerStunTimer,
+; PlayerIceState[0..1] и состояние аудиопотока начала скольжения. Stun-таймер
+; уменьшается только в обслуживаемые вводом кадры. Y сохраняется; при полном
+; проходе X=$FF, а на пропущенном кадре X остаётся входным. Портит A,
+; PlayerDirectionCandidate и flags; ObjectFrame эта процедура не меняет.
 UpdatePlayerTankInput:
 LDB75:  lda     FrameCounter
-        and     #$01
+        and     #PlayerTankScheduleOddFrameMask
         bne     ProcessPlayerTankInput
         lda     FrameCounter
-        and     #$03
+        and     #PlayerTankScheduleModulo4Mask
         bne     NoOpHandler
 ProcessPlayerTankInput:
 LDB81:  ldx     #(PlayerTankCount-1)
@@ -41,7 +43,7 @@ LDB9D:  lda     Joy1Held,x
 SetPlayerTankIdleState:
 LDBA6:  lda     #TankStateIdleClass
         jsr     SetTankStateClass
-        lda     #$08
+        lda     #TankIdlePhaseFlag
         ora     ObjectState,x
         sta     ObjectState,x
         jmp     AdvanceToPreviousPlayer
@@ -61,18 +63,18 @@ LDBC7:  lda     ObjectState,x
         and     #DirectionMask
         cmp     PlayerDirectionCandidate
         beq     CommitPlayerTankDirection
-        eor     #$02
+        eor     #DirectionOppositeXor
         cmp     PlayerDirectionCandidate
         beq     CommitPlayerTankDirection
         lda     ObjectX,x
         clc
-        adc     #$04
-        and     #$F8
+        adc     #TankGridRoundingBias
+        and     #TankGridAlignmentMask
         sta     ObjectX,x
         lda     ObjectY,x
         clc
-        adc     #$04
-        and     #$F8
+        adc     #TankGridRoundingBias
+        and     #TankGridAlignmentMask
         sta     ObjectY,x
 CommitPlayerTankDirection:
 LDBE7:  lda     PlayerDirectionCandidate
@@ -86,4 +88,6 @@ TankLogicState0:
 TankDrawState0:
 ProjectileLogicState0:
 ProjectileDrawState0:
+; Общий пустой обработчик сохраняет A/X/Y/RAM и возвращает вызывающему
+; выставленные до входа processor flags.
 LDBF0:  rts

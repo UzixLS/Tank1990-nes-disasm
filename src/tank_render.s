@@ -1,5 +1,26 @@
 ; Проход отрисовки и render-handlers танков ($DEA6-$E02D).
-LargeTankQuadrantTileBase = $00
+; Scratch: базовый tile очередного квадранта крупного взрыва.
+LargeDestructionQuadrantTileBase = $00
+
+TankEffectPalette              = $03
+SmallExplosionClassPivot       = $07
+SmallExplosionTileBase         = $F1
+SmallExplosionLastTileOffset   = $08
+DestructionAttributeFrameMask  = $FC
+DestructionAttributeFrameBias  = $10
+DestructionAttributeTileBase   = $B9
+LargeDestructionHalfSize       = $08
+LargeDestructionFirstTile      = $D1
+LargeDestructionStateBase      = $30
+LargeDestructionFrameToggle    = $10
+LargeDestructionLastQuadrant   = $03
+EnemyCarrierPaletteBase        = $02
+EnemyCarrierPaletteIndexMask   = $01
+EnemyPaletteCycleIndexMask     = $07
+PlayerStunHiddenFrameBit       = $08
+TankSpawnPhaseCenter           = $07
+TankSpawnTileOffsetMask        = $FC
+TankSpawnTileBase              = $A1
 
 ; Рисует восемь танков через отдельную таблицу состояний отображения.
 ; Портит A/X/Y, CurrentTankSlot, ScratchPtr и рабочие поля OAM-процедур.
@@ -15,14 +36,15 @@ LDEAA:  ldx     CurrentTankSlot
         bne     DrawNextTank
         rts
 
-; Старшая тетрада ObjectState,X выбирает обработчик из TankDrawHandlers.
-; Не возвращается самостоятельно; контракт определяется обработчиком.
+; Старшая тетрада ObjectState,X выбирает один из 16 обработчиков в
+; TankDrawHandlers. Вход: X=слот 0..7. Портит A/Y и ScratchPtr; tail-JMP
+; передаёт X и все дальнейшие побочные эффекты выбранному обработчику.
 DispatchTankDraw:
 LDEB8:  lda     ObjectState,x
         lsr     a
         lsr     a
         lsr     a
-        and     #$FE
+        and     #DispatchWordIndexMask
         tay
         lda     TankDrawHandlers,y
         sta     ScratchPtrLo
@@ -30,10 +52,11 @@ LDEB8:  lda     ObjectState,x
         sta     ScratchPtrHi
         jmp     (ScratchPtrLo)
 
-; Классы $5-$7: двухспрайтовая фазовая анимация с палитрой 3. На время вывода
-; отключает SpriteBehindTerrainMask и восстанавливает его в $20 после вызова.
-DrawTankStates5To7:
-        lda     #$00
+; Классы разрушения $5-$7: двухспрайтовые кадры $F9/$F5/$F1 с палитрой 3.
+; На время вывода отключает terrain-priority, а затем всегда устанавливает
+; TerrainPriorityEnabled — исходное значение маски не сохраняется.
+DrawTankDestructionStates5To7:
+        lda     #TerrainPriorityDisabled
         sta     SpriteBehindTerrainMask
         lda     ObjectState,x
         pha
@@ -41,12 +64,12 @@ DrawTankStates5To7:
         lda     ObjectX,x
         tax
         pla
-        jsr     ComputeAndDrawTankTransitionFrame
-        lda     #$20
+        jsr     ComputeAndDrawSmallExplosionFrame
+        lda     #TerrainPriorityEnabled
         sta     SpriteBehindTerrainMask
         rts
 
-ComputeAndDrawTankTransitionFrame:
+ComputeAndDrawSmallExplosionFrame:
 ; Вход: A — ObjectState класса $5-$7, X/Y — экранные координаты пары спрайтов.
 ; Преобразует класс в tile $F9/$F5/$F1, задаёт RenderAttributes=3 и выводит
 ; пару через EmitTwoTileOamPair. Портит A/X/Y, OamTile, RenderAttributes,
@@ -56,166 +79,173 @@ LDEE2:  lsr     a
         lsr     a
         lsr     a
         sec
-        sbc     #$07
+        sbc     #SmallExplosionClassPivot
         eor     #$FF
         clc
         adc     #$01
         asl     a
         asl     a
 ; Альтернативный вход: A уже содержит смещение кадра относительно tile $F1.
-DrawTankTransitionFrameFromOffset:
+DrawSmallExplosionFrameFromOffset:
 LDEF0:  clc
-        adc     #$F1
+        adc     #SmallExplosionTileBase
         sta     OamTile
-        lda     #$03
+        lda     #TankEffectPalette
         sta     RenderAttributes
         jsr     EmitTwoTileOamPair
         rts
 
-; Класс $1: вариант финальной анимации зависит от ObjectAttributes,X; при нуле
-; используется первый кадр общей переходной последовательности.
-DrawTankState1:
-        lda     #$00
+; Финальный класс разрушения $1. При ненулевых ObjectAttributes старшие биты
+; через (attributes>>3)&$FC выбирают пару тайлов от $B9; при нуле используется
+; малый кадр $F1. Отключает terrain-priority на время вывода и в конце всегда
+; включает его, не восстанавливая входное значение.
+DrawTankDestructionState1:
+        lda     #TerrainPriorityDisabled
         sta     SpriteBehindTerrainMask
         lda     ObjectAttributes,x
-        beq     DrawDefaultTankState1Frame
+        beq     DrawDefaultDestructionState1Frame
         lda     ObjectAttributes,x
         lsr     a
         lsr     a
         lsr     a
-        and     #$FC
+        and     #DestructionAttributeFrameMask
         sec
-        sbc     #$10
+        sbc     #DestructionAttributeFrameBias
         clc
-        adc     #$B9
+        adc     #DestructionAttributeTileBase
         sta     OamTile
-        lda     #$03
+        lda     #TankEffectPalette
         sta     RenderAttributes
         ldy     ObjectY,x
         lda     ObjectX,x
         tax
         jsr     EmitTwoTileOamPair
-        jmp     RestoreTankSpritePriority
+        jmp     RestoreTankTerrainPriority
 
-DrawDefaultTankState1Frame:
+DrawDefaultDestructionState1Frame:
 LDF23:  lda     ObjectY,x
         tay
         lda     ObjectX,x
         tax
         lda     #$00
-        jsr     DrawTankTransitionFrameFromOffset
-RestoreTankSpritePriority:
-LDF2E:  lda     #$20
+        jsr     DrawSmallExplosionFrameFromOffset
+RestoreTankTerrainPriority:
+LDF2E:  lda     #TerrainPriorityEnabled
         sta     SpriteBehindTerrainMask
         rts
 
-; Класс $2: выводит кадр 8 общей переходной последовательности.
-DrawTankState2:
-        lda     #$00
+; Класс разрушения $2: выводит пару с tile-base $F9.
+DrawTankDestructionState2:
+        lda     #TerrainPriorityDisabled
         sta     SpriteBehindTerrainMask
         ldy     ObjectY,x
         lda     ObjectX,x
         tax
-        lda     #$08
-        jsr     DrawTankTransitionFrameFromOffset
-        lda     #$20
+        lda     #SmallExplosionLastTileOffset
+        jsr     DrawSmallExplosionFrameFromOffset
+        lda     #TerrainPriorityEnabled
         sta     SpriteBehindTerrainMask
         rts
 
-; Классы $3-$4: выводят четыре двухспрайтовых элемента вокруг центра танка,
-; формируя объект 32x32. LDF99 выбирает tile-base по классу и номеру квадранта.
-DrawTankStates3To4:
-        lda     #$03
+; Классы разрушения $3-$4: выводят четыре двухспрайтовых квадранта вокруг
+; координат танка, формируя взрыв 32x32. PrepareLargeDestructionQuadrant
+; выбирает tile-base по классу и номеру квадранта. Добавляет восемь OAM entries;
+; арифметика координат восьмибитная и не ограничивает выход за край экрана.
+DrawLargeTankDestructionStates3To4:
+        lda     #TankEffectPalette
         sta     RenderAttributes
-        lda     #$00
+        lda     #TerrainPriorityDisabled
         sta     SpriteBehindTerrainMask
-        jsr     PrepareLargeTankQuadrant
+        jsr     PrepareLargeDestructionQuadrant
         txa
         sec
-        sbc     #$08
+        sbc     #LargeDestructionHalfSize
         tax
         tya
         sec
-        sbc     #$08
+        sbc     #LargeDestructionHalfSize
         tay
         jsr     EmitTwoTileOamPair
         lda     #$01
-        jsr     PrepareLargeTankQuadrant
+        jsr     PrepareLargeDestructionQuadrant
         txa
         clc
-        adc     #$08
+        adc     #LargeDestructionHalfSize
         tax
         tya
         sec
-        sbc     #$08
+        sbc     #LargeDestructionHalfSize
         tay
         jsr     EmitTwoTileOamPair
         lda     #$02
-        jsr     PrepareLargeTankQuadrant
+        jsr     PrepareLargeDestructionQuadrant
         txa
         sec
-        sbc     #$08
+        sbc     #LargeDestructionHalfSize
         tax
         tya
         clc
-        adc     #$08
+        adc     #LargeDestructionHalfSize
         tay
         jsr     EmitTwoTileOamPair
-        lda     #$03
-        jsr     PrepareLargeTankQuadrant
+        lda     #LargeDestructionLastQuadrant
+        jsr     PrepareLargeDestructionQuadrant
         txa
         clc
-        adc     #$08
+        adc     #LargeDestructionHalfSize
         tax
         tya
         clc
-        adc     #$08
+        adc     #LargeDestructionHalfSize
         tay
         jsr     EmitTwoTileOamPair
-        lda     #$20
+        lda     #TerrainPriorityEnabled
         sta     SpriteBehindTerrainMask
         rts
 
-PrepareLargeTankQuadrant:
+PrepareLargeDestructionQuadrant:
 ; Вход: A=номер квадранта 0..3, CurrentTankSlot — рисуемый танк класса $3/$4.
 ; Вычисляет OamTile для квадранта, затем возвращает его координаты одновременно
-; как A=X=ObjectX и Y=ObjectY. Меняет LargeTankQuadrantTileBase и OamTile;
+; как A=X=ObjectX и Y=ObjectY. Меняет LargeDestructionQuadrantTileBase и OamTile;
 ; Object/RAM кроме этих scratch-полей не меняет.
 LDF99:  ldx     CurrentTankSlot
         asl     a
         asl     a
         clc
-        adc     #$D1
-        sta     LargeTankQuadrantTileBase
+        adc     #LargeDestructionFirstTile
+        sta     LargeDestructionQuadrantTileBase
         lda     ObjectState,x
         and     #StateClassMask
         sec
-        sbc     #$30
-        eor     #$10
+        sbc     #LargeDestructionStateBase
+        eor     #LargeDestructionFrameToggle
         clc
-        adc     LargeTankQuadrantTileBase
+        adc     LargeDestructionQuadrantTileBase
         sta     OamTile
         ldy     ObjectY,x
         lda     ObjectX,x
         tax
         rts
 
-; Классы $8-$D: обычный танк. Палитра игроков равна номеру слота, палитра противника
-; анимируется по ObjectAttributes/FrameCounter. Направление выбирает один из четырёх
-; кадров, ObjectFrame добавляется к старшей тетраде tile-base.
+; Классы $8-$D: обычный танк. Палитра игрока равна номеру слота. Носитель
+; усиления мигает палитрами 2/3 каждые восемь кадров; остальные противники
+; выбирают палитру из EnemyTankPaletteCycle по (FrameCounter*4+attributes)&7.
+; Оглушённый игрок не выводится при установленном PlayerStunHiddenFrameBit.
+; Направление выбирает один из четырёх кадров, ObjectFrame добавляется к
+; старшей тетраде tile-base из ObjectAttributes.
 DrawTankStates8ToD:
         cpx     #FirstEnemyTankSlot
         bcc     DrawPlayerTank
         lda     ObjectAttributes,x
-        and     #$04
+        and     #EnemyPowerUpCarrierFlag
         beq     SelectEnemyPaletteCycle
         lda     FrameCounter
         lsr     a
         lsr     a
         lsr     a
-        and     #$01
+        and     #EnemyCarrierPaletteIndexMask
         clc
-        adc     #$02
+        adc     #EnemyCarrierPaletteBase
         jmp     DrawTankWithSelectedPalette
 
 SelectEnemyPaletteCycle:
@@ -224,16 +254,16 @@ LDFCD:  lda     FrameCounter
         asl     a
         clc
         adc     ObjectAttributes,x
-        and     #$07
+        and     #EnemyPaletteCycleIndexMask
         tay
-        lda     LE003,y
+        lda     EnemyTankPaletteCycle,y
         jmp     DrawTankWithSelectedPalette
 
 DrawPlayerTank:
 LDFDD:  lda     PlayerStunTimer,x
         beq     UsePlayerTankPalette
         lda     FrameCounter
-        and     #$08
+        and     #PlayerStunHiddenFrameBit
         beq     UsePlayerTankPalette
         rts
 
@@ -248,7 +278,7 @@ LDFE9:  sta     RenderAttributes
         and     #DirectionMask
         pha
         lda     ObjectAttributes,x
-        and     #$F0
+        and     #ObjectAttributeClassMask
         clc
         adc     ObjectFrame,x
         sta     OamTile
@@ -261,23 +291,25 @@ LDFE9:  sta     RenderAttributes
 
 EnemyTankPaletteCycle:
 LE003:  .byte   $02,$00,$00,$01,$02,$01,$02,$02
-; Классы $E-$F: симметричная переходная анимация вокруг фазы 7.
-DrawTankStatesEToF:
+; Классы появления $E-$F: две последовательные 14-фазные половины lifecycle
+; используют симметричный ряд кадров вокруг младшей фазы 7. Рисует одну
+; двухспрайтовую пару с палитрой 3; terrain-priority не переопределяет.
+DrawTankSpawnStatesEToF:
 LE00B:  lda     ObjectState,x
-        and     #$0F
+        and     #StateLowNibbleMask
         sec
-        sbc     #$07
-        bpl     ConvertTankTransitionPhaseToTile
+        sbc     #TankSpawnPhaseCenter
+        bpl     ConvertTankSpawnPhaseToTile
         eor     #$FF
         clc
         adc     #$01
-ConvertTankTransitionPhaseToTile:
+ConvertTankSpawnPhaseToTile:
 LE019:  asl     a
-        and     #$FC
+        and     #TankSpawnTileOffsetMask
         clc
-        adc     #$A1
+        adc     #TankSpawnTileBase
         sta     OamTile
-        lda     #$03
+        lda     #TankEffectPalette
         sta     RenderAttributes
         ldy     ObjectY,x
         lda     ObjectX,x

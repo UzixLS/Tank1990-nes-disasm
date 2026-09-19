@@ -1,28 +1,38 @@
 ; Жизни, подписи, номер этапа и маркеры врагов HUD ($C7C8-$C8CF).
 
-PlayerHudIndex = $5A
-PlayerHudRowOffset = $00
+; Две непересекающиеся роли общего loop-байта $5A.
+PlayerHudIndex              = $5A
+RemainingEnemyMarkerIndex  = $5A
+; Scratch сохраняет индекс игрока, пока A превращается в смещение строки 3*index.
+PlayerHudIndexScratch       = $00
 PlayerHudTileBias          = $6E
 PlayerHudColumn            = $1D
-PlayerLivesDigitColumn     = $19
+PlayerLivesFormatColumn    = $19
+PlayerOneHudLabelRow       = $11
 PlayerOneLivesIconRow      = $12
+PlayerTwoHudLabelRow       = $14
 PlayerTwoLivesIconRow      = $15
 StageHudColumn             = $1D
 StageHudUpperRow           = $17
 StageHudLowerRow           = $18
-StageHudDigitColumn        = $19
+StageHudFormatColumn       = $19
 StageHudDigitRow           = $19
 EnemyMarkerFirstColumn     = $1D
 EnemyMarkerFirstRow        = 3
 LastRemainingEnemyMarkerIndex = EnemyCountPerStage - 2
+PlayerHudInitialIndex      = PlayerTankCount - 1
+DisplayedLivesReserve     = $01
+EnemyMarkerColumnMask     = $01
 ; Перерисовывает HUD жизней. В single-player обходит только P1, в two-player/демо — P2 и P1.
 ; На экран выводит max(lives-1,0). Меняет PPU-очередь, ScratchPtr,
-; PlayerHudRowOffset/decimal scratch, PlayerHudIndex, TileTranslationOffset и
+; PlayerHudIndexScratch/decimal scratch, PlayerHudIndex, TileTranslationOffset и
 ; DigitBlankMode; портит A/X/Y. Выход: PlayerHudIndex=$FF,
 ; TileTranslationOffset=DigitBlankMode=0; последний PPU command остаётся в очереди.
 UpdateLivesHud:
-LC7C8:  lda     #$01
+LC7C8:  lda     #PlayerHudInitialIndex
         sta     PlayerHudIndex
+        ; Начальный индекс P1/P2 равен 1 и тем же значением включает blank-mode;
+        ; один load намеренно обслуживает две разные роли.
         sta     DigitBlankMode
         lda     #PlayerHudTileBias
         sta     TileTranslationOffset
@@ -54,19 +64,19 @@ DrawNextPlayerLivesCount:
 LC801:  ldx     PlayerHudIndex
         lda     Player1Lives,x
         sec
-        sbc     #$01
+        sbc     #DisplayedLivesReserve
         bpl     ConvertPlayerLivesCount
         lda     #$00
 ConvertPlayerLivesCount:
 LC80C:  jsr     ByteToDisplayDigits
         ldy     #(ScoreIncrementDigits+1)
-        ldx     #PlayerLivesDigitColumn
+        ldx     #PlayerLivesFormatColumn
         jsr     SelectVisibleDigits
         lda     PlayerHudIndex
-        sta     PlayerHudRowOffset
+        sta     PlayerHudIndexScratch
         asl     a
         clc
-        adc     PlayerHudRowOffset
+        adc     PlayerHudIndexScratch
         clc
         adc     #PlayerOneLivesIconRow
         tay
@@ -87,7 +97,7 @@ LC830:  lda     #>PlayerOneCompactMarker
         lda     #<PlayerOneCompactMarker
         sta     ScratchPtrLo
         ldx     #PlayerHudColumn
-        ldy     #$11
+        ldy     #PlayerOneHudLabelRow
         jsr     QueueTileAtCoordinates
         lda     StageSetLength
         cmp     #AttractStageSetMarker
@@ -100,13 +110,14 @@ LC849:  lda     #>PlayerTwoCompactMarker
         lda     #<PlayerTwoCompactMarker
         sta     ScratchPtrLo
         ldx     #PlayerHudColumn
-        ldy     #$14
+        ldy     #PlayerTwoHudLabelRow
         jsr     QueueTileAtCoordinates
 FinishPlayerHudLabels:
 LC858:  rts
 
-; После vblank выводит в HUD маркер и десятичный StageNumber. Меняет PPU-очередь, ScratchPtr, $39..$3B/$60;
-; портит A/X/Y и кадровые счётчики WaitForNextFrame.
+; После vblank выводит в HUD маркер и десятичный StageNumber. Меняет PPU-очередь,
+; ScratchPtr, ScoreIncrementDigits, decimal scratch и TileTranslationOffset;
+; портит A/X/Y, а WaitForNextFrame также обновляет кадровые счётчики и ввод.
 DrawStageNumberHud:
 LC859:  jsr     WaitForNextFrame
         lda     #>StageHudUpperTiles
@@ -128,7 +139,7 @@ LC859:  jsr     WaitForNextFrame
         lda     StageNumber
         jsr     ByteToDisplayDigits
         ldy     #(ScoreIncrementDigits+1)
-        ldx     #StageHudDigitColumn
+        ldx     #StageHudFormatColumn
         jsr     SelectVisibleDigits
         ldy     #StageHudDigitRow
         jsr     QueueTranslatedTileString
@@ -141,7 +152,7 @@ LC859:  jsr     WaitForNextFrame
 ; Выход: A=Y=(вход>>1)+3, X — столбец. RAM не меняет.
 EnemyMarkerIndexToHudCoordinates:
 LC894:  pha
-        and     #$01
+        and     #EnemyMarkerColumnMask
         clc
         adc     #EnemyMarkerFirstColumn
         tax
@@ -162,7 +173,8 @@ LC8A2:  jsr     EnemyMarkerIndexToHudCoordinates
         jsr     QueueTileAtCoordinates
         rts
 
-; Заменяет HUD-маркер индекса A строкой $D36B. Портит A/X/Y, ScratchPtr и PPU-очередь.
+; Заменяет один HUD-маркер индекса A строкой BlankTileText. Портит A/X/Y,
+; ScratchPtr и PPU-очередь.
 ClearRemainingEnemyMarker:
 LC8B1:  jsr     EnemyMarkerIndexToHudCoordinates
         lda     #>BlankTileText
@@ -172,8 +184,8 @@ LC8B1:  jsr     EnemyMarkerIndexToHudCoordinates
         jsr     QueueTileAtCoordinates
         rts
 
-RemainingEnemyMarkerIndex = $5A
-; Ставит десять HUD-маркеров с чётными индексами $12..0.
+; Ставит десять двухтайловых строк с чётными индексами $12..0, тем самым
+; заполняя все EnemyCountPerStage=20 позиций сетки.
 ; Выход: RemainingEnemyMarkerIndex=$FE; портит A/X/Y, ScratchPtr и PPU-очередь.
 InitializeRemainingEnemyMarkers:
 LC8C0:  lda     #LastRemainingEnemyMarkerIndex

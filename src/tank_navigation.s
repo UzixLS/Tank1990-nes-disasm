@@ -3,6 +3,9 @@ ProposedTankX    = $56
 ProposedTankY    = $57
 TankProbeXOffset = $58
 TankProbeYOffset = $59
+EnemyGridDecisionRandomMask = $0F
+EnemyReverseRandomMask      = $03
+EnemyTurnCoinMask           = $01
 
 ; Класс $8: промежуточное/недвижное состояние. PlayerIceState+X может продлить его для
 ; игрока; иначе биты 3..2 уменьшаются по $04 до перехода в класс $A. Вход:
@@ -17,16 +20,16 @@ TankLogicState8:
         beq     AdvanceTankIdlePhase
         dec     PlayerIceState,x
         lda     ObjectFrame,x
-        eor     #$04
+        eor     #TankTrackFrameBit
         sta     ObjectFrame,x
         jmp     AdvanceTankMovement
 
 AdvanceTankIdlePhase:
 LDC6B:  lda     ObjectState,x
         sec
-        sbc     #$04
+        sbc     #TankIdlePhaseStep
         sta     ObjectState,x
-        and     #$0C
+        and     #TankIdlePhaseMask
         bne     ReturnFromTankIdlePhase
         lda     #TankStateActiveClass
         jsr     SetTankStateClass
@@ -42,13 +45,13 @@ TankLogicStateA:
         cpx     #FirstEnemyTankSlot
         bcc     AdvanceTankMovement
         lda     ObjectX,x
-        and     #$07
+        and     #TankGridSubpixelMask
         bne     AdvanceTankMovement
         lda     ObjectY,x
-        and     #$07
+        and     #TankGridSubpixelMask
         bne     AdvanceTankMovement
         jsr     NextRandomByte
-        and     #$0F
+        and     #EnemyGridDecisionRandomMask
         bne     AdvanceTankMovement
         jsr     ChooseEnemyTankAiMode
         rts
@@ -146,18 +149,18 @@ LDD11:  ldx     CurrentTankSlot
         cpx     #FirstEnemyTankSlot
         bcc     ToggleTankAnimationFrame
         jsr     NextRandomByte
-        and     #$03
+        and     #EnemyReverseRandomMask
         beq     ReverseEnemyTankDirection
         lda     #TankStateIdleClass
         jsr     SetTankStateClass
-        lda     #$08
+        lda     #TankIdlePhaseFlag
         ora     ObjectState,x
         sta     ObjectState,x
 ; Переключает bit2 ObjectFrame,X как фазу гусениц.
 ; Вход/выход: X=слот, A=новый ObjectFrame; Y сохраняется.
 ToggleTankAnimationFrame:
 LDD29:  lda     ObjectFrame,x
-        eor     #$04
+        eor     #TankTrackFrameBit
         sta     ObjectFrame,x
         rts
 
@@ -166,16 +169,16 @@ LDD29:  lda     ObjectFrame,x
 ; X=слот противника. Выход: A=новый ObjectState,X; X/Y и прочую RAM сохраняет.
 ReverseEnemyTankDirection:
 LDD30:  lda     ObjectX,x
-        and     #$07
+        and     #TankGridSubpixelMask
         bne     CommitReversedEnemyDirection
         lda     ObjectY,x
-        and     #$07
+        and     #TankGridSubpixelMask
         bne     CommitReversedEnemyDirection
         lda     #TankStateTurningClass
         jsr     SetTankStateClass
 CommitReversedEnemyDirection:
 LDD41:  lda     ObjectState,x
-        eor     #$02
+        eor     #DirectionOppositeXor
         sta     ObjectState,x
         rts
 
@@ -185,10 +188,10 @@ LDD41:  lda     ObjectState,x
 ; целевым AI-путём, X сохраняется.
 TankLogicState9:
         jsr     NextRandomByte
-        and     #$01
+        and     #EnemyTurnCoinMask
         beq     ChooseAiDirectionForState9
         jsr     NextRandomByte
-        and     #$01
+        and     #EnemyTurnCoinMask
         beq     TurnEnemyCounterclockwise
         lda     ObjectState,x
         clc

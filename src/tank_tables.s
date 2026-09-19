@@ -53,9 +53,10 @@ LE498:  .word   TankLogicState0
         .word   TankLogicState8,TankLogicState9,TankLogicStateA,TankLogicStateB
         .word   TankLogicStateC,TankLogicStateD,TankLogicStateE,TankLogicStateF
 TankDrawHandlers:
-LE4B8:  .word   TankDrawState0,DrawTankState1,DrawTankState2
-        .word   DrawTankStates3To4,DrawTankStates3To4
-        .word   DrawTankStates5To7,DrawTankStates5To7,DrawTankStates5To7
+LE4B8:  .word   TankDrawState0,DrawTankDestructionState1,DrawTankDestructionState2
+        .word   DrawLargeTankDestructionStates3To4,DrawLargeTankDestructionStates3To4
+        .word   DrawTankDestructionStates5To7,DrawTankDestructionStates5To7
+        .word   DrawTankDestructionStates5To7
         .word   DrawTankStates8ToD,DrawTankStates8ToD,DrawTankStates8ToD
         .word   DrawTankStates8ToD,DrawTankStates8ToD,DrawTankStates8ToD
-        .word   DrawTankStatesEToF,DrawTankStatesEToF
+        .word   DrawTankSpawnStatesEToF,DrawTankSpawnStatesEToF

@@ -16,8 +16,8 @@ LD3E0:  cpx     #FirstEnemyTankSlot
         ldx     #(TankSlotCount-1)
 ApplyPowerUpEffect0ToNextEnemy:
 LD3E8:  lda     ObjectAttributes,x
-        ora     #EnemyAttributeTransformSetBits
-        eor     #EnemyAttributeTransformToggleBit
+        ora     #EnemyHitPointMask
+        eor     #EnemyPowerUpCarrierFlag
         sta     ObjectAttributes,x
         dex
         cpx     #(FirstEnemyTankSlot-1)

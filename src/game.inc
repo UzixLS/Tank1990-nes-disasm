@@ -24,7 +24,17 @@ AttractStageSetMarker = $02
 BootVariantMarker     = $AB
 
 DirectionMask         = $03
+DirectionOppositeXor  = $02
+TankGridSubpixelMask  = $07
+TankGridAlignmentMask = $F8
+TankGridRoundingBias  = $04
+TankTrackFrameBit     = $04
+TankIdlePhaseStep     = $04
+TankIdlePhaseMask     = $0C
+PlayerTankScheduleOddFrameMask = $01
+PlayerTankScheduleModulo4Mask  = $03
 StateClassMask        = $F0
+DispatchWordIndexMask = $FE
 ; Младшая тетрада state включает не только direction, но и фазу/таймер;
 ; при замене класса её нельзя сокращать до DirectionMask.
 StateLowNibbleMask    = $0F
@@ -36,6 +46,7 @@ NonTargetableTankStateMin= $E0
 
 BattleStateActive     = $80
 TankStateIdleClass    = $80
+TankIdlePhaseFlag     = $08
 TankStateTurningClass = $90
 TankStateActiveClass  = $A0
 TankStateTargetBaseClass      = $B0
@@ -58,9 +69,15 @@ PlayerShieldPowerUpDuration     = $0A
 PlayerStunPowerUpDuration       = $C8
 BaseFortificationPowerUpDuration = $14
 
-EnemyAttributeTransformSetBits  = $03
-EnemyAttributeTransformToggleBit = $04
+; Младшие два бита enemy attributes — оставшиеся дополнительные попадания;
+; bit 2 заставляет подбитого противника создать усиление и включает мигающую палитру.
+EnemyHitPointMask       = $03
+EnemyPowerUpCarrierFlag = $04
 ExtendedVariantPlayerHitAttributeBits = $20
+
+; EmitOamSprite добавляет эту маску только над специальным terrain-тайлом $22.
+TerrainPriorityDisabled = $00
+TerrainPriorityEnabled  = $20
 
 PlayerIceTile          = $21
 PlayerIceActiveFlag    = $80

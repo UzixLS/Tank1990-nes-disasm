@@ -4,6 +4,7 @@ TankCollisionSlot       = $5A
 ProjectileCollisionSlot = $5B
 ScoringPlayerIndex      = $47
 TankProjectileHitRadius = $0A
+EnemyTypeAttributeBias  = $04
 
 ; Общий проход снарядов по танкам.
 ; Фаза 1 проверяет игроков Object 1..0 против активных снарядов 9..2:
@@ -158,7 +159,7 @@ LE7C8:  cmp     #TankProjectileHitRadius
         lda     #ProjectileStateImpact
         sta     ProjectileState,y
         lda     ObjectAttributes,x
-        and     #$04
+        and     #EnemyPowerUpCarrierFlag
         beq     DamageOrDestroyEnemyTank
         jsr     SpawnPowerUp
         lda     ObjectAttributes,x
@@ -171,7 +172,7 @@ DamageOrDestroyEnemyTank:
 ; При ненулевых hit points уменьшает ObjectAttributes,X, запускает ArmorHitAudioState
 ; и продолжает проход. При нуле проваливается в полное уничтожение.
 LE7E2:  lda     ObjectAttributes,x
-        and     #$03
+        and     #EnemyHitPointMask
         beq     DestroyEnemyTankAndAwardScore
         dec     ObjectAttributes,x
         lda     #AudioStateStartRequested
@@ -195,7 +196,7 @@ LE7F2:  jsr     DestroyTankAndClearExtension
         lsr     a
         lsr     a
         sec
-        sbc     #$04
+        sbc     #EnemyTypeAttributeBias
         tax
         lda     ProjectileCollisionSlot
         and     #$01

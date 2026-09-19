@@ -5,7 +5,7 @@
 StatisticsPlayer1Count = $5D
 StatisticsPlayer2Count = $5E
 StatisticsEnemyType    = $5A
-StatisticsRowActive    = $7C
+StatisticsKillsConsumed = $7C
 Player1StageKillTotal  = $7D
 Player2StageKillTotal  = $7E
 
@@ -16,12 +16,86 @@ StatisticsPlayer1AwardRecord = $02
 StatisticsPlayer2AwardRecord = $03
 StatisticsEnemyTypeCount     = $04
 
+; Тайминги анимации в кадрах. Значки противников перерисовываются каждый кадр
+; внутри DelayWithStatisticsIcons, поэтому эти паузы одновременно удерживают
+; их в OAM shadow.
+StatisticsIntroDelayFrames       = $1E
+StatisticsBeforeTotalsDelayFrames = $1E
+StatisticsRowStepDelayFrames     = $08
+StatisticsBetweenRowsDelayFrames = $14
+StatisticsWinnerDelayFrames      = $0F
+StatisticsFinalDelayFrames       = $78
+
+; Координаты динамических числовых полей. Строки категорий идут через три
+; nametable-строки: StatisticsFirstEnemyRow + StatisticsEnemyType*3.
+StatisticsScoreRow          = $09
+StatisticsFirstEnemyRow     = $0C
+StatisticsSecondEnemyRow    = StatisticsFirstEnemyRow + 3
+StatisticsThirdEnemyRow     = StatisticsFirstEnemyRow + 6
+StatisticsFourthEnemyRow    = StatisticsFirstEnemyRow + 9
+StatisticsTotalsRow         = $17
+StatisticsBonusLabelRow     = $19
+StatisticsBonusValueRow     = $1A
+StatisticsPlayer1ScoreFormatColumn = $05
+StatisticsPlayer1AwardFormatColumn = $01
+StatisticsPlayer1CountFormatColumn = $08
+StatisticsPlayer2ScoreFormatColumn = $17
+StatisticsPlayer2AwardFormatColumn = $13
+StatisticsPlayer2CountFormatColumn = $0E
+StatisticsPlayer2BonusFormatColumn = $14
+StatisticsPlayer1BonusLabelColumn = $03
+StatisticsPlayer2BonusLabelColumn = $16
+StatisticsPlayer1BonusPointsColumn = $08
+StatisticsPlayer2BonusPointsColumn = $1B
+
+; Статическая разметка и режим PPU экрана статистики.
+StatisticsNametablePpuOffset = $24
+StatisticsNametableBits      = $02
+StatisticsDigitTileBias      = $30
+StatisticsBackgroundPalette  = $03
+StatisticsHighScoreLabelColumn = $08
+StatisticsHighScoreFormatColumn = $12
+StatisticsHeaderRow            = $03
+StatisticsStageLabelColumn     = $0C
+StatisticsStageFormatColumn    = $0E
+StatisticsStageRow             = $05
+StatisticsPlayer1HeaderColumn  = $03
+StatisticsPlayer2HeaderColumn  = $15
+StatisticsPlayerHeaderRow      = $07
+StatisticsPlayer1MarkerColumn  = $0E
+StatisticsPlayer2MarkerColumn  = $11
+StatisticsPlayer1RowPointsColumn = $08
+StatisticsPlayer2RowPointsColumn = $1A
+StatisticsDividerColumn        = $0C
+StatisticsDividerRow           = $16
+StatisticsTotalLabelColumn     = $06
+
+; Экранные параметры четырёх двухспрайтовых значков типов противника.
+StatisticsEnemyIconAttributes = $02
+StatisticsEnemyIconX          = $81
+StatisticsType0IconY          = $64
+StatisticsType1IconY          = $7C
+StatisticsType2IconY          = $94
+StatisticsType3IconY          = $AC
+StatisticsType0IconTile       = $80
+StatisticsType1IconTile       = $A0
+StatisticsType2IconTile       = $C0
+StatisticsType3IconTile       = $E0
+
+StatisticsPlayer1ScoreRecord = $00
+StatisticsPlayer2ScoreRecord = $01
+StatisticsWinnerBonusAward   = $00       ; особый случай PreparePackedScoreIncrement -> 1000
+StatisticsKillConsumed       = $01
+StatisticsBlankZeroEnabled   = $01
+
 ; Показывает и анимирует послеэтапную статистику.
 ; Player1KillCounts/Player2KillCounts — четыре счётчика уничтоженных типов;
-; их суммы сохраняются в Player1/Player2StageKillTotal. Для каждой категории
-; процедура по одному уменьшает исходные счётчики, увеличивает экранные
-; StatisticsPlayer1/2Count, накапливает награду ScoreAwardsByEnemyType во
-; временных StatisticsPlayer1/2AwardDigits и обновляет UI.
+; их восьмибитные суммы без насыщения сохраняются в Player1/Player2StageKillTotal.
+; Для каждой категории одна итерация уменьшает не более чем по одному счётчику
+; каждого игрока, увеличивает экранные StatisticsPlayer1/2Count, накапливает
+; награду ScoreAwardsByEnemyType во временных StatisticsPlayer1/2AwardDigits и
+; обновляет UI. После последнего убийства выполняется ещё одна итерация без
+; списания: она выводит окончательные значения и переводит цикл к следующему типу.
 ; После четырёх категорий выводит суммы. При BattleState!=0, двух игроках и
 ; неравном результате живому игроку с большей суммой добавляет специальную
 ; награду PreparePackedScoreIncrement(0), то есть 1000 очков.
@@ -29,12 +103,12 @@ StatisticsEnemyTypeCount     = $04
 ; задаёт число игроков. Выходов в регистрах нет.
 ; Побочно уничтожает Player1/2KillCounts, меняет записи счёта и временных
 ; наград, жизни/флаги награды, PPU/OAM, состояния аудиопотоков и рабочие
-; StatisticsEnemyType/StatisticsPlayer*Count/StatisticsRowActive и итоговые счётчики.
+; StatisticsEnemyType/StatisticsPlayer*Count/StatisticsKillsConsumed и итоговые счётчики.
 ; A/X/Y не сохраняются; работа занимает много кадров и завершается с
 ; NametableBits, BackgroundPaletteIndex, TileTranslationOffset и DigitBlankMode=0.
 ShowStageStatistics:
 LCCD4:  jsr     BuildStageStatisticsScreen
-        ldx     #$1E
+        ldx     #StatisticsIntroDelayFrames
         jsr     DelayWithStatisticsIcons
         lda     Player1KillCounts
         clc
@@ -57,6 +131,8 @@ LCCD4:  jsr     BuildStageStatisticsScreen
 BeginEnemyStatisticsRow:
 LCCFA:  jsr     WaitForNextFrame
         jsr     DrawStatisticsEnemyIcons
+; Накопленные очки и показанные количества относятся только к текущему типу.
+; Общие записи счёта игроков между строками не сбрасываются.
         ldx     #StatisticsPlayer1AwardDigits
         jsr     ResetEightByteRecord
         ldx     #StatisticsPlayer2AwardDigits
@@ -67,8 +143,10 @@ LCCFA:  jsr     WaitForNextFrame
 AnimateEnemyStatisticsRow:
 LCD10:  jsr     WaitForNextFrame
         jsr     DrawStatisticsEnemyIcons
+; Флаг ставится только если эта итерация действительно списала хотя бы одно
+; убийство. Нулевой флаг после вывода значений завершает строку.
         lda     #$00
-        sta     StatisticsRowActive
+        sta     StatisticsKillsConsumed
         ldx     StatisticsEnemyType
         lda     ScoreAwardsByEnemyType,x
         jsr     PreparePackedScoreIncrement
@@ -82,8 +160,8 @@ LCD10:  jsr     WaitForNextFrame
         inc     StatisticsPlayer1Count
         ldx     #StatisticsPlayer1AwardRecord
         jsr     AddScoreDigitsToRecord
-        lda     #$01
-        sta     StatisticsRowActive
+        lda     #StatisticsKillConsumed
+        sta     StatisticsKillsConsumed
         jsr     AwardScoreThresholdLives
 ConsumePlayer2Kill:
 LCD40:  ldx     StatisticsEnemyType
@@ -96,18 +174,21 @@ LCD40:  ldx     StatisticsEnemyType
         inc     StatisticsPlayer2Count
         ldx     #StatisticsPlayer2AwardRecord
         jsr     AddScoreDigitsToRecord
-        lda     #$01
-        sta     StatisticsRowActive
+        lda     #StatisticsKillConsumed
+        sta     StatisticsKillsConsumed
         jsr     AwardScoreThresholdLives
-; Перерисовывает общий счёт игрока, начисление за текущий тип и число уже
-; обработанных убийств. QueueTranslatedTileString пишет только в PPU-очередь.
+; Ставит в PPU-очередь общий счёт, начисление за текущий тип и число уже
+; обработанных убийств. Строка вычисляется как 12+StatisticsEnemyType*3;
+; поля P2 пропускаются в однопользовательском режиме. Вход: индекс типа 0..3,
+; счётчики, award-records и score-records уже актуальны. Меняет A/X/Y,
+; ScratchPtr и ScoreIncrementDigits; исходные счётчики/счёт и OAM не меняет.
 QueueStatisticsRowValues:
 LCD5E:  ldy     #(Player1Score+1)
-        ldx     #$05
+        ldx     #StatisticsPlayer1ScoreFormatColumn
         jsr     SelectVisibleDigits
-        ldy     #$09
+        ldy     #StatisticsScoreRow
         jsr     QueueTranslatedTileString
-        ldx     #$01
+        ldx     #StatisticsPlayer1AwardFormatColumn
         ldy     #(StatisticsPlayer1AwardDigits+1)
         jsr     SelectVisibleDigits
         lda     StatisticsEnemyType
@@ -115,13 +196,15 @@ LCD5E:  ldy     #(Player1Score+1)
         clc
         adc     StatisticsEnemyType
         clc
-        adc     #$0C
+        adc     #StatisticsFirstEnemyRow
         tay
         jsr     QueueTranslatedTileString
+; Эта исходная загрузка X не влияет на результат: ByteToDisplayDigits сразу
+; заменяет X адресом ScoreIncrementDigits.
         ldx     StatisticsEnemyType
         lda     StatisticsPlayer1Count
         jsr     ByteToDisplayDigits
-        ldx     #$08
+        ldx     #StatisticsPlayer1CountFormatColumn
         ldy     #(ScoreIncrementDigits+1)
         jsr     SelectVisibleDigits
         lda     StatisticsEnemyType
@@ -129,17 +212,17 @@ LCD5E:  ldy     #(Player1Score+1)
         clc
         adc     StatisticsEnemyType
         clc
-        adc     #$0C
+        adc     #StatisticsFirstEnemyRow
         tay
         jsr     QueueTranslatedTileString
         lda     MenuSelection
         beq     WaitAfterStatisticsRowStep
         ldy     #(Player2Score+1)
-        ldx     #$17
+        ldx     #StatisticsPlayer2ScoreFormatColumn
         jsr     SelectVisibleDigits
-        ldy     #$09
+        ldy     #StatisticsScoreRow
         jsr     QueueTranslatedTileString
-        ldx     #$13
+        ldx     #StatisticsPlayer2AwardFormatColumn
         ldy     #(StatisticsPlayer2AwardDigits+1)
         jsr     SelectVisibleDigits
         lda     StatisticsEnemyType
@@ -147,13 +230,14 @@ LCD5E:  ldy     #(Player1Score+1)
         clc
         adc     StatisticsEnemyType
         clc
-        adc     #$0C
+        adc     #StatisticsFirstEnemyRow
         tay
         jsr     QueueTranslatedTileString
+; Аналогичная неиспользуемая загрузка X сохранена для побайтового совпадения.
         ldx     StatisticsEnemyType
         lda     StatisticsPlayer2Count
         jsr     ByteToDisplayDigits
-        ldx     #$0E
+        ldx     #StatisticsPlayer2CountFormatColumn
         ldy     #(ScoreIncrementDigits+1)
         jsr     SelectVisibleDigits
         lda     StatisticsEnemyType
@@ -161,13 +245,13 @@ LCD5E:  ldy     #(Player1Score+1)
         clc
         adc     StatisticsEnemyType
         clc
-        adc     #$0C
+        adc     #StatisticsFirstEnemyRow
         tay
         jsr     QueueTranslatedTileString
 WaitAfterStatisticsRowStep:
-LCDD8:  ldx     #$08
+LCDD8:  ldx     #StatisticsRowStepDelayFrames
         jsr     DelayWithStatisticsIcons
-        lda     StatisticsRowActive
+        lda     StatisticsKillsConsumed
         beq     AdvanceStatisticsEnemyType
         jmp     AnimateEnemyStatisticsRow
 
@@ -176,31 +260,31 @@ LCDE4:  inc     StatisticsEnemyType
         lda     StatisticsEnemyType
         cmp     #StatisticsEnemyTypeCount
         beq     QueueStatisticsTotals
-        ldx     #$14
+        ldx     #StatisticsBetweenRowsDelayFrames
         jsr     DelayWithStatisticsIcons
         jmp     BeginEnemyStatisticsRow
 
 QueueStatisticsTotals:
-LCDF4:  ldx     #$1E
+LCDF4:  ldx     #StatisticsBeforeTotalsDelayFrames
         jsr     DelayWithStatisticsIcons
         lda     Player1StageKillTotal
         jsr     ByteToDisplayDigits
         ldy     #(ScoreIncrementDigits+1)
-        ldx     #$08
+        ldx     #StatisticsPlayer1CountFormatColumn
         jsr     SelectVisibleDigits
-        ldy     #$17
+        ldy     #StatisticsTotalsRow
         jsr     QueueTranslatedTileString
         lda     MenuSelection
         beq     WaitBeforeStatisticsWinnerBonus
         lda     Player2StageKillTotal
         jsr     ByteToDisplayDigits
         ldy     #(ScoreIncrementDigits+1)
-        ldx     #$0E
+        ldx     #StatisticsPlayer2CountFormatColumn
         jsr     SelectVisibleDigits
-        ldy     #$17
+        ldy     #StatisticsTotalsRow
         jsr     QueueTranslatedTileString
 WaitBeforeStatisticsWinnerBonus:
-LCE1F:  ldx     #$0F
+LCE1F:  ldx     #StatisticsWinnerDelayFrames
         jsr     DelayWithStatisticsIcons
         lda     MenuSelection
         bne     CheckStatisticsWinnerBonus
@@ -219,33 +303,33 @@ LCE32:  lda     Player2StageKillTotal
         bcs     TryAwardPlayerTwoStatisticsBonus
         lda     Player1Lives
         beq     TryAwardPlayerTwoStatisticsBonus
-        lda     #$00
+        lda     #StatisticsWinnerBonusAward
         jsr     PreparePackedScoreIncrement
-        ldx     #$00
+        ldx     #StatisticsPlayer1ScoreRecord
         jsr     AddScoreDigitsToRecord
         ldy     #(Player1Score+1)
-        ldx     #$05
+        ldx     #StatisticsPlayer1ScoreFormatColumn
         jsr     SelectVisibleDigits
-        ldy     #$09
+        ldy     #StatisticsScoreRow
         jsr     QueueTranslatedTileString
         ldy     #(ScoreIncrementDigits+1)
-        ldx     #$01
+        ldx     #StatisticsPlayer1AwardFormatColumn
         jsr     SelectVisibleDigits
-        ldy     #$1A
+        ldy     #StatisticsBonusValueRow
         jsr     QueueTranslatedTileString
         lda     #>StatisticsBonusText
         sta     ScratchPtrHi
         lda     #<StatisticsBonusText
         sta     ScratchPtrLo
-        ldx     #$03
-        ldy     #$19
+        ldx     #StatisticsPlayer1BonusLabelColumn
+        ldy     #StatisticsBonusLabelRow
         jsr     QueueTileAtCoordinates
         lda     #>PointsText
         sta     ScratchPtrHi
         lda     #<PointsText
         sta     ScratchPtrLo
-        ldx     #$08
-        ldy     #$1A
+        ldx     #StatisticsPlayer1BonusPointsColumn
+        ldy     #StatisticsBonusValueRow
         jsr     QueueTileAtCoordinates
         lda     #AudioStateStartRequested
         sta     StatisticsWinnerBonusAudioState
@@ -262,33 +346,33 @@ LCE8D:  lda     Player1StageKillTotal
         bcs     FinishStageStatistics
         lda     Player2Lives
         beq     FinishStageStatistics
-        lda     #$00
+        lda     #StatisticsWinnerBonusAward
         jsr     PreparePackedScoreIncrement
-        ldx     #$01
+        ldx     #StatisticsPlayer2ScoreRecord
         jsr     AddScoreDigitsToRecord
         ldy     #(Player2Score+1)
-        ldx     #$17
+        ldx     #StatisticsPlayer2ScoreFormatColumn
         jsr     SelectVisibleDigits
-        ldy     #$09
+        ldy     #StatisticsScoreRow
         jsr     QueueTranslatedTileString
         ldy     #(ScoreIncrementDigits+1)
-        ldx     #$14
+        ldx     #StatisticsPlayer2BonusFormatColumn
         jsr     SelectVisibleDigits
-        ldy     #$1A
+        ldy     #StatisticsBonusValueRow
         jsr     QueueTranslatedTileString
         lda     #>StatisticsBonusText
         sta     ScratchPtrHi
         lda     #<StatisticsBonusText
         sta     ScratchPtrLo
-        ldx     #$16
-        ldy     #$19
+        ldx     #StatisticsPlayer2BonusLabelColumn
+        ldy     #StatisticsBonusLabelRow
         jsr     QueueTileAtCoordinates
         lda     #>PointsText
         sta     ScratchPtrHi
         lda     #<PointsText
         sta     ScratchPtrLo
-        ldx     #$1B
-        ldy     #$1A
+        ldx     #StatisticsPlayer2BonusPointsColumn
+        ldy     #StatisticsBonusValueRow
         jsr     QueueTileAtCoordinates
         lda     #AudioStateStartRequested
         sta     StatisticsWinnerBonusAudioState
@@ -297,7 +381,7 @@ LCE8D:  lda     Player1StageKillTotal
         sta     AudioStreamRecords+1
         jsr     AwardScoreThresholdLives
 FinishStageStatistics:
-LCEE5:  ldx     #$78
+LCEE5:  ldx     #StatisticsFinalDelayFrames
         jsr     DelayWithStatisticsIcons
         lda     #$00
         sta     NametableBits
@@ -306,7 +390,9 @@ LCEE5:  ldx     #$78
         lda     #$00
         sta     BackgroundPaletteIndex
         rts
-; Строит статический экран статистики в nametable $2400.
+; Строит статический экран статистики в nametable $2800. Значение
+; NametablePpuOffset=$24 прибавляется к high-byte адреса shadow ($04..$07),
+; а NametableBits=$02 выбирает ту же физическую nametable для рендеринга.
 ; Отключает рендеринг/NMI, очищает shadow, задаёт палитровые атрибуты,
 ; целиком передаёт nametable и снова включает NMI. Затем за несколько кадров
 ; ставит заголовки, текущие суммарные очки, номер этапа, четыре строки типов
@@ -320,17 +406,17 @@ LCEE5:  ldx     #$78
 ; рендеринге, а NMI снова разрешён до построения текстовых полей.
 BuildStageStatisticsScreen:
 LCEF7:  jsr     WaitForNextFrame
-        lda     #$01
+        lda     #StatisticsBlankZeroEnabled
         sta     DigitBlankMode
-        lda     #$24
+        lda     #StatisticsNametablePpuOffset
         sta     NametablePpuOffset
         lda     #$00
         sta     VerticalScroll
-        lda     #$02
+        lda     #StatisticsNametableBits
         sta     NametableBits
-        lda     #$30
+        lda     #StatisticsDigitTileBias
         sta     TileTranslationOffset
-        lda     #$03
+        lda     #StatisticsBackgroundPalette
         sta     BackgroundPaletteIndex
         jsr     DisableRenderingForBulkUpdate
         jsr     ClearNametableBuffer
@@ -341,68 +427,68 @@ LCEF7:  jsr     WaitForNextFrame
         sta     ScratchPtrHi
         lda     #<HighScoreStatisticsPrefix
         sta     ScratchPtrLo
-        ldx     #$08
-        ldy     #$03
+        ldx     #StatisticsHighScoreLabelColumn
+        ldy     #StatisticsHeaderRow
         jsr     QueueTileAtCoordinates
         ldy     #(HighScore+1)
-        ldx     #$12
+        ldx     #StatisticsHighScoreFormatColumn
         jsr     SelectVisibleDigits
-        ldy     #$03
+        ldy     #StatisticsHeaderRow
         jsr     QueueTranslatedTileString
         lda     #>StatisticsStageText
         sta     ScratchPtrHi
         lda     #<StatisticsStageText
         sta     ScratchPtrLo
-        ldx     #$0C
-        ldy     #$05
+        ldx     #StatisticsStageLabelColumn
+        ldy     #StatisticsStageRow
         jsr     QueueTileAtCoordinates
         lda     StageNumber
         jsr     ByteToDisplayDigits
         ldy     #(ScoreIncrementDigits+1)
-        ldx     #$0E
+        ldx     #StatisticsStageFormatColumn
         jsr     SelectVisibleDigits
-        ldy     #$05
+        ldy     #StatisticsStageRow
         jsr     QueueTranslatedTileString
         jsr     WaitForNextFrame
         lda     #>PlayerOneStatisticsHeader
         sta     ScratchPtrHi
         lda     #<PlayerOneStatisticsHeader
         sta     ScratchPtrLo
-        ldx     #$03
-        ldy     #$07
+        ldx     #StatisticsPlayer1HeaderColumn
+        ldy     #StatisticsPlayerHeaderRow
         jsr     QueueTileAtCoordinates
         ldy     #(Player1Score+1)
-        ldx     #$05
+        ldx     #StatisticsPlayer1ScoreFormatColumn
         jsr     SelectVisibleDigits
-        ldy     #$09
+        ldy     #StatisticsScoreRow
         jsr     QueueTranslatedTileString
         lda     #>PlayerOneStatisticsMarker
         sta     ScratchPtrHi
         lda     #<PlayerOneStatisticsMarker
         sta     ScratchPtrLo
-        ldx     #$0E
-        ldy     #$0C
+        ldx     #StatisticsPlayer1MarkerColumn
+        ldy     #StatisticsFirstEnemyRow
         jsr     QueueTileAtCoordinates
         lda     #>PlayerOneStatisticsMarker
         sta     ScratchPtrHi
         lda     #<PlayerOneStatisticsMarker
         sta     ScratchPtrLo
-        ldx     #$0E
-        ldy     #$0F
+        ldx     #StatisticsPlayer1MarkerColumn
+        ldy     #StatisticsSecondEnemyRow
         jsr     QueueTileAtCoordinates
         lda     #>PlayerOneStatisticsMarker
         sta     ScratchPtrHi
         lda     #<PlayerOneStatisticsMarker
         sta     ScratchPtrLo
-        ldx     #$0E
-        ldy     #$12
+        ldx     #StatisticsPlayer1MarkerColumn
+        ldy     #StatisticsThirdEnemyRow
         jsr     QueueTileAtCoordinates
         lda     #>PlayerOneStatisticsMarker
         sta     ScratchPtrHi
         lda     #<PlayerOneStatisticsMarker
         sta     ScratchPtrLo
-        ldx     #$0E
-        ldy     #$15
+        ldx     #StatisticsPlayer1MarkerColumn
+        ldy     #StatisticsFourthEnemyRow
         jsr     QueueTileAtCoordinates
         lda     MenuSelection
         beq     QueueStatisticsCountFields
@@ -411,73 +497,74 @@ LCEF7:  jsr     WaitForNextFrame
         sta     ScratchPtrHi
         lda     #<PlayerTwoStatisticsHeader
         sta     ScratchPtrLo
-        ldx     #$15
-        ldy     #$07
+        ldx     #StatisticsPlayer2HeaderColumn
+        ldy     #StatisticsPlayerHeaderRow
         jsr     QueueTileAtCoordinates
         ldy     #(Player2Score+1)
-        ldx     #$17
+        ldx     #StatisticsPlayer2ScoreFormatColumn
         jsr     SelectVisibleDigits
-        ldy     #$09
+        ldy     #StatisticsScoreRow
         jsr     QueueTranslatedTileString
         lda     #>PlayerTwoStatisticsMarker
         sta     ScratchPtrHi
         lda     #<PlayerTwoStatisticsMarker
         sta     ScratchPtrLo
-        ldx     #$11
-        ldy     #$0C
+        ldx     #StatisticsPlayer2MarkerColumn
+        ldy     #StatisticsFirstEnemyRow
         jsr     QueueTileAtCoordinates
         lda     #>PlayerTwoStatisticsMarker
         sta     ScratchPtrHi
         lda     #<PlayerTwoStatisticsMarker
         sta     ScratchPtrLo
-        ldx     #$11
-        ldy     #$0F
+        ldx     #StatisticsPlayer2MarkerColumn
+        ldy     #StatisticsSecondEnemyRow
         jsr     QueueTileAtCoordinates
         lda     #>PlayerTwoStatisticsMarker
         sta     ScratchPtrHi
         lda     #<PlayerTwoStatisticsMarker
         sta     ScratchPtrLo
-        ldx     #$11
-        ldy     #$12
+        ldx     #StatisticsPlayer2MarkerColumn
+        ldy     #StatisticsThirdEnemyRow
         jsr     QueueTileAtCoordinates
         lda     #>PlayerTwoStatisticsMarker
         sta     ScratchPtrHi
         lda     #<PlayerTwoStatisticsMarker
         sta     ScratchPtrLo
-        ldx     #$11
-        ldy     #$15
+        ldx     #StatisticsPlayer2MarkerColumn
+        ldy     #StatisticsFourthEnemyRow
         jsr     QueueTileAtCoordinates
 QueueStatisticsCountFields:
-; Размещает одинаковую строку PTS и четыре пустых числовых поля в колонке P1;
-; при двух игроках повторяет поля в колонке P2.
+; Размещает четыре строки PTS в колонке P1; при двух игроках повторяет их в
+; колонке P2. Числовые поля здесь не ставятся: их впервые выводит анимация
+; QueueStatisticsRowValues, в том числе на завершающей пустой итерации строки.
 LD014:  jsr     WaitForNextFrame
         lda     #>PointsText
         sta     ScratchPtrHi
         lda     #<PointsText
         sta     ScratchPtrLo
-        ldx     #$08
-        ldy     #$0C
+        ldx     #StatisticsPlayer1RowPointsColumn
+        ldy     #StatisticsFirstEnemyRow
         jsr     QueueTileAtCoordinates
         lda     #>PointsText
         sta     ScratchPtrHi
         lda     #<PointsText
         sta     ScratchPtrLo
-        ldx     #$08
-        ldy     #$0F
+        ldx     #StatisticsPlayer1RowPointsColumn
+        ldy     #StatisticsSecondEnemyRow
         jsr     QueueTileAtCoordinates
         lda     #>PointsText
         sta     ScratchPtrHi
         lda     #<PointsText
         sta     ScratchPtrLo
-        ldx     #$08
-        ldy     #$12
+        ldx     #StatisticsPlayer1RowPointsColumn
+        ldy     #StatisticsThirdEnemyRow
         jsr     QueueTileAtCoordinates
         lda     #>PointsText
         sta     ScratchPtrHi
         lda     #<PointsText
         sta     ScratchPtrLo
-        ldx     #$08
-        ldy     #$15
+        ldx     #StatisticsPlayer1RowPointsColumn
+        ldy     #StatisticsFourthEnemyRow
         jsr     QueueTileAtCoordinates
         lda     MenuSelection
         beq     QueueStatisticsFooter
@@ -486,29 +573,29 @@ LD014:  jsr     WaitForNextFrame
         sta     ScratchPtrHi
         lda     #<PointsText
         sta     ScratchPtrLo
-        ldx     #$1A
-        ldy     #$0C
+        ldx     #StatisticsPlayer2RowPointsColumn
+        ldy     #StatisticsFirstEnemyRow
         jsr     QueueTileAtCoordinates
         lda     #>PointsText
         sta     ScratchPtrHi
         lda     #<PointsText
         sta     ScratchPtrLo
-        ldx     #$1A
-        ldy     #$0F
+        ldx     #StatisticsPlayer2RowPointsColumn
+        ldy     #StatisticsSecondEnemyRow
         jsr     QueueTileAtCoordinates
         lda     #>PointsText
         sta     ScratchPtrHi
         lda     #<PointsText
         sta     ScratchPtrLo
-        ldx     #$1A
-        ldy     #$12
+        ldx     #StatisticsPlayer2RowPointsColumn
+        ldy     #StatisticsThirdEnemyRow
         jsr     QueueTileAtCoordinates
         lda     #>PointsText
         sta     ScratchPtrHi
         lda     #<PointsText
         sta     ScratchPtrLo
-        ldx     #$1A
-        ldy     #$15
+        ldx     #StatisticsPlayer2RowPointsColumn
+        ldy     #StatisticsFourthEnemyRow
         jsr     QueueTileAtCoordinates
 QueueStatisticsFooter:
 ; Завершает разметку горизонтальным разделителем и подписью TOTAL.
@@ -517,15 +604,15 @@ LD096:  jsr     WaitForNextFrame
         sta     ScratchPtrHi
         lda     #<StatisticsDivider
         sta     ScratchPtrLo
-        ldx     #$0C
-        ldy     #$16
+        ldx     #StatisticsDividerColumn
+        ldy     #StatisticsDividerRow
         jsr     QueueTileAtCoordinates
         lda     #>StatisticsTotalText
         sta     ScratchPtrHi
         lda     #<StatisticsTotalText
         sta     ScratchPtrLo
-        ldx     #$06
-        ldy     #$17
+        ldx     #StatisticsTotalLabelColumn
+        ldy     #StatisticsTotalsRow
         jsr     QueueTileAtCoordinates
         rts
 ; Выводит четыре двухтайловых изображения типов противников на экране
@@ -533,19 +620,19 @@ LD096:  jsr     WaitForNextFrame
 ; $80,$A0,$C0,$E0; атрибуты $02. Добавляет восемь спрайтов в OAM shadow.
 ; Меняет A/X/Y, RenderAttributes/OamTile/OamPairX/OamPairY и OamBufferPos.
 DrawStatisticsEnemyIcons:
-LD0B8:  lda     #$02
+LD0B8:  lda     #StatisticsEnemyIconAttributes
         sta     RenderAttributes
-        ldy     #$64
-        lda     #$80
+        ldy     #StatisticsType0IconY
+        lda     #StatisticsType0IconTile
         jsr     DrawStatisticsEnemyIcon
-        ldy     #$7C
-        lda     #$A0
+        ldy     #StatisticsType1IconY
+        lda     #StatisticsType1IconTile
         jsr     DrawStatisticsEnemyIcon
-        ldy     #$94
-        lda     #$C0
+        ldy     #StatisticsType2IconY
+        lda     #StatisticsType2IconTile
         jsr     DrawStatisticsEnemyIcon
-        ldy     #$AC
-        lda     #$E0
+        ldy     #StatisticsType3IconY
+        lda     #StatisticsType3IconTile
         jsr     DrawStatisticsEnemyIcon
         rts
 
@@ -592,6 +679,6 @@ LD0D9:  lda     #$50
 ; спрайта в OAM shadow; меняет A/X/Y, OamTile/OamPairX/OamPairY и OamBufferPos.
 DrawStatisticsEnemyIcon:
 LD130:  sta     OamTile
-        ldx     #$81
+        ldx     #StatisticsEnemyIconX
         jsr     EmitTwoTileOamPair
         rts

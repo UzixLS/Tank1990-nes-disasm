@@ -169,8 +169,8 @@ LFE87:  txa
         ldx     #(TankSlotCount-1)
 TransformNextEnemyUpgrade:
 LFE8B:  lda     ObjectAttributes,x
-        ora     #EnemyAttributeTransformSetBits
-        eor     #EnemyAttributeTransformToggleBit
+        ora     #EnemyHitPointMask
+        eor     #EnemyPowerUpCarrierFlag
         sta     ObjectAttributes,x
         dex
         cpx     #(FirstEnemyTankSlot-1)
