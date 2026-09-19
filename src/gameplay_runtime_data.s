@@ -1,8 +1,9 @@
 ; Таблицы runtime и данные checksum target ($C59D-$C5D8).
 
-; Начальный EnemyActivityInterval для этапов 1..11;
-; выбирается из первых 12-StageNumber элементов.
-EarlyStageSpawnDelayTable:
+; Начальный EnemyActivityInterval для этапов 1..11 выбирается из первых
+; 12-StageNumber элементов. Interval управляет и spawn delay, и ветвлением AI.
+; Последний $3A штатным StageNumber 1..11 не выбирается.
+EarlyStageActivityIntervalTable:
 LC59D:  .byte   $03,$08,$0D,$12,$17,$1C,$21,$26
         .byte   $2B,$30,$35,$3A
 ; Битовые поля ObjectAttributes для псевдослучайной инициализации вражеских танков.

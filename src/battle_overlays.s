@@ -81,7 +81,7 @@ LC947:  lda     #$03
 ; кроме attract mode (StageSetLength=AttractStageSetMarker).
 ; Каждые 16 кадров уменьшает TransitionObjectTimer; пока он >=$0A, двигает
 ; объект на один пиксель по TransitionObjectDirection, затем рисует.
-; При обнулении ставит Y=$F0 и последний раз рисует за экраном. При timer=0
+; При обнулении ставит Y=OamHiddenY и последний раз рисует за экраном. При timer=0
 ; либо attract-маркере возвращается без отрисовки. Портит A/X/Y, ScratchPtr,
 ; transition/render scratch и OAM shadow при активной анимации; PPU не меняет.
 UpdateTransitionObject:
@@ -95,7 +95,7 @@ LC972:  lda     TransitionObjectTimer
         bne     UpdateTransitionObjectPosition
         dec     TransitionObjectTimer
         bne     UpdateTransitionObjectPosition
-        lda     #StageEndObjectHiddenY
+        lda     #OamHiddenY
         sta     TransitionObjectY
 UpdateTransitionObjectPosition:
 LC98D:  lda     TransitionObjectTimer

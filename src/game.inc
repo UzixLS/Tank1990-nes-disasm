@@ -1,6 +1,8 @@
 ; Общие игровые константы. Здесь находятся только значения, смысл которых
 ; одинаков во всех использующих их подсистемах.
 
+Player1TankSlot       = $00
+Player2TankSlot       = $01
 PlayerTankCount       = $02
 FirstEnemyTankSlot    = $02
 TankSlotCount         = $08

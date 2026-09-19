@@ -5,13 +5,14 @@ AttractEdgeFireSuppressionY = $C8
 ; Генерирует Joy1/Joy2 для attract mode. Для каждого игрока выбирает цель:
 ; координаты неполученного бонуса (PowerUpX!=0, pickup timer=0), иначе первый
 ; targetable танк из слотов
-; X+2, X+4, X+3 (для игроков 0/1 это соответственно 2/4/3 и 3/5/4).
+; X+2, X+4, X+3 (для Player1TankSlot/Player2TankSlot это соответственно
+; 2/4/3 и 3/5/4).
 ; ChooseTankStateTowardTarget возвращает направление; DemoInputByDirection
 ; добавляет A+B. Выход: AttractPlayerSlot=$FF, X=0; A/Y не определены.
 ; Меняет Joy*Held/Pressed, TankTargetX/Y и targeting scratch; PPU/OAM/audio
 ; state и игровое состояние объектов не меняет.
 GenerateAttractModeInput:
-LC642:  lda     #$01
+LC642:  lda     #Player2TankSlot
         sta     AttractPlayerSlot
 GenerateNextAttractPlayerInput:
 LC646:  ldx     AttractPlayerSlot

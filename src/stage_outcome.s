@@ -1,7 +1,6 @@
 ; Рабочие счётчики и условие завершения этапа ($C71E-$C754).
 
 StageEndObjectStartX     = $70
-StageEndObjectHiddenY    = $F0
 StageEndObjectStartTimer = $11
 
 ; Обнуляет восемь байт Player1KillCounts..Player2KillCounts+3.
@@ -33,7 +32,7 @@ LC728:  lda     BattleState
 StartStageEndTransition:
 LC737:  lda     #StageEndObjectStartX
         sta     TransitionObjectX
-        lda     #StageEndObjectHiddenY
+        lda     #OamHiddenY
         sta     TransitionObjectY
         lda     #$00
         sta     TransitionObjectDirection
