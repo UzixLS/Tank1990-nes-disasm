@@ -1,17 +1,16 @@
-; Инициализация атрибутов игрока и заголовок варианта ($E3C9-$E3EE).
-
-VariantPlayerAttributeBit = $20
+; Инициализация upgrade игроков и заголовок варианта ($E3C9-$E3EE).
 
 ; Инициализирует PlayerUpgradeLevel обоих игроков значением
-; VariantPlayerAttributeBit, если GameVariant отрицателен либо в его
-; неотрицательном значении установлен bit5; иначе записывает 0.
+; PlayerUpgradeLevel1, если GameVariant отрицателен либо в его неотрицательном
+; значении установлен bit5; иначе записывает 0. Для menu-вариантов это даёт
+; upgrade 1 для extended $80..$86 и 0 для standard 0..6.
 ; Выход: A — записанное значение; X/Y и остальная RAM не меняются.
-InitializePlayerVariantAttributes:
+InitializePlayerUpgradeLevelsForVariant:
 LE3C9:  lda     GameVariant
-        bpl     MaskPlayerVariantAttribute
-        lda     #VariantPlayerAttributeBit
-MaskPlayerVariantAttribute:
-LE3CF:  and     #VariantPlayerAttributeBit
+        bpl     MaskVariantUpgradeLevel
+        lda     #PlayerUpgradeLevel1
+MaskVariantUpgradeLevel:
+LE3CF:  and     #PlayerUpgradeLevel1
         sta     PlayerUpgradeLevel
         sta     PlayerUpgradeLevel+1
         rts

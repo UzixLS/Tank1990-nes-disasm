@@ -6,13 +6,15 @@ RuntimeChecksumClassicBlock1 = ClassicLevels + $0647
 RuntimeChecksumClassicBlock2 = ClassicLevels + $0789
 
 ; Инициализирует runtime guard: последовательно XOR-ит два семибайтных окна
-; внутри ClassicLevels ($F677 и $F7B9) и RuntimeChecksumFailureTarget в
+; внутри ClassicLevels ($F677 и $F7B9) и RuntimeChecksumInitialJumpTarget в
 ; RuntimeChecksumActual, затем записывает $CD в RuntimeChecksumExpected.
 ; Структурное назначение двух окон карт отдельно не установлено.
-; ScratchPtr остаётся равным RuntimeChecksumFailureTarget: при позднем
-; несовпадении guard использует его как адрес косвенного перехода.
+; На выходе ScratchPtr равен RuntimeChecksumInitialJumpTarget, но это лишь
+; начальное значение: gameplay helpers свободно перезаписывают volatile pointer,
+; а поздний guard его не восстанавливает перед косвенным переходом.
 ; Выход: A=RuntimeChecksumExpectedValue, RuntimeChecksumExpected=A,
-; RuntimeChecksumActual=совокупный XOR, ScratchPtr=RuntimeChecksumFailureTarget,
+; RuntimeChecksumActual=совокупный XOR,
+; ScratchPtr=RuntimeChecksumInitialJumpTarget,
 ; Y=$FF. X и проверяемые данные сохраняются.
 InitializeRuntimeChecksumGuard:
 LD2F8:  lda     #$00
@@ -27,9 +29,9 @@ LD2F8:  lda     #$00
         lda     #>RuntimeChecksumClassicBlock2
         sta     ScratchPtrHi
         jsr     XorSevenByteBlock
-        lda     #<RuntimeChecksumFailureTarget
+        lda     #<RuntimeChecksumInitialJumpTarget
         sta     ScratchPtrLo
-        lda     #>RuntimeChecksumFailureTarget
+        lda     #>RuntimeChecksumInitialJumpTarget
         sta     ScratchPtrHi
         jsr     XorSevenByteBlock
         lda     #RuntimeChecksumExpectedValue

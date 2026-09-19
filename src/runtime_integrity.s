@@ -9,9 +9,11 @@ RuntimeIntegrityRandomMask = $0E
 ; При StageNumber<RuntimeIntegrityFirstStage и в большинстве вызовов только
 ; вызывает UpdateHalfSecondPhaseFlag. Начиная с 26-го этапа с вероятностью 1/8
 ; сравнивает RuntimeChecksumActual с RuntimeChecksumExpected. При несовпадении
-; выполняет JMP (ScratchPtr). После штатной InitializeRuntimeChecksumGuard это
-; RuntimeChecksumFailureTarget, чей первый байт — RTI; путь к вызывающему коду
-; не возвращается обычным RTS.
+; выполняет JMP по текущему volatile ScratchPtr. InitializeRuntimeChecksumGuard
+; оставляет там RuntimeChecksumInitialJumpTarget (его первый байт — RTI), но до
+; первой проверки pointer обычно меняют HUD/render helpers; guard адрес не
+; восстанавливает. Поэтому фактическая цель mismatch зависит от последнего
+; пользователя ScratchPtr, и путь не обязан возвращаться обычным RTS.
 ; На всех возвращающихся путях вызывает UpdateHalfSecondPhaseFlag, который
 ; меняет BackgroundPaletteIndex только на полусекундной фазе. Портит A и
 ; флаги; при сравнении оставляет X=4,

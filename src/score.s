@@ -7,6 +7,10 @@ ScoreTerminator = $FF
 ZeroPageRecordBase     = $00
 ScoreDigit6Offset      = $06
 ScoreTerminatorOffset  = $07
+LargeScoreRasterX      = $10
+LargeScoreRasterY      = $64
+LargeScoreTileBias     = $30
+LargeScoreGlyphAdvance = $20
 
 ; Подавляет ведущие нули в нулевой странице и готовит указатель на печатаемую
 ; часть цифровой $FF-терминированной записи. Вход: Y -- адрес первой цифры,
@@ -39,16 +43,17 @@ LD94A:  lda     #$00
         rts
 
 ; Рисует текущую семизначную запись HighScore крупными CHR-знаками.
-; Ведущие нули смещают начало на $20 пикселей. Использует CHR bias $30 и
-; позицию ($10,$64). Меняет A/X/Y, AuxPtr, RasterStringX/Y,
+; Ведущие нули смещают начало на LargeScoreGlyphAdvance пикселей. Использует
+; LargeScoreTileBias и позицию (LargeScoreRasterX,LargeScoreRasterY).
+; Меняет A/X/Y, AuxPtr, RasterStringX/Y,
 ; TileTranslationOffset и области RasterizeTileStringToShadow. По выходу
 ; TileTranslationOffset=0; HighScore не меняет, PPU queue/OAM не трогает.
 RenderLargeScoreRecord:
-LD951:  lda     #$10
+LD951:  lda     #LargeScoreRasterX
         sta     RasterStringX
-        lda     #$64
+        lda     #LargeScoreRasterY
         sta     RasterStringY
-        lda     #$30
+        lda     #LargeScoreTileBias
         sta     TileTranslationOffset
         ldy     #HighScore
 SkipNextHighScoreLeadingZero:
@@ -57,7 +62,7 @@ LD95F:  lda     ZeroPageRecordBase,y
         iny
         lda     RasterStringX
         clc
-        adc     #$20
+        adc     #LargeScoreGlyphAdvance
         sta     RasterStringX
         jmp     SkipNextHighScoreLeadingZero
 

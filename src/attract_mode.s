@@ -32,7 +32,7 @@ LC3B5:  lda     #AttractAudioMutePauseState
         sta     PauseState
         lda     #AttractBackgroundPalette
         sta     BackgroundPaletteIndex
-        jsr     InitializeSessionAfterScoreRecords
+        jsr     InitializeSessionPreservingScores
         lda     #AttractPlayer2Lives
         sta     Player2Lives
         lda     #$00

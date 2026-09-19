@@ -7,18 +7,25 @@ NewHighScoreFirstPalette     = $05
 NewHighScoreExitPalette      = $00
 
 ; Показывает экран после успешного UpdateHighScoreRecord. Предусловия:
-; HighScore уже содержит новую запись, NMI включён. На время bulk update
+; HighScore уже содержит валидную 7-digit/$FF запись, NMI включён,
+; PauseState=0 и TileTranslationOffset=0. Иначе ожидание audio может зависнуть
+; либо заголовок растрируется с чужим CHR bias. На время bulk update
 ; отключает rendering/NMI, очищает shadow, растеризует заголовок в ($10,$32),
 ; а RenderLargeScoreRecord — сам рекорд в своей фиксированной позиции ($10,$64).
 ; Затем загружает nametable $2000, включает NMI и запускает три музыкальных
-; потока, но ждёт завершения только pulse 1: состояния pulse 2/triangle на
-; выходе не гарантированы. FrameCounter не сбрасывается, поэтому начальная фаза
+; потока, но control flow ждёт завершения только pulse 1. В исходных audio data
+; pulse 2 заканчивается в тот же NMI, triangle раньше; производная работа при
+; изменении длительностей должна сохранить это либо явно остановить потоки.
+; FrameCounter не сбрасывается, поэтому начальная фаза
 ; палитры зависит от кадра; каждый цикл планирует палитру 5..8 через NMI.
 ; Финальный BackgroundPaletteIndex=0 тоже только планируется: после записи
-; процедура кадра уже не ждёт. Выход: A=0, NMI включён, VerticalScroll=0,
+; процедура кадра уже не ждёт, а в PPU остаётся последняя палитра 5..8 до NMI
+; caller-а. Долгое ожидание через NMI обновляет input/OAM/audio/frame counters.
+; Выход: A=0, Y=0, X не определён, NMI включён, VerticalScroll=0,
 ; NametableBits=0, NametablePpuOffset=ShadowToPrimaryNametableOffset,
-; BackgroundPaletteIndex=NewHighScoreExitPalette; X/Y не определены. Меняет
-; shadow/PPU, SlowFrameCounter, audio state и рабочую RAM.
+; BackgroundPaletteIndex=NewHighScoreExitPalette. Меняет
+; shadow/PPU, SlowFrameCounter, AuxPtr, ScratchPtr=$0800, raster scratch,
+; audio state и рабочую RAM.
 ShowNewHighScoreScreen:
 LC44B:  jsr     DisableRenderingForBulkUpdate
         lda     #ShadowToPrimaryNametableOffset
