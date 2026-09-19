@@ -2,8 +2,23 @@
 
 PrimaryNametableOffset = $1C        ; shadow $04xx -> PPU $20xx
 TitleNametableOffset   = $24        ; shadow $04xx -> PPU $28xx
-TitleBackgroundPalette = $03
 TitleScoreTileBias     = $30
+TitleLogoRasterX       = $1A
+TitleLogoRasterY       = $2E
+TitleYearRasterX       = $3C
+TitleYearRasterY       = $56
+TitleScoreRow          = $03
+TitlePlayer1LabelColumn       = $02
+TitlePlayer1ScoreFormatColumn = $04
+TitleHighScoreLabelColumn     = $0B
+TitleHighScoreFormatColumn    = $0E
+TitlePlayer2LabelColumn       = $15
+TitlePlayer2ScoreFormatColumn = $17
+TitleMenuTextColumn    = $0B
+TitleOnePlayerRow      = $11
+TitleTwoPlayerRow      = $13
+TitleConstructionRow   = $15
+TitleCopyrightRow      = $18
 
 ; Очищает основную nametable $2000: отключает рендеринг/NMI, обнуляет shadow,
 ; напрямую загружает 1 KiB и снова включает NMI. Выбирает фоновую палитру 3.
@@ -34,13 +49,13 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         lda     #TitleNametableOffset
         sta     NametablePpuOffset
         jsr     ClearNametableBuffer
-        ldx     #$1A
+        ldx     #TitleLogoRasterX
         stx     RasterStringX
-        ldy     #$2E
+        ldy     #TitleLogoRasterY
         sty     RasterStringY
         jsr     DrawVariantTitleData
-; Восемь исполняемых NOP сохраняют исходную задержку/layout после расширенного
-; обработчика заголовка; отдельных entry points внутри последовательности нет.
+; Восемь исполняемых NOP не меняют состояние и не имеют внутренних entry points.
+; Их исходное назначение неизвестно; они сохранены для byte identity и адресов.
         nop
         nop
         nop
@@ -49,9 +64,9 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         nop
         nop
         nop
-        ldx     #$3C
+        ldx     #TitleYearRasterX
         stx     RasterStringX
-        ldy     #$56
+        ldy     #TitleYearRasterY
         sty     RasterStringY
         lda     #>EditionYearText
         sta     AuxPtrHi
@@ -66,25 +81,25 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         sta     ScratchPtrHi
         lda     #<PlayerOneScorePrefix
         sta     ScratchPtrLo
-        ldx     #$02
-        ldy     #$03
+        ldx     #TitlePlayer1LabelColumn
+        ldy     #TitleScoreRow
         jsr     QueueTileAtCoordinates
         ldy     #(Player1Score+1)
-        ldx     #$04
+        ldx     #TitlePlayer1ScoreFormatColumn
         jsr     SelectVisibleDigits
-        ldy     #$03
+        ldy     #TitleScoreRow
         jsr     QueueTranslatedTileString
         lda     #>HighScoreCompactPrefix
         sta     ScratchPtrHi
         lda     #<HighScoreCompactPrefix
         sta     ScratchPtrLo
-        ldx     #$0B
-        ldy     #$03
+        ldx     #TitleHighScoreLabelColumn
+        ldy     #TitleScoreRow
         jsr     QueueTileAtCoordinates
         ldy     #(HighScore+1)
-        ldx     #$0E
+        ldx     #TitleHighScoreFormatColumn
         jsr     SelectVisibleDigits
-        ldy     #$03
+        ldy     #TitleScoreRow
         jsr     QueueTranslatedTileString
         lda     MenuSelection
         beq     QueueTitleMenuText
@@ -92,13 +107,13 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         sta     ScratchPtrHi
         lda     #<PlayerTwoScorePrefix
         sta     ScratchPtrLo
-        ldx     #$15
-        ldy     #$03
+        ldx     #TitlePlayer2LabelColumn
+        ldy     #TitleScoreRow
         jsr     QueueTileAtCoordinates
         ldy     #(Player2Score+1)
-        ldx     #$17
+        ldx     #TitlePlayer2ScoreFormatColumn
         jsr     SelectVisibleDigits
-        ldy     #$03
+        ldy     #TitleScoreRow
         jsr     QueueTranslatedTileString
 QueueTitleMenuText:
 LD20E:  lda     #$00
@@ -108,29 +123,29 @@ LD20E:  lda     #$00
         sta     ScratchPtrHi
         lda     #<OnePlayerMenuText
         sta     ScratchPtrLo
-        ldx     #$0B
-        ldy     #$11
+        ldx     #TitleMenuTextColumn
+        ldy     #TitleOnePlayerRow
         jsr     QueueTileAtCoordinates
         lda     #>TwoPlayersMenuText
         sta     ScratchPtrHi
         lda     #<TwoPlayersMenuText
         sta     ScratchPtrLo
-        ldx     #$0B
-        ldy     #$13
+        ldx     #TitleMenuTextColumn
+        ldy     #TitleTwoPlayerRow
         jsr     QueueTileAtCoordinates
         lda     #>ConstructionMenuText
         sta     ScratchPtrHi
         lda     #<ConstructionMenuText
         sta     ScratchPtrLo
-        ldx     #$0B
-        ldy     #$15
+        ldx     #TitleMenuTextColumn
+        ldy     #TitleConstructionRow
         jsr     QueueTileAtCoordinates
         jsr     WaitForNextFrame
         lda     #>CreditsCopyrightText
         sta     ScratchPtrHi
         lda     #<CreditsCopyrightText
         sta     ScratchPtrLo
-        ldx     #$0B
-        ldy     #$18
+        ldx     #TitleMenuTextColumn
+        ldy     #TitleCopyrightRow
         jsr     QueueTileAtCoordinates
         rts

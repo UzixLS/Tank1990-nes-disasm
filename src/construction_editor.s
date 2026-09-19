@@ -6,9 +6,13 @@ ConstructionMetatileIndex    = $5C
 ConstructionMoveRepeatTimer = $7B
 ConstructionEditLatch        = $81
 ConstructionMetatileCount    = $0E
+ConstructionMetatileBeforeFirst = $FF
+ConstructionMetatileFirst    = $00
 ConstructionCursorStartX     = $10
 ConstructionCursorStartY     = $18
-ConstructionCursorState      = $84
+ConstructionCursorState      = TankStateIdleClass | TankIdlePhaseStep
+ConstructionCursorVisibleFrameBit = $10
+ConstructionPaintButtonMask  = BUTTON_A | BUTTON_B
 ConstructionMode:
 ; Вход: ConstructionMapFlag=0 требует первичной очистки/отрисовки поля;
 ; ненулевое значение повторно использует уже построенную shadow-карту. Объект 0
@@ -18,6 +22,10 @@ ConstructionMode:
 ; ConstructionEditLatch. START увеличивает ConstructionMapFlag и хвостом
 ; переходит в EnterTitleMenu. Процедура сама не возвращается; меняет объект 0,
 ; shadow nametable, PPU-очередь и рабочую RAM, портит A/X/Y.
+; Начальный X=$10 намеренно лежит левее допустимой области; первый clamp обычно
+; переводит его в $18, если на этом кадре Right не успел сдвинуть курсор.
+; При одновременном D-pad и A/B направление имеет приоритет для latch, но
+; удерживаемая кнопка всё равно рисует.
 LC0AE:  lda     ConstructionMapFlag
         bne     InitializeConstructionEditor
         jsr     DisableRenderingForBulkUpdate
@@ -34,6 +42,7 @@ LC0BE:  jsr     ClearTankStates
         sta     ObjectState
         lda     #$00
         sta     ObjectAttributes
+        ; Тот же ноль отключает terrain-priority курсора.
         sta     SpriteBehindTerrainMask
         sta     ObjectFrame
         sta     ConstructionEditLatch
@@ -51,7 +60,7 @@ LC0EA:  jsr     WaitForNextFrame
         jsr     UpdateConstructionCursor
         jsr     ClampConstructionCursor
         lda     FrameCounter
-        and     #$10
+        and     #ConstructionCursorVisibleFrameBit
         beq     ProcessConstructionEditorInput
         jsr     DrawTanks
 ProcessConstructionEditorInput:
@@ -71,7 +80,7 @@ LC111:  inc     ConstructionMetatileIndex
         lda     ConstructionMetatileIndex
         cmp     #ConstructionMetatileCount
         bne     PaintConstructionTile
-        lda     #$00
+        lda     #ConstructionMetatileFirst
         sta     ConstructionMetatileIndex
         jmp     PaintConstructionTile
 
@@ -87,7 +96,7 @@ LC120:  lda     Joy1Pressed
 SelectPreviousConstructionTile:
 LC12F:  dec     ConstructionMetatileIndex
         lda     ConstructionMetatileIndex
-        cmp     #$FF
+        cmp     #ConstructionMetatileBeforeFirst
         bne     PaintConstructionTile
         lda     #(ConstructionMetatileCount-1)
         sta     ConstructionMetatileIndex
@@ -95,7 +104,7 @@ LC12F:  dec     ConstructionMetatileIndex
 
 CheckConstructionPaintHeld:
 LC13E:  lda     Joy1Held
-        and     #(BUTTON_A | BUTTON_B)
+        and     #ConstructionPaintButtonMask
         beq     CheckConstructionExit
 PaintConstructionTile:
 LC144:  jsr     DrawConstructionMetatile
@@ -106,7 +115,7 @@ LC147:  lda     Joy1Pressed
         jmp     ConstructionEditorFrame
 
 ExitConstructionEditor:
-LC150:  lda     #$20
+LC150:  lda     #TerrainPriorityEnabled
         sta     SpriteBehindTerrainMask
         inc     ConstructionMapFlag
         jmp     EnterTitleMenu

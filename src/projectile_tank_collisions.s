@@ -209,7 +209,7 @@ CreditPlayer2Kill:
 LE813:  inc     Player2KillCounts,x
 MaybeAwardEnemyScore:
 LE815:  lda     StageSetLength
-        cmp     #$02
+        cmp     #AttractStageSetMarker
         beq     AdvanceEnemyTankCollision
         lda     EnemyTypeScoreAwards,x
         jsr     PreparePackedScoreIncrement

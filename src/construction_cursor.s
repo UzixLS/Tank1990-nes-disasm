@@ -2,13 +2,15 @@
 
 ConstructionMoveInitialDelay = $14
 ConstructionMoveRepeatReload = $0F
+ConstructionMetatileIndexMask = $0F
 
 ; Рисует метатайл ConstructionMetatileIndex&$0F в координатах ObjectX/ObjectY.
-; Входные RAM-поля не меняет; портит A/X/Y и ScratchPtr, изменяет shadow
-; nametable/атрибуты и PPU-очередь через DrawMetatile.
+; Сами ConstructionMetatileIndex и ObjectX/Y сохраняет. Портит A/X/Y,
+; ScratchPtr, MetatileIndex/MetatileTileX/MetatileTileY, RenderAttributes и
+; временные $01..$03; изменяет nametable/attribute shadow и PPU-очередь.
 DrawConstructionMetatile:
 LC6C6:  lda     ConstructionMetatileIndex
-        and     #$0F
+        and     #ConstructionMetatileIndexMask
         ldx     ObjectX
         ldy     ObjectY
         jsr     DrawMetatile
@@ -17,7 +19,9 @@ LC6C6:  lda     ConstructionMetatileIndex
 ; Двигает Construction-курсор на 16 px по фронту D-pad. После 20 вызовов
 ; удержания включает повтор с периодом 5 вызовов: после каждого шага таймер
 ; перезагружается значением 15. Любой удерживаемый D-pad обнуляет
-; ConstructionEditLatch. Портит A/Y и флаги, X сохраняет; PPU/OAM не меняет.
+; ConstructionEditLatch. Четыре ASL задают жёсткий шаг сетки 16 px.
+; Меняет ConstructionMoveRepeatTimer/ConstructionEditLatch и, при шаге,
+; ObjectX/ObjectY. Портит A/Y и флаги, X сохраняет; PPU/OAM не меняет.
 UpdateConstructionCursor:
 LC6D2:  lda     Joy1Held
         and     #BUTTON_DIRECTIONS

@@ -4,11 +4,14 @@ TitleMenuItemCount       = $03
 TitleAttractDelayTicks   = $0A
 TitleVariantMenuCode     = $2E
 TitleSecretHighStep      = $10
+TitleBackgroundPalette   = $03
+TitleExitBackgroundPalette = $00
+TitleNametableBits       = $02
 TitleCursorX             = $48
 TitleCursorFirstY        = $8B
-TitleCursorRowStep       = $10
+TitleCursorAnimationFrameMask = $03
 ; Активный экран заголовка и главного меню.
-; Использует слот танка 0 как мигающий курсор; SELECT циклически выбирает
+; Использует слот танка 0 как анимированный курсор; SELECT циклически выбирает
 ; 1 PLAYER / 2 PLAYERS / CONSTRUCTION, START передаёт управление через таблицу.
 ; Если ConstructionMapFlag=0, после TitleAttractDelayTicks приращений
 ; SlowFrameCounter (одно приращение на 64 кадра) возвращается для запуска демо.
@@ -18,7 +21,7 @@ TitleCursorRowStep       = $10
 ; Обычный выход по тайм-ауту портит A/X/Y. Ветви START снимают со стека адрес
 ; вызова TitleScreen и передают управление верхнему сценарию без обычного RTS.
 TitleScreen:
-LC9C0:  lda     #$03
+LC9C0:  lda     #TitleBackgroundPalette
         sta     BackgroundPaletteIndex
         jsr     ClearTankStates
         lda     #TitleCursorX
@@ -34,15 +37,15 @@ LC9C0:  lda     #$03
         sta     PlayerStunTimer+1
         sta     VerticalScroll
         sta     TitleSecretInputCode
-        lda     #$02
+        lda     #TitleNametableBits
         sta     NametableBits
 TitleMenuLoop:
 LC9E6:  jsr     WaitForNextFrame
         lda     FrameCounter
-        and     #$03
+        and     #TitleCursorAnimationFrameMask
         bne     DrawTitleCursorAndReadInput
         lda     ObjectFrame
-        eor     #$04
+        eor     #TankTrackFrameBit
         sta     ObjectFrame
 DrawTitleCursorAndReadInput:
 LC9F5:  jsr     DrawTanks
@@ -103,7 +106,7 @@ LCA3D:  lda     Joy1Pressed
 UnreferencedCa51Nop:
 LCA51:  .byte   $EA
 DispatchTitleMenuSelection:
-LCA52:  lda     #$00
+LCA52:  lda     #TitleExitBackgroundPalette
         sta     BackgroundPaletteIndex
         ; Удалить адрес возврата TitleScreen: выбранный обработчик продолжает
         ; верхнеуровневый сценарий и не должен вернуться к его вызывающему коду.
@@ -142,7 +145,8 @@ StartConstruction:
         jmp     ConstructionMode
 
 ; Преобразует MenuSelection=0..2 в Y курсора:
-; ObjectY=TitleCursorFirstY+MenuSelection*TitleCursorRowStep.
+; ObjectY=TitleCursorFirstY+MenuSelection*16. Множитель зашит четырьмя ASL,
+; поэтому это layout-ограничение, а не настраиваемая константа.
 ; Выход: A=ObjectY; X/Y и прочая RAM сохраняются.
 UpdateTitleCursor:
 LCA85:  lda     MenuSelection

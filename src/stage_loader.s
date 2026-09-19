@@ -15,7 +15,8 @@ StageDrawY             = $57
 
 ; Выбирает описатель набора по младшему нибблу $46, вычисляет адрес StageNumber
 ; и распаковывает поле 13x13 в shadow nametable через DrawMetatile.
-; Вход: A=$FF включает специальный режим (StageNumber=$20, дескриптор 6); при ином A
+; Вход: A=AttractStageLoadSentinel включает специальный режим
+; (StageNumber=AttractMapStageNumber, descriptor AttractMapSetSelector); при ином A
 ; номер берётся из StageNumber, а дескриптор -- из $46 & $0F.
 ; Формула адреса точно сохраняет поведение ROM: для длины набора N от StageNumber
 ; многократно вычитается N; к base добавляются (2*wraps)%6 и
@@ -25,11 +26,11 @@ StageDrawY             = $57
 ; attribute shadow и временно PPU-очередь. После каждого метатайла PpuBufferPos сбрасывается:
 ; эта процедура строит shadow, а не передаёт всю карту в PPU.
 LoadAndDrawStage:
-LEF76:  cmp     #$FF
+LEF76:  cmp     #AttractStageLoadSentinel
         bne     SelectStageSetDescriptor
-        lda     #$20
+        lda     #AttractMapStageNumber
         sta     StageNumber
-        lda     #$06
+        lda     #AttractMapSetSelector
         bne     UseSelectedStageSet
 SelectStageSetDescriptor:
 LEF82:  lda     GameVariant

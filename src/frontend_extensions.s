@@ -3,6 +3,7 @@
 VariantMenuTextColumn       = $0B
 StandardVariantMenuFirstRow = $09
 ExtendedVariantMenuRowBias  = $07
+VariantPowerUpOptionColumn  = $15
 SecretInitialLivesCode      = $0F
 SecretInitialLifeCount      = $15
 DownInitialLifeCount        = $08
@@ -14,33 +15,33 @@ TwoPlayerMenuSelection      = $01
 HiBankPrefixData:
         .byte   $20,$D2,$0D,$2D
 ; Два завершённых $FF тайловых текста пункта меню. Точный читаемый текст зависит от CHR.
-MenuOptionText0:
+RestrictedPowerUpsMenuText:
         .byte   $30,$31,$5D,$31,$34,$FF
-MenuOptionText1:
+AllPowerUpsMenuText:
         .byte   $31,$35,$5D,$32,$38,$FF
 
 ; Выводит один из двух текстов пункта меню в позицию (21,3) и ждёт кадр.
-; Вход: AllPowerUpsEnabled=0/!=0 выбирает MenuOptionText0/1.
+; Вход: AllPowerUpsEnabled=0/!=0 выбирает restricted/all-power-ups строку.
 ; Записывает ScratchPtr, ставит строку в PPU-очередь и shadow nametable,
 ; меняет AuxPtr и синхронизируется с кадром; портит A/X/Y и флаги.
 ; После возврата кадровое, PPU и input-состояние отражают
 ; побочные эффекты QueueTileAtCoordinates/WaitForNextFrame.
-; Layout constraint: BEQ после загрузки MenuOptionText0 служит безусловным
-; переходом только пока младший байт адреса MenuOptionText0 равен нулю; обе
+; Layout constraint: BEQ после загрузки RestrictedPowerUpsMenuText служит
+; безусловным переходом только пока младший байт её адреса равен нулю; обе
 ; строки также должны оставаться на одной странице, так как старший байт общий.
-DrawSelectedMenuOption:
+DrawPowerUpMenuOption:
 LFD0C:  lda     AllPowerUpsEnabled
         bne     SelectEnabledPowerUpMenuText
-        lda     #<MenuOptionText0
+        lda     #<RestrictedPowerUpsMenuText
         beq     StoreSelectedPowerUpMenuText
 SelectEnabledPowerUpMenuText:
-LFD14:  lda     #<MenuOptionText1
+LFD14:  lda     #<AllPowerUpsMenuText
 StoreSelectedPowerUpMenuText:
 LFD16:  sta     ScratchPtrLo
-        lda     #>MenuOptionText0
+        lda     #>RestrictedPowerUpsMenuText
         sta     ScratchPtrHi
-        ldx     #$15
-        ldy     #$03
+        ldx     #VariantPowerUpOptionColumn
+        ldy     #VariantMenuHeaderRow
         jsr     QueueTileAtCoordinates
         jsr     WaitForNextFrame
         rts

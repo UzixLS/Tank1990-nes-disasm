@@ -19,7 +19,12 @@ ExtendedStageVariant    = $06
 OnePlayerGameMode     = $05
 CombinedFireGameMode  = $06
 TwoPlayerGameMode     = $07
-; StageSetLength=2 служит специальным признаком attract runtime.
+; Специальный протокол attract: sentinel выбирает classic map 32 через
+; descriptor 6, после чего StageSetLength=2 остаётся runtime-маркером.
+; Маркер включает HUD P2, отключает transition object и начисление очков.
+AttractStageLoadSentinel = $FF
+AttractMapStageNumber    = $20
+AttractMapSetSelector    = $06
 AttractStageSetMarker = $02
 BootVariantMarker     = $AB
 

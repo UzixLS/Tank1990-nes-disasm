@@ -1,7 +1,7 @@
 ; Генерация ввода игроков для attract mode ($C642-$C6C5).
 
 AttractPlayerSlot = $5A
-AttractBottomFireCutoff = $C8
+AttractEdgeFireSuppressionY = $C8
 ; Генерирует Joy1/Joy2 для attract mode. Для каждого игрока выбирает цель:
 ; координаты неполученного бонуса (PowerUpX!=0, pickup timer=0), иначе первый
 ; targetable танк из слотов
@@ -72,8 +72,9 @@ ConvertAttractDirectionToInput:
 LC6A5:  and     #DirectionMask
         tay
         lda     DemoInputByDirection,y
-; Альтернативный вход: A уже содержит маску Joy. Для игрока с Y>=cutoff
-; оставляет в JoyPressed только D-pad; JoyHeld сохраняет исходную маску.
+; Альтернативный вход: A уже содержит маску Joy. При ObjectY>=порога оставляет
+; в JoyPressed только D-pad; JoyHeld сохраняет A+B, поэтому удерживаемый B всё
+; ещё может стрелять в обычном OnePlayerGameMode — подавляется лишь edge-fire.
 ; После P1 проваливается к обработке P0, после P0 возвращается. Портит A/X;
 ; Y сохраняется на прямом входе, но может быть изменён targeting-путём.
 StoreAttractPlayerInput:
@@ -81,7 +82,7 @@ LC6AB:  ldx     AttractPlayerSlot
         sta     Joy1Held,x
         sta     Joy1Pressed,x
         lda     ObjectY,x
-        cmp     #AttractBottomFireCutoff
+        cmp     #AttractEdgeFireSuppressionY
         bcc     AdvanceAttractPlayer
         lda     Joy1Pressed,x
         and     #BUTTON_DIRECTIONS
