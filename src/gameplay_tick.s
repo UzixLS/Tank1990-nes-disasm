@@ -11,6 +11,8 @@ SecondHalfSecondPhaseValue = $01
 ; вызывающему RunGameplayLogicTick. Почти вся игровая RAM и A/X/Y могут измениться;
 ; PPU-очередь, OAM shadow и состояния аудиопотоков также могут быть обновлены.
 RunGameplayLogicTick:
+        ; Между Mark/Clear нельзя вставлять shadow->PPU transfer: bit7 terrain
+        ; в этом окне является transient collision occupancy, а не tile data.
 LC2E6:  jsr     MarkTankOccupiedTiles
         jsr     UpdatePlayerTankInput
         jsr     UpdateTanks

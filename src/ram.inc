@@ -108,6 +108,12 @@ ProjectileY     = $C2
 ProjectileState = $CC
 ProjectileFlags = $D6
 
+; Per-tank cache transient occupancy snapshot. $E0..$E7 — low byte base
+; shadow pointer; $E8..$EF — relative page bits0..1 plus left/above flags
+; in bits7/6. Это не полный high byte адреса.
+TankOccupancyPtrLo        = $E0
+TankOccupancyPageAndFlags = $E8
+
 EnemyFreezeTimer = $0100
 PlayerUpgradeLevel = $0101
 ; Два байта игроков. Bit7 показывает нахождение на льду (тайл $21);
