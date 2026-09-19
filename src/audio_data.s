@@ -30,8 +30,8 @@ LECFE:  .word   PauseSequence,StageIntroPulse1Sequence
         .word   ArmorHitSequence,PlayerFireSequence
         .word   IceSlideStartSequence,PlayerMovementLoopSequence
         .word   GameplayLoopSequence,StatisticsCountPulseSequence
-        .word   StatisticsCountNoiseSequence,SessionResultPulse1Sequence
-        .word   SessionResultPulse2Sequence,SessionResultTriangleSequence
+        .word   StatisticsCountNoiseSequence,NewHighScorePulse1Sequence
+        .word   NewHighScorePulse2Sequence,NewHighScoreTriangleSequence
         .word   AudioSequence24,AudioSequence25,AudioSequence26,StatisticsWinnerBonusSequence
 
 ; Потоки байткода музыки и звуковых эффектов. Заголовок состоит из
@@ -187,14 +187,14 @@ AudioSequence05:
         .byte   $3B,$53,$3B,$1B,$3B,$53,$1C,$6A
         .byte   $14,$E8
 ; Поток 21: pulse 1, CTRL=$B8, AUX=$7F, period-high=$40.
-SessionResultPulse1Sequence:
+NewHighScorePulse1Sequence:
 AudioSequence21:
         .byte   AudioChannelPulse1,$B8,$7F,$40,$EF,$65
         .byte   $0C,$53,$F0,$0C,$05,$0C,$53,$F0
         .byte   $0C,$0B,$34,$24,$F0,$08,$10,$EA
         .byte   $30,$B0,$50,$EA,$20,$9C,$54,$E8
 ; Поток 22: pulse 2, CTRL=$B8, AUX=$7F, period-high=$40.
-SessionResultPulse2Sequence:
+NewHighScorePulse2Sequence:
 AudioSequence22:
         .byte   AudioChannelPulse2,$B8,$7F,$40,$65,$43,$33,$F1
         .byte   $0C,$04,$43,$33,$F1,$0C,$0A,$14
@@ -203,7 +203,7 @@ AudioSequence22:
         .byte   $0B,$2B,$33,$53,$0C,$2C,$9C,$EA
         .byte   $20,$2C,$E8
 ; Поток 23: triangle, CTRL=$00, AUX=$7F, period-high=$08.
-SessionResultTriangleSequence:
+NewHighScoreTriangleSequence:
 AudioSequence23:
         .byte   AudioChannelTriangle,$00,$7F,$08,$A1
         .byte   $01,$01,$EE,$15,$6A,$0B,$0B,$0B

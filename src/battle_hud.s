@@ -20,7 +20,7 @@ LCA91:  jsr     WaitForNextFrame
         jsr     TileCoordinatesToShadowAddress
         ldx     PpuBufferPos
         clc
-        adc     #$1C
+        adc     #ShadowToPrimaryNametableOffset
         sta     PpuUpdateBuffer,x
         inx
         tya

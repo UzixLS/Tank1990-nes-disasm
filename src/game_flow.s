@@ -7,7 +7,7 @@
 .include "gameplay_tick.s"
 .include "stage_runtime.s"
 .include "attract_mode.s"
-.include "session_result.s"
+.include "new_high_score.s"
 .include "variant_selection.s"
 .include "gameplay_runtime_data.s"
 .include "flow_helpers.s"

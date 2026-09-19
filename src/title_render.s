@@ -1,7 +1,5 @@
 ; Построение nametable заглавного экрана ($D16A-$D254).
 
-PrimaryNametableOffset = $1C        ; shadow $04xx -> PPU $20xx
-TitleNametableOffset   = $24        ; shadow $04xx -> PPU $28xx
 TitleScoreTileBias     = $30
 TitleLogoRasterX       = $1A
 TitleLogoRasterY       = $2E
@@ -23,13 +21,13 @@ TitleCopyrightRow      = $18
 ; Очищает основную nametable $2000: отключает рендеринг/NMI, обнуляет shadow,
 ; напрямую загружает 1 KiB и снова включает NMI. Выбирает фоновую палитру 3.
 ; Входов/регистровых результатов нет. Меняет A/X/Y, ScratchPtr,
-; NametablePpuOffset=PrimaryNametableOffset, BackgroundPaletteIndex,
+; NametablePpuOffset=ShadowToPrimaryNametableOffset, BackgroundPaletteIndex,
 ; весь nametable shadow и PPU address/data/control state; NMI включён на выходе.
 ClearPrimaryNametableScreen:
 LD16A:  jsr     DisableRenderingForBulkUpdate
         lda     #TitleBackgroundPalette
         sta     BackgroundPaletteIndex
-        lda     #PrimaryNametableOffset
+        lda     #ShadowToPrimaryNametableOffset
         sta     NametablePpuOffset
         jsr     ClearNametableBuffer
         jsr     UploadNametableBuffer
@@ -41,12 +39,13 @@ LD16A:  jsr     DisableRenderingForBulkUpdate
 ; затем напрямую загружает весь 1 KiB.
 ; После включения NMI ставит в очередь подписи рекорда, игроков и трёх пунктов
 ; меню; MenuSelection определяет наличие строки второго игрока.
-; Побочно меняет A/X/Y, ScratchPtr/AuxPtr, NametablePpuOffset=TitleNametableOffset,
+; Побочно меняет A/X/Y, ScratchPtr/AuxPtr,
+; NametablePpuOffset=ShadowToNametable2800Offset,
 ; RasterStringX/Y, TileTranslationOffset=0, score-format scratch, shadow, PPU и
 ; update buffer. Последняя строка copyright остаётся в очереди до следующего NMI.
 BuildTitleNametable:
 LD17F:  jsr     DisableRenderingForBulkUpdate
-        lda     #TitleNametableOffset
+        lda     #ShadowToNametable2800Offset
         sta     NametablePpuOffset
         jsr     ClearNametableBuffer
         ldx     #TitleLogoRasterX

@@ -128,7 +128,8 @@ LD771:  lda     ScratchPtrHi
         rts
 
 ; Пишет A в (ScratchPtr),Y и ставит тот же байт в PPU-очередь. Адрес PPU получается
-; из shadow-адреса прибавлением $1C к старшему байту. Формат команды: hi, lo, data, $FF.
+; из shadow-адреса прибавлением ShadowToPrimaryNametableOffset к high byte.
+; Формат команды: hi, lo, data, $FF.
 ; Выход: A=$FF; X/Y и ScratchPtr сохраняются. Меняет выбранный shadow-байт,
 ; ShadowQueueSavedX и PPU queue; PPU registers не трогает. Capacity не проверяет.
 StoreAndQueueShadowTile:
@@ -137,7 +138,7 @@ LD784:  sta     (ScratchPtrLo),y
         ldx     PpuBufferPos
         lda     ScratchPtrHi
         clc
-        adc     #$1C
+        adc     #ShadowToPrimaryNametableOffset
         sta     PpuUpdateBuffer,x
         inx
         lda     ScratchPtrLo

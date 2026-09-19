@@ -6,7 +6,7 @@ InitialOamBufferStep       = $04
 InitialSpritePriorityMask  = $20
 
 ; Общая инициализация PPU/OAM-очереди, счётчиков, записей счёта и звука.
-; Очищает NametableShadow, загружает палитры и обе nametable ($2000/$2400).
+; Очищает NametableShadow, загружает палитры и nametable $2000/$2800.
 ; 16 байт кода от LC040 служат RAM-маркером: при несовпадении однократно
 ; вызывает BootHook, после чего обновляет маркер. Почти вся рабочая RAM и A/X/Y
 ; могут измениться; вызывать только из кода сброса/полного перезапуска состояния.
@@ -43,10 +43,10 @@ LD491:
         lda     #$00
         sta     MenuSelection
 UploadInitialNametables:
-LD4CE:  lda     #$1C
+LD4CE:  lda     #ShadowToPrimaryNametableOffset
         sta     NametablePpuOffset
         jsr     UploadNametableBuffer
-        lda     #$24
+        lda     #ShadowToNametable2800Offset
         sta     NametablePpuOffset
         jsr     UploadNametableBuffer
         jsr     StoreRestartSignature

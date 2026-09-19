@@ -15,6 +15,10 @@ StandardStageUpperBound = $32
 ExtendedStageUpperBound = $76
 ExtendedStageVariant    = $06
 
+; High-byte delta from shadow $04xx..$07xx to the selected PPU nametable.
+ShadowToPrimaryNametableOffset = $1C ; -> $2000..$23FF
+ShadowToNametable2800Offset     = $24 ; -> $2800..$2BFF
+
 ; GameMode одновременно задаёт конфигурацию игроков и верхний enemy-slot.
 OnePlayerGameMode     = $05
 CombinedFireGameMode  = $06

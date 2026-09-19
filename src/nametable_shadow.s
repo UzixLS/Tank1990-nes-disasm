@@ -1,7 +1,8 @@
 ; Передача и инициализация nametable shadow ($D7B4-$D80A).
 
 ; Передаёт всю теневую nametable $0400-$07FF в PPU. NametablePpuOffset задаёт
-; смещение старшего байта (обычно $1C для $2000 или $20 для $2400).
+; смещение high byte (например, ShadowToPrimaryNametableOffset для $2000
+; или $20 для $2400).
 ; Предполагает отключённый рендеринг и корректную первую фазу PPU_ADDR latch.
 ; Выход: ScratchPtr=$0800, Y=0, A=$08; X сохраняется. Меняет PPU_ADDR/PPU_DATA,
 ; но не shadow и PPU queue. Внутренний VRAM address остаётся сразу после

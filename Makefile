@@ -48,7 +48,7 @@ ASM_SOURCES := src/main.s src/hardware.inc src/ram.inc src/game.inc src/header.s
 	src/deferred_integrity_bridge.s src/prg0_extension_prototypes.s \
 	src/prg1_lo.s src/game_flow.s src/startup.s src/decimal.s src/construction_editor.s \
 	src/battle_flow.s src/session_init.s src/gameplay_tick.s src/stage_runtime.s \
-	src/attract_mode.s src/session_result.s src/variant_selection.s src/gameplay_runtime_data.s \
+	src/attract_mode.s src/new_high_score.s src/variant_selection.s src/gameplay_runtime_data.s \
 	src/flow_helpers.s src/powerup_flow.s src/attract_ai.s src/construction_cursor.s \
 	src/stage_outcome.s src/frontend_misc.s src/battle_hud_runtime.s \
 	src/construction_cursor_bounds.s src/battle_overlays.s src/screens.s \

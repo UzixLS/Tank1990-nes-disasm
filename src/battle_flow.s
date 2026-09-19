@@ -1,7 +1,6 @@
 ; Выбор этапа, основной цикл боя и разбор исхода ($C159-$C2B2).
 
 StageSelectionRepeatMask       = $07
-StageSelectionNametableOffset  = $1C
 StageTransitionFinishedCounter = $02
 
 ; Экран выбора этапа. Удержание A/B повторяет изменение через
@@ -15,7 +14,7 @@ SelectStage:
 ; процедура не возвращается.
 LC159:  jsr     WaitForNextFrame
         jsr     ResetAudioEngine
-        lda     #StageSelectionNametableOffset
+        lda     #ShadowToPrimaryNametableOffset
         sta     NametablePpuOffset
         lda     #$00
         sta     VerticalScroll
@@ -189,10 +188,12 @@ LC275:  clc
         jmp     SelectStage
 ReturnToTitleAfterStage:
 LC283:  jsr     ClearScreenAndAudio
+        ; Y=0 означает, что рекорд не изменился; отдельный экран нужен только
+        ; после копирования результата одного из игроков в HighScore.
         jsr     UpdateHighScoreRecord
         tya
         beq     RebuildTitleAfterStage
-        jsr     ShowSessionResultScreen
+        jsr     ShowNewHighScoreScreen
         jsr     ClearScreenAndResumeNmi
 RebuildTitleAfterStage:
 LC292:  jmp     RebuildTitleNametable

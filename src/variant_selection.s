@@ -9,7 +9,6 @@ VariantMenuRowCount        = $0E
 VariantMenuTextStride      = $08
 VariantMenuRepeatMask      = $0F
 VariantStandardBeforeFirst = $FF
-VariantMenuNametableOffset = $1C
 VariantMenuNameColumn      = $0D
 VariantMenuFirstTextRow    = $09
 VariantMenuHeaderColumn    = $07
@@ -37,15 +36,15 @@ VariantMenuTextPtrLo = ConstructionMapFlag
 ; SELECT/START, напротив, обрабатываются только по фронту Joy1Pressed.
 ; Меняет shadow/PPU-очередь, FrameCounter, GameVariant, MenuSelection,
 ; VariantMenuRow/TextPtrLo и UI-флаги; портит A/X/Y и ScratchPtr.
-; Экран строится в nametable $2000: offset $1C прибавляется к high-byte $04
-; shadow-буфера, а NametableBits=0 выбирает ту же nametable для рендеринга.
+; Экран строится в nametable $2000: ShadowToPrimaryNametableOffset прибавляется
+; к high byte $04 shadow-буфера, а NametableBits=0 выбирает ту же nametable.
 ; Layout constraint: 14 восьмибайтных записей VariantMenuTankNames должны
 ; оставаться на одной странице: цикл меняет только младший байт указателя.
 RunVariantSelectionMenu:
 LC4A1:  lda     #VariantExtendedFirst
         sta     GameVariant
         jsr     DisableRenderingForBulkUpdate
-        lda     #VariantMenuNametableOffset
+        lda     #ShadowToPrimaryNametableOffset
         sta     NametablePpuOffset
         lda     #$00
         sta     VerticalScroll

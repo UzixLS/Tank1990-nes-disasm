@@ -8,7 +8,6 @@ NametableRowTileCount          = $20
 NametableLastVisibleRow        = $1D
 NametableCurtainPairCount      = $10
 NametableCurtainTile           = $11
-ShadowToPrimaryNametableOffset = $1C
 
 ; За 64 кадровые итерации ставит NametableAttributes в PPU-очередь по адресам
 ; $23C0-$23FF, по одному байту за итерацию. WaitForNextFrame в начале следующей

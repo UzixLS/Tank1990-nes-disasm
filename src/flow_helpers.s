@@ -5,7 +5,7 @@
 ; Портит A/X/Y, ScratchPtr, PPU/APU и звуковую RAM; OAM shadow не меняет.
 ClearScreenAndAudio:
 LC5D9:  jsr     DisableRenderingForBulkUpdate
-        lda     #$1C
+        lda     #ShadowToPrimaryNametableOffset
         sta     NametablePpuOffset
         lda     #$00
         sta     VerticalScroll

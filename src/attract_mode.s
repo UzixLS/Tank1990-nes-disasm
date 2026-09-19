@@ -19,8 +19,9 @@ AttractExitButtonMask          = BUTTON_SELECT | BUTTON_START
 ; PauseState ограничивает audio engine pause-потоком, но сам demo-loop не
 ; проверяет паузу и продолжает игровую логику. Рисует заголовок варианта/год,
 ; инициализирует runtime и возвращает с GameMode=OnePlayerGameMode.
-; Предусловие штатного frontend-вызова: NametablePpuOffset=$1C, оставленный
-; ClearPrimaryNametableScreen; здесь offset перед UploadNametableBuffer не задаётся.
+; Предусловие штатного frontend-вызова:
+; NametablePpuOffset=ShadowToPrimaryNametableOffset, оставленный
+; ClearPrimaryNametableScreen; здесь offset перед upload не задаётся.
 ; Сохраняет score records, но прочая session RAM переинициализируется не полностью:
 ; жизни P1 всё ещё зависят от SelectInitialLifeCount. Выход:
 ; A=GameMode=OnePlayerGameMode, PauseState=AttractAudioMutePauseState,

@@ -51,7 +51,7 @@
 | `$C2E6-$C330` | `src/gameplay_tick.s` | один logic tick и полусекундная фаза |
 | `$C331-$C3B4` | `src/stage_runtime.s` | runtime-состояние выбранного этапа |
 | `$C3B5-$C44A` | `src/attract_mode.s` | подготовка и цикл демонстрации |
-| `$C44B-$C49B` | `src/session_result.s` | завершение игровой сессии |
+| `$C44B-$C49B` | `src/new_high_score.s` | экран нового рекорда |
 | `$C49C-$C59C` | `src/variant_selection.s` | boot marker и выбор варианта |
 | `$C59D-$C5D8` | `src/gameplay_runtime_data.s` | runtime-таблицы игрового потока |
 | `$C5D9-$C641` | `src/flow_helpers.s` | общие helpers потока и усилений |

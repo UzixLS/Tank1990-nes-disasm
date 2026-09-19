@@ -149,9 +149,9 @@ PlayerMovementLoopAudioState = AudioStreamStates + $11
 GameplayLoopAudioState = AudioStreamStates + $12
 StatisticsCountPulseAudioState = AudioStreamStates + $13
 StatisticsCountNoiseAudioState = AudioStreamStates + $14
-SessionResultPulse1AudioState = AudioStreamStates + $15
-SessionResultPulse2AudioState = AudioStreamStates + $16
-SessionResultTriangleAudioState = AudioStreamStates + $17
+NewHighScorePulse1AudioState = AudioStreamStates + $15
+NewHighScorePulse2AudioState = AudioStreamStates + $16
+NewHighScoreTriangleAudioState = AudioStreamStates + $17
 StatisticsWinnerBonusAudioState = AudioStreamStates + $1B
 AudioStreamRecords= $031C
 
