@@ -1,23 +1,25 @@
 ; Отрисовка базы и окружающего её материала ($CAF5-$CC26).
 
-BaseEnclosureColumn          = $0C
-BaseCoreColumn               = $0E
-BaseEnclosureBlankRow        = $18
-BaseEnclosureTopRow          = $19
-BaseCoreUpperRow             = $1A
-BaseCoreLowerRow             = $1B
 BaseAttributePpuAddressHi    = $23
 BaseAttributePpuAddressLo    = $F3
-BaseLowerPreserveMask        = $CC
-BareBaseUpperPreserveMask    = $3F
-SteelBaseUpperAttribute      = $3F
-SteelBaseLowerAttributeBits  = $33
+BaseRightAttributePreserveMask    = $CC
+BareBaseLeftAttributePreserveMask = $3F
+SteelBaseLeftAttributeValue       = $3F
+SteelBaseRightAttributeBits       = $33
+
+; Все tile routines ниже требуют
+; NametablePpuOffset=ShadowToPrimaryNametableOffset: QueueTileAtCoordinates
+; использует переменный offset, но attribute commands жёстко адресуют $23F3.
+; Они меняют ScratchPtr/AuxPtr/PpuTileRowBits, shadow и PPU queue; capacity
+; update buffer не проверяется вызываемыми helpers.
 
 ; Рисует четыре $FF-терминированные шеститайловые строки базы и кирпичного
 ; ограждения, начиная с (BaseEnclosureColumn,BaseEnclosureBlankRow).
-; Затем обнуляет часть атрибутов $07F3/$07F4 и ставит два байта в PPU-очередь.
-; Входов/регистровых результатов нет. Меняет A/X/Y, ScratchPtr, shadow
-; nametable/attributes, PpuBufferPos и PPU update buffer; прямых записей PPU нет.
+; Затем полностью записывает BaseAttributeLeft=0, а в BaseAttributeRight
+; очищает palette quadrants columns 16..17, сохраняя внешние columns 18..19
+; маской BaseRightAttributePreserveMask. Добавляет 41 byte в PPU queue.
+; DrawBrickBaseEnclosure намеренно проваливается в QueueBrickBaseAttributes.
+; Входов/регистровых результатов нет; прямых записей PPU нет.
 DrawBrickBaseEnclosure:
 LCAF5:  lda     #>BlankBaseRow
         sta     ScratchPtrHi
@@ -48,10 +50,11 @@ LCAF5:  lda     #>BlankBaseRow
         ldy     #BaseCoreLowerRow
         jsr     QueueTileAtCoordinates
 
-; Общий хвост обновления палитры нижней части базы: BaseAttributeUpper=0,
-; в BaseAttributeLower сохраняются только биты BaseLowerPreserveMask. Очередь
+; Общий хвост обновления палитры базы: BaseAttributeLeft=0,
+; в BaseAttributeRight сохраняются только биты BaseRightAttributePreserveMask. Очередь
 ; получает адрес $23F3 и два последовательных байта. Это также самостоятельный
-; continuation-вход из PowerUpEffect2. Портит A/X и PpuBufferPos; Y сохраняет.
+; continuation-вход из PowerUpEffect2. Требует 5 свободных bytes. Выход:
+; A=$FF, X=PpuBufferPos, Y сохраняется; меняет attributes и PPU queue.
 QueueBrickBaseAttributes:
 LCB31:
         ldx     PpuBufferPos
@@ -62,12 +65,12 @@ LCB31:
         sta     PpuUpdateBuffer,x
         inx
         lda     #$00
-        sta     BaseAttributeUpper
+        sta     BaseAttributeLeft
         sta     PpuUpdateBuffer,x
         inx
-        lda     BaseAttributeLower
-        and     #BaseLowerPreserveMask
-        sta     BaseAttributeLower
+        lda     BaseAttributeRight
+        and     #BaseRightAttributePreserveMask
+        sta     BaseAttributeRight
         sta     PpuUpdateBuffer,x
         inx
         lda     #$FF
@@ -76,9 +79,9 @@ LCB31:
         stx     PpuBufferPos
         rts
 ; Рисует только две центральные строки целой базы без окружающих стен.
-; В BaseAttributeUpper сохраняет биты 0..5 маской BareBaseUpperPreserveMask,
-; очищая только palette bits 7..6, и ставит этот атрибут в очередь.
-; Меняет A/X/Y, ScratchPtr, shadow nametable/attributes и PPU update buffer.
+; В BaseAttributeLeft сохраняет bits0..5, очищая bits7..6 — palette quadrant
+; core x14..15/y26..27. Ставит этот byte по $23F3; BaseAttributeRight не меняет.
+; Добавляет 14 bytes в PPU queue, capacity не проверяет.
 DrawBareBase:
 LCB5D:  lda     #>IntactBaseUpperTiles
         sta     ScratchPtrHi
@@ -101,9 +104,9 @@ LCB5D:  lda     #>IntactBaseUpperTiles
         lda     #BaseAttributePpuAddressLo
         sta     PpuUpdateBuffer,x
         inx
-        lda     BaseAttributeUpper
-        and     #BareBaseUpperPreserveMask
-        sta     BaseAttributeUpper
+        lda     BaseAttributeLeft
+        and     #BareBaseLeftAttributePreserveMask
+        sta     BaseAttributeLeft
         sta     PpuUpdateBuffer,x
         inx
         lda     #$FF
@@ -113,10 +116,12 @@ LCB5D:  lda     #>IntactBaseUpperTiles
         rts
 
 ; Рисует четыре $FF-терминированные шеститайловые строки базы со стальным ограждением.
-; Записывает BaseAttributeUpper=$3F; в BaseAttributeLower сохраняет биты $CC
-; и устанавливает $33. Оба байта ставятся в PPU-очередь по адресу $23F3.
+; Записывает BaseAttributeLeft=$3F: три enclosure quadrants получают palette3,
+; а core quadrant остаётся palette0. В BaseAttributeRight сохраняет внешние
+; quadrants columns18..19 и устанавливает $33 для enclosure columns16..17.
+; Оба bytes ставятся в PPU-очередь по адресу $23F3.
 ; Вызывается в том числе при мигании BaseFortificationTimer.
-; Меняет A/X/Y, ScratchPtr, shadow nametable/attributes и PPU update buffer.
+; Добавляет 41 byte в PPU queue, capacity не проверяет.
 DrawSteelBaseEnclosure:
 LCB9E:  lda     #>BlankSteelBaseRow
         sta     ScratchPtrHi
@@ -153,14 +158,14 @@ LCB9E:  lda     #>BlankSteelBaseRow
         lda     #BaseAttributePpuAddressLo
         sta     PpuUpdateBuffer,x
         inx
-        lda     #SteelBaseUpperAttribute
-        sta     BaseAttributeUpper
+        lda     #SteelBaseLeftAttributeValue
+        sta     BaseAttributeLeft
         sta     PpuUpdateBuffer,x
         inx
-        lda     BaseAttributeLower
-        and     #BaseLowerPreserveMask
-        ora     #SteelBaseLowerAttributeBits
-        sta     BaseAttributeLower
+        lda     BaseAttributeRight
+        and     #BaseRightAttributePreserveMask
+        ora     #SteelBaseRightAttributeBits
+        sta     BaseAttributeRight
         sta     PpuUpdateBuffer,x
         inx
         lda     #$FF
@@ -170,8 +175,8 @@ LCB9E:  lda     #>BlankSteelBaseRow
         rts
 
 ; Заменяет центральные две строки базы изображением разрушенного состояния.
-; Стены и атрибуты не меняет. Меняет A/X/Y, ScratchPtr, shadow nametable,
-; PpuBufferPos и PPU update buffer; прямых записей PPU нет.
+; Стены и атрибуты не меняет. Добавляет 10 bytes в PPU queue, capacity не
+; проверяет; прямых записей PPU нет.
 DrawDestroyedBase:
 LCC08:  lda     #>DestroyedBaseUpperTiles
         sta     ScratchPtrHi

@@ -6,11 +6,6 @@ TerrainAxisYMagnitude = $55
 TerrainFarYOffset     = $64
 TerrainFarXOffset     = $65
 
-TerrainTileSteel         = $10
-TerrainTileBoundary      = $11
-TerrainTileBaseClass     = $C8
-BattleStateBaseDestroyed = $27
-
 ; Проверяет активные снаряды 9..0 против местности в теневой nametable.
 ; Активен state-class $40. Снаряды с нулевым ProjectileFlags проверяются
 ; через кадр по чётности slot^FrameCounter, остальные — каждый кадр.
@@ -137,13 +132,16 @@ LE69A:  jsr     RecomputeTerrainSubcellMask
         jsr     TestTerrainSubcell
         beq     FinishTerrainProbeWithoutPartialDamage
         lda     (ScratchPtrLo),y
-        and     #$FC
-        cmp     #TerrainTileBaseClass
+        and     #TerrainTileClassMask
+        cmp     #TerrainTileIntactBaseClass
         bne     ClassifyProjectileTerrainTile
-        ; $C8-$CB — четыре тайла целой базы.
+        ; $C8-$CB — четыре тайла целой базы. При BattleState!=0 попадание
+        ; запускает countdown разрушения с $27, оба звуковых потока, немедленную
+        ; замену центра базы и impact-state снаряда. Выход этого пути: A=0/Z=1.
+        ; При BattleState=0 та же графика классифицируется как обычный terrain.
         lda     BattleState
         beq     ClassifyProjectileTerrainTile
-        lda     #BattleStateBaseDestroyed
+        lda     #BattleStateBaseDestructionStart
         sta     BattleState
         lda     #AudioStateStartRequested
         sta     BaseDestructionToneAudioState

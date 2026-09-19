@@ -18,33 +18,33 @@ LD368:  .byte   $6D,$FD,$FF
 BlankTileText:
 LD36B:  .byte   $11,$FF
 
-; Шеститайловые строки базы. $0F — кирпичная стена, $10 — стальная,
+; Шеститайловые строки базы. TerrainTileBrick/Steel — стены,
 ; $C8-$CB — целая база, $CC-$CF — разрушенная. Эти строки одновременно
 ; копируются в shadow и ставятся в PPU-очередь.
 BlankBaseRow:
 LD36D:  .byte   $00,$00,$00,$00,$00,$00,$FF
 BrickBaseTopRow:
-LD374:  .byte   $00,$0F,$0F,$0F,$0F,$00,$FF
+LD374:  .byte   $00,TerrainTileBrick,TerrainTileBrick,TerrainTileBrick,TerrainTileBrick,$00,$FF
 BrickBaseUpperRow:
-LD37B:  .byte   $00,$0F,$C8,$CA,$0F,$00,$FF
+LD37B:  .byte   $00,TerrainTileBrick,BaseTileIntactUpperLeft,BaseTileIntactUpperRight,TerrainTileBrick,$00,$FF
 BrickBaseLowerRow:
-LD382:  .byte   $00,$0F,$C9,$CB,$0F,$00,$FF
+LD382:  .byte   $00,TerrainTileBrick,BaseTileIntactLowerLeft,BaseTileIntactLowerRight,TerrainTileBrick,$00,$FF
 BlankSteelBaseRow:
 LD389:  .byte   $00,$00,$00,$00,$00,$00,$FF
 SteelBaseTopRow:
-LD390:  .byte   $00,$10,$10,$10,$10,$00,$FF
+LD390:  .byte   $00,TerrainTileSteel,TerrainTileSteel,TerrainTileSteel,TerrainTileSteel,$00,$FF
 SteelBaseUpperRow:
-LD397:  .byte   $00,$10,$C8,$CA,$10,$00,$FF
+LD397:  .byte   $00,TerrainTileSteel,BaseTileIntactUpperLeft,BaseTileIntactUpperRight,TerrainTileSteel,$00,$FF
 SteelBaseLowerRow:
-LD39E:  .byte   $00,$10,$C9,$CB,$10,$00,$FF
+LD39E:  .byte   $00,TerrainTileSteel,BaseTileIntactLowerLeft,BaseTileIntactLowerRight,TerrainTileSteel,$00,$FF
 IntactBaseUpperTiles:
-LD3A5:  .byte   $C8,$CA,$FF
+LD3A5:  .byte   BaseTileIntactUpperLeft,BaseTileIntactUpperRight,$FF
 IntactBaseLowerTiles:
-LD3A8:  .byte   $C9,$CB,$FF
+LD3A8:  .byte   BaseTileIntactLowerLeft,BaseTileIntactLowerRight,$FF
 DestroyedBaseUpperTiles:
-LD3AB:  .byte   $CC,$CE,$FF
+LD3AB:  .byte   BaseTileDestroyedUpperLeft,BaseTileDestroyedUpperRight,$FF
 DestroyedBaseLowerTiles:
-LD3AE:  .byte   $CD,$CF,$FF
+LD3AE:  .byte   BaseTileDestroyedLowerLeft,BaseTileDestroyedLowerRight,$FF
 
 ; Строки экрана статистики. Тайл $5D намеренно разделяют маркер второго
 ; игрока и курсор variant-меню — это два подтверждённых consumer одного байта.

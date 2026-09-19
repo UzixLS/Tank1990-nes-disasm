@@ -115,11 +115,12 @@ LE2A4:  dec     ShieldPlayerSlot
         bpl     DrawNextPlayerShield
         rts
 
-; Обновляет таймер укрепления базы BaseFortificationTimer и фазу
-; взрыва/поражения базы BattleState. Таймер уменьшается раз в 64 кадра;
-; на последних трёх шагах ограждение мигает между сталью и кирпичом.
-; Положительный BattleState уменьшается каждый вызов и диспетчеризует кадр
-; через BaseExplosionFrameHandlers; ноль и отрицательные состояния пропускаются.
+; Обновляет таймер укрепления базы BaseFortificationTimer и countdown
+; взрыва/поражения базы BattleState. Ограждение рассматривается только при
+; FrameCounter mod16=0; timer уменьшается при mod64=0. Значения 3,2,1 мигают
+; brick/steel по bit4, а полученный после DEC ноль сразу рисует brick.
+; Положительный BattleState уменьшается каждый вызов; handler выбирается уже по
+; post-decrement value. Ноль и отрицательные состояния пропускаются.
 ; Портит A/X/Y/ScratchPtr, рабочие байты рендера, shadow/PPU-очередь и OAM shadow.
 UpdateBaseEffects:
 LE2A9:  lda     BaseFortificationTimer

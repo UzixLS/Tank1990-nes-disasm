@@ -178,5 +178,7 @@ NametableShadowPage1 = NametableShadow + $0100
 NametableShadowPage2 = NametableShadow + $0200
 NametableShadowPage3 = NametableShadow + $0300
 NametableAttributes  = NametableShadow + $03C0
-BaseAttributeUpper   = NametableAttributes + $33
-BaseAttributeLower   = NametableAttributes + $34
+; Соседние attribute bytes одной строки: left покрывает tile columns 12..15,
+; right — 16..19 (rows 24..27).
+BaseAttributeLeft    = NametableAttributes + $33
+BaseAttributeRight   = NametableAttributes + $34

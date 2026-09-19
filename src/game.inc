@@ -21,6 +21,14 @@ ExtendedStageVariant    = $06
 ShadowToPrimaryNametableOffset = $1C ; -> $2000..$23FF
 ShadowToNametable2800Offset     = $24 ; -> $2800..$2BFF
 
+; Geometry of the 6-tile-wide base/enclosure block in the primary nametable.
+BaseEnclosureColumn   = $0C
+BaseCoreColumn        = $0E
+BaseEnclosureBlankRow = $18
+BaseEnclosureTopRow   = $19
+BaseCoreUpperRow      = $1A
+BaseCoreLowerRow      = $1B
+
 ; GameMode одновременно задаёт конфигурацию игроков и верхний enemy-slot.
 OnePlayerGameMode     = $05
 CombinedFireGameMode  = $06
@@ -55,7 +63,8 @@ ObjectAttributeClassMask = $F0
 ; управления и выбора целей уже исключают их.
 NonTargetableTankStateMin= $E0
 
-BattleStateActive     = $80
+BattleStateActive               = $80
+BattleStateBaseDestructionStart = $27
 TankStateIdleClass    = $80
 TankIdlePhaseFlag     = $08
 TankStateTurningClass = $90
@@ -67,6 +76,20 @@ TankStateDestroyed    = $73
 TankStateSpawning     = $F0
 ProjectileStateActive = $40
 ProjectileStateImpact = $33
+
+TerrainTileBrick             = $0F
+TerrainTileSteel             = $10
+TerrainTileBoundary          = $11
+TerrainTileClassMask         = $FC
+TerrainTileIntactBaseClass   = $C8
+BaseTileIntactUpperLeft      = $C8
+BaseTileIntactLowerLeft      = $C9
+BaseTileIntactUpperRight     = $CA
+BaseTileIntactLowerRight     = $CB
+BaseTileDestroyedUpperLeft   = $CC
+BaseTileDestroyedLowerLeft   = $CD
+BaseTileDestroyedUpperRight  = $CE
+BaseTileDestroyedLowerRight  = $CF
 
 ; Классические уровни улучшения занимают старшие биты attributes. Значение $63
 ; — отдельный максимальный режим Tank 1990, а не следующий равномерный шаг.

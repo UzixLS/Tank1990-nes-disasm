@@ -11,7 +11,7 @@ CreditsCopyrightText:
 LD28F:  .byte   $40,$20,$59,$53,$20,$31,$39,$39,$30,$FF
 ; Шеститайловая нижняя строка голой базы для специальной ветви PowerUpEffect2.
 IntactBaseLowerRow:
-LD299:  .byte   $00,$00,$C9,$CB,$00,$00,$FF
+LD299:  .byte   $00,$00,BaseTileIntactLowerLeft,BaseTileIntactLowerRight,$00,$00,$FF
 TitleCityText:
 LD2A0:  .byte   $43,$49,$54,$59,$FF
 PlayerOneScorePrefix:

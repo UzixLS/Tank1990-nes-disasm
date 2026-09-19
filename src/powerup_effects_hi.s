@@ -1,10 +1,6 @@
 ; Обработчики усилений и улучшений объектов ($FDB1-$FEAC).
 
 PowerUpTargetSlot = $5A
-PowerUpEffect2BaseColumn = 12
-PowerUpEffect2BlankRow   = 25
-PowerUpEffect2UpperRow   = 26
-PowerUpEffect2LowerRow   = 27
 EnemyUpgradeAttributeBit = $08
 ObjectSpecialStateEnabled= $FF
 
@@ -20,8 +16,11 @@ LFDB1:  cpx     #FirstEnemyTankSlot
         rts
 
 ; Вход: X — слот подобравшего усиление. Для X>=2 рисует голую целую базу без
-; ограждения и через QueueBrickBaseAttributes обнуляет верхний атрибут, сохраняя
-; разрешённые биты нижнего. Для X<2 при активном BattleState обновляет стальное
+; ограждения только в rows25..27 (row24 не трогает) и через
+; QueueBrickBaseAttributes обнуляет левый attribute byte, сохраняя внешние
+; quadrants правого. Эта ветка не сбрасывает BaseFortificationTimer, поэтому
+; активный warning/blink позднее может снова нарисовать enclosure. Добавляет
+; 32 bytes в PPU queue. Для X<2 при активном BattleState обновляет стальное
 ; ограждение и перезагружает BaseFortificationTimer.
 ; Портит ScratchPtr, A, X, Y; меняет nametable shadow и PPU-очередь через
 ; вызываемые процедуры. Ветка противника не возвращается самостоятельно, а
@@ -33,22 +32,22 @@ LFDBB:  cpx     #FirstEnemyTankSlot
         sta     ScratchPtrHi
         lda     #<BlankBaseRow
         sta     ScratchPtrLo
-        ldx     #PowerUpEffect2BaseColumn
-        ldy     #PowerUpEffect2BlankRow
+        ldx     #BaseEnclosureColumn
+        ldy     #BaseEnclosureTopRow
         jsr     QueueTileAtCoordinates
         lda     #>IntactBaseUpperRow
         sta     ScratchPtrHi
         lda     #<IntactBaseUpperRow
         sta     ScratchPtrLo
-        ldx     #PowerUpEffect2BaseColumn
-        ldy     #PowerUpEffect2UpperRow
+        ldx     #BaseEnclosureColumn
+        ldy     #BaseCoreUpperRow
         jsr     QueueTileAtCoordinates
         lda     #>IntactBaseLowerRow
         sta     ScratchPtrHi
         lda     #<IntactBaseLowerRow
         sta     ScratchPtrLo
-        ldx     #PowerUpEffect2BaseColumn
-        ldy     #PowerUpEffect2LowerRow
+        ldx     #BaseEnclosureColumn
+        ldy     #BaseCoreLowerRow
         jsr     QueueTileAtCoordinates
         jmp     QueueBrickBaseAttributes
 

@@ -24,7 +24,7 @@ UnreferencedTileSequenceE5e5Prefix:
 LE5E5:  .byte   $01,$0F,$02
 ; Верхняя строка голой целой базы, используемая вражеской веткой PowerUpEffect2.
 IntactBaseUpperRow:
-LE5E8:  .byte   $00,$00,$C8,$CA,$00,$00,$FF
+LE5E8:  .byte   $00,$00,BaseTileIntactUpperLeft,BaseTileIntactUpperRight,$00,$00,$FF
 ; Горизонтальный разделитель variant-меню: два вызова из RunVariantSelectionMenu
 ; выводят эту строку на строках 1 и 4. Формат — 20 тайлов $5C и терминатор $FF.
 VariantMenuDividerText:
