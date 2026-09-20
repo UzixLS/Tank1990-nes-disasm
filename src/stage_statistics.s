@@ -5,15 +5,15 @@
 StatisticsPlayer1Count = $5D
 StatisticsPlayer2Count = $5E
 StatisticsEnemyType    = $5A
-StatisticsKillsConsumed = $7C
+StatisticsRowHadKillFlag = $7C
 Player1StageKillTotal  = $7D
 Player2StageKillTotal  = $7E
 
 ; Временные семизначные записи начисления за текущий тип противника.
 StatisticsPlayer1AwardDigits = $25
 StatisticsPlayer2AwardDigits = $2D
-StatisticsPlayer1AwardRecord = $02
-StatisticsPlayer2AwardRecord = $03
+StatisticsPlayer1AwardRecordIndex = $02
+StatisticsPlayer2AwardRecordIndex = $03
 StatisticsEnemyTypeCount     = $04
 
 ; Тайминги анимации в кадрах. Значки противников перерисовываются каждый кадр
@@ -49,7 +49,6 @@ StatisticsPlayer1BonusPointsColumn = $08
 StatisticsPlayer2BonusPointsColumn = $1B
 
 ; Статическая разметка и режим PPU экрана статистики.
-StatisticsNametablePpuOffset = $24
 StatisticsNametableBits      = $02
 StatisticsDigitTileBias      = $30
 StatisticsBackgroundPalette  = $03
@@ -82,11 +81,11 @@ StatisticsType1IconTile       = $A0
 StatisticsType2IconTile       = $C0
 StatisticsType3IconTile       = $E0
 
-StatisticsPlayer1ScoreRecord = $00
-StatisticsPlayer2ScoreRecord = $01
-StatisticsWinnerBonusAward   = $00       ; особый случай PreparePackedScoreIncrement -> 1000
-StatisticsKillConsumed       = $01
-StatisticsBlankZeroEnabled   = $01
+StatisticsPlayer1ScoreRecordIndex = $00
+StatisticsPlayer2ScoreRecordIndex = $01
+StatisticsWinnerBonusPackedAward  = $00 ; особый случай PreparePackedScoreIncrement -> 1000
+StatisticsRowHadKill              = $01
+StatisticsBlankZeroEnabled        = $01
 
 ; Показывает и анимирует послеэтапную статистику.
 ; Player1KillCounts/Player2KillCounts — четыре счётчика уничтоженных типов;
@@ -103,9 +102,11 @@ StatisticsBlankZeroEnabled   = $01
 ; задаёт число игроков. Выходов в регистрах нет.
 ; Побочно уничтожает Player1/2KillCounts, меняет записи счёта и временных
 ; наград, жизни/флаги награды, PPU/OAM, состояния аудиопотоков и рабочие
-; StatisticsEnemyType/StatisticsPlayer*Count/StatisticsKillsConsumed и итоговые счётчики.
-; A/X/Y не сохраняются; работа занимает много кадров и завершается с
-; NametableBits, BackgroundPaletteIndex, TileTranslationOffset и DigitBlankMode=0.
+; StatisticsEnemyType/StatisticsPlayer*Count/StatisticsRowHadKillFlag и
+; итоговые счётчики. Работа занимает много кадров. Выход: A=X=Y=0,
+; NametableBits=0, TileTranslationOffset=0, DigitBlankMode=0 и
+; BackgroundPaletteIndex=0. Последние NametableBits/палитра только планируются:
+; после их записи процедура уже не ждёт NMI, поэтому PPU применит их в кадре caller-а.
 ShowStageStatistics:
 LCCD4:  jsr     BuildStageStatisticsScreen
         ldx     #StatisticsIntroDelayFrames
@@ -131,6 +132,7 @@ LCCD4:  jsr     BuildStageStatisticsScreen
 BeginEnemyStatisticsRow:
 LCCFA:  jsr     WaitForNextFrame
         jsr     DrawStatisticsEnemyIcons
+; Начало категории: очищает только временные award/count поля этой строки.
 ; Накопленные очки и показанные количества относятся только к текущему типу.
 ; Общие записи счёта игроков между строками не сбрасываются.
         ldx     #StatisticsPlayer1AwardDigits
@@ -143,10 +145,10 @@ LCCFA:  jsr     WaitForNextFrame
 AnimateEnemyStatisticsRow:
 LCD10:  jsr     WaitForNextFrame
         jsr     DrawStatisticsEnemyIcons
-; Флаг ставится только если эта итерация действительно списала хотя бы одно
-; убийство. Нулевой флаг после вывода значений завершает строку.
+; Одна итерация списывает не более одного убийства каждого игрока. Флаг ставится
+; только если действительно списано хотя бы одно; ноль после вывода завершает строку.
         lda     #$00
-        sta     StatisticsKillsConsumed
+        sta     StatisticsRowHadKillFlag
         ldx     StatisticsEnemyType
         lda     ScoreAwardsByEnemyType,x
         jsr     PreparePackedScoreIncrement
@@ -158,11 +160,13 @@ LCD10:  jsr     WaitForNextFrame
         sta     StatisticsCountNoiseAudioState
         dec     Player1KillCounts,x
         inc     StatisticsPlayer1Count
-        ldx     #StatisticsPlayer1AwardRecord
+        ldx     #StatisticsPlayer1AwardRecordIndex
         jsr     AddScoreDigitsToRecord
-        lda     #StatisticsKillConsumed
-        sta     StatisticsKillsConsumed
+        lda     #StatisticsRowHadKill
+        sta     StatisticsRowHadKillFlag
         jsr     AwardScoreThresholdLives
+; Симметричная половина P2 использует то же подготовленное приращение текущего
+; enemy type; в one-player runtime её счётчики должны оставаться нулевыми.
 ConsumePlayer2Kill:
 LCD40:  ldx     StatisticsEnemyType
         lda     Player2KillCounts,x
@@ -172,10 +176,10 @@ LCD40:  ldx     StatisticsEnemyType
         sta     StatisticsCountNoiseAudioState
         dec     Player2KillCounts,x
         inc     StatisticsPlayer2Count
-        ldx     #StatisticsPlayer2AwardRecord
+        ldx     #StatisticsPlayer2AwardRecordIndex
         jsr     AddScoreDigitsToRecord
-        lda     #StatisticsKillConsumed
-        sta     StatisticsKillsConsumed
+        lda     #StatisticsRowHadKill
+        sta     StatisticsRowHadKillFlag
         jsr     AwardScoreThresholdLives
 ; Ставит в PPU-очередь общий счёт, начисление за текущий тип и число уже
 ; обработанных убийств. Строка вычисляется как 12+StatisticsEnemyType*3;
@@ -251,10 +255,12 @@ LCD5E:  ldy     #(Player1Score+1)
 WaitAfterStatisticsRowStep:
 LCDD8:  ldx     #StatisticsRowStepDelayFrames
         jsr     DelayWithStatisticsIcons
-        lda     StatisticsKillsConsumed
+        lda     StatisticsRowHadKillFlag
         beq     AdvanceStatisticsEnemyType
         jmp     AnimateEnemyStatisticsRow
 
+; Пустая завершающая итерация уже вывела финальные числа. Переходит к следующей
+; из четырёх категорий либо к строке TOTAL.
 AdvanceStatisticsEnemyType:
 LCDE4:  inc     StatisticsEnemyType
         lda     StatisticsEnemyType
@@ -303,9 +309,9 @@ LCE32:  lda     Player2StageKillTotal
         bcs     TryAwardPlayerTwoStatisticsBonus
         lda     Player1Lives
         beq     TryAwardPlayerTwoStatisticsBonus
-        lda     #StatisticsWinnerBonusAward
+        lda     #StatisticsWinnerBonusPackedAward
         jsr     PreparePackedScoreIncrement
-        ldx     #StatisticsPlayer1ScoreRecord
+        ldx     #StatisticsPlayer1ScoreRecordIndex
         jsr     AddScoreDigitsToRecord
         ldy     #(Player1Score+1)
         ldx     #StatisticsPlayer1ScoreFormatColumn
@@ -346,9 +352,9 @@ LCE8D:  lda     Player1StageKillTotal
         bcs     FinishStageStatistics
         lda     Player2Lives
         beq     FinishStageStatistics
-        lda     #StatisticsWinnerBonusAward
+        lda     #StatisticsWinnerBonusPackedAward
         jsr     PreparePackedScoreIncrement
-        ldx     #StatisticsPlayer2ScoreRecord
+        ldx     #StatisticsPlayer2ScoreRecordIndex
         jsr     AddScoreDigitsToRecord
         ldy     #(Player2Score+1)
         ldx     #StatisticsPlayer2ScoreFormatColumn
@@ -391,7 +397,7 @@ LCEE5:  ldx     #StatisticsFinalDelayFrames
         sta     BackgroundPaletteIndex
         rts
 ; Строит статический экран статистики в nametable $2800. Значение
-; NametablePpuOffset=$24 прибавляется к high-byte адреса shadow ($04..$07),
+; NametablePpuOffset=ShadowToNametable2800Offset прибавляется к high-byte shadow ($04..$07),
 ; а NametableBits=$02 выбирает ту же физическую nametable для рендеринга.
 ; Отключает рендеринг/NMI, очищает shadow, задаёт палитровые атрибуты,
 ; целиком передаёт nametable и снова включает NMI. Затем за несколько кадров
@@ -408,7 +414,7 @@ BuildStageStatisticsScreen:
 LCEF7:  jsr     WaitForNextFrame
         lda     #StatisticsBlankZeroEnabled
         sta     DigitBlankMode
-        lda     #StatisticsNametablePpuOffset
+        lda     #ShadowToNametable2800Offset
         sta     NametablePpuOffset
         lda     #$00
         sta     VerticalScroll
