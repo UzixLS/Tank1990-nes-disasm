@@ -23,7 +23,10 @@ LE47E:  .byte   TankStateActiveClass | DIRECTION_UP
         .byte   TankStateActiveClass | DIRECTION_DOWN
         .byte   TankStateActiveClass | DIRECTION_DOWN
         .byte   TankStateActiveClass | DIRECTION_DOWN
-; Восемнадцать записей состояний $A0..$A3, используемых ИИ для выбора направления.
+; Две матрицы 3x3 для relation index 3*y+x: значение координаты цели меньше=0,
+; совпадает=1, больше=2 (то есть x: left/same/right, y: above/same/below).
+; Первая матрица отдаёт приоритет вертикальной оси, вторая — горизонтальной;
+; центральная ячейка обеих произвольно задаёт UP.
 TankAiDirectionStateTable:
 LE486:  .byte   TankStateActiveClass | DIRECTION_UP
         .byte   TankStateActiveClass | DIRECTION_UP
@@ -50,8 +53,8 @@ TankLogicHandlers:
 LE498:  .word   TankLogicState0
         .word   TankLogicStates1To7,TankLogicStates1To7,TankLogicStates1To7
         .word   TankLogicStates1To7,TankLogicStates1To7,TankLogicStates1To7,TankLogicStates1To7
-        .word   TankLogicState8,TankLogicState9,TankLogicStateA,TankLogicStateB
-        .word   TankLogicStateC,TankLogicStateD,TankLogicStateE,TankLogicStateF
+        .word   TankLogicState8,TankLogicState9,TankLogicStateA,TankLogicTargetBase
+        .word   TankLogicTargetPlayerTwo,TankLogicTargetPlayerOne,TankLogicStateE,TankLogicStateF
 TankDrawHandlers:
 LE4B8:  .word   TankDrawState0,DrawTankDestructionState1,DrawTankDestructionState2
         .word   DrawLargeTankDestructionStates3To4,DrawLargeTankDestructionStates3To4
