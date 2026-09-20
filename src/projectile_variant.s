@@ -1,16 +1,23 @@
 ; Настройка свойств снаряда для выбранного варианта игры ($FFC1-$FFF0).
 
-StrongProjectileAttributeClass = $60
-StrongProjectileAttributeBit   = $08
-VariantNormalProjectileClassMin= $A0
-ProjectileClassExclusionBit    = $80
+StrongProjectileAttributeClass     = $60
+ExtendedStrongProjectileBit        = $08
+ExtendedFastProjectileClassMin     = $A0
+ProjectileAttributeClassHighBit    = $80
 
-; Настраивает ProjectileFlags,X по режиму $46 и ObjectAttributes,X.
-; В базовом режиме передаёт старшую тетраду атрибутов в
-; DecodeProjectileFlagsFromAttributes. В расширенном режиме ($46<0)
-; бит $08 или класс $60 дают flags=3, часть прочих ненулевых классов — flags=1.
-; Предусловие: ProjectileFlags,X уже обнулён; некоторые ветки намеренно не
-; записывают его. Портит A и флаги.
+; Настраивает скорость/разрушение стали ProjectileFlags,X по GameVariant и
+; ObjectAttributes,X. Базовые варианты (GameVariant<128) передают старшую
+; тетраду общему DecodeProjectileFlagsFromAttributes.
+;
+; В расширенных вариантах bit3 всегда даёт flags=Fast|BreakSteel. Без него:
+; class $60 тоже даёт оба флага; $10..$50/$70 и $A0..$F0 дают только Fast;
+; $00/$80/$90 оставляют предварительно очищенные flags=0. Это сравнения классов,
+; а не непрерывная шкала мощности.
+;
+; Вход: X=слот снаряда/танка; ProjectileFlags,X=0 — обязательное предусловие,
+; потому что ветви $00/$80/$90 ничего не записывают. Выход: X/Y сохранены,
+; A зависит от ветви (0/$80/1/3); меняет только ProjectileFlags,X и flags CPU.
+; Координаты/state снаряда, объект, PPU/OAM/audio не меняет.
 InitializeProjectileFlagsForVariant:
 LFFC1:  lda     GameVariant
         bmi     DecodeExtendedVariantProjectileFlags
@@ -20,26 +27,26 @@ LFFC1:  lda     GameVariant
 
 DecodeExtendedVariantProjectileFlags:
 LFFCC:  lda     ObjectAttributes,x
-        and     #StrongProjectileAttributeBit
-        beq     DecodeProjectileFlagsFromUpgradeClass
+        and     #ExtendedStrongProjectileBit
+        beq     DecodeExtendedProjectileClass
         jmp     SetStrongProjectileFlags
 
-DecodeProjectileFlagsFromUpgradeClass:
+DecodeExtendedProjectileClass:
 LFFD5:  lda     ObjectAttributes,x
         and     #ObjectAttributeClassMask
         beq     FinishProjectileFlagInitialization
-        cmp     #VariantNormalProjectileClassMin
-        bcs     SetVariantNormalProjectileFlags
+        cmp     #ExtendedFastProjectileClassMin
+        bcs     SetExtendedFastProjectileFlags
         cmp     #StrongProjectileAttributeClass
-        beq     SetStrongProjectileFlagsDirect
-        and     #ProjectileClassExclusionBit
+        beq     SetExtendedStrongProjectileFlags
+        and     #ProjectileAttributeClassHighBit
         bne     FinishProjectileFlagInitialization
-SetVariantNormalProjectileFlags:
+SetExtendedFastProjectileFlags:
 LFFE7:  lda     #ProjectileFlagFast
         sta     ProjectileFlags,x
         rts
 
-SetStrongProjectileFlagsDirect:
+SetExtendedStrongProjectileFlags:
 LFFEC:  lda     #ProjectileFlagsMaximum
         sta     ProjectileFlags,x
 FinishProjectileFlagInitialization:
