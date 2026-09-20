@@ -1,22 +1,35 @@
-; Обновление номера этапа в HUD ($CA91-$CAF4).
+; Обновление номера этапа на экране выбора ($CA91-$CAF4).
 
-StageNumberHudColumn  = $0C
-StageNumberHudRow     = $0E
-StageNumberDigitColumn= $0E
-StageNumberTileBias   = $6E
+StageSelectionLabelColumn       = $0C
+StageSelectionLabelRow          = $0E
+StageSelectionDigitFieldColumn  = $0E
+StageSelectionDecimalTileBias   = $6E
+StageSelectionLabelTile0        = $23
+StageSelectionLabelTile1        = $24
+StageSelectionLabelTile2        = $25
+StageSelectionLabelTile3        = $26
+StageSelectionLabelTile4        = $27
+StageSelectionLabelPaddingTile  = $11
 
-; На границе кадра формирует PPU-команды для надписи и десятичного StageNumber.
-; Сначала ставит тайлы $23..$27,$11,$11 в (StageNumberHudColumn,
-; StageNumberHudRow), затем число с StageNumberTileBias. Обе записи обходят
-; nametable shadow и попадают только в PPU update buffer.
-; Вход: StageNumber. Выход: TileTranslationOffset=0; A=0.
-; Портит X/Y, ScratchPtr, ByteToDecimalInput/ScoreIncrementDigits,
-; DecimalHundreds/Tens/Ones, PpuBufferPos и PpuUpdateBuffer. WaitForNextFrame
-; также обслуживает input, audio, OAM DMA и счётчики кадра.
+; Обновляет номер на экране выбора этапа. WaitForNextFrame сначала даёт NMI
+; исполнить прежнюю PPU-очередь и обнулить PpuBufferPos. Затем процедура ставит
+; новую десятибайтовую команду из семи фиксированных тайлов и команду из 1..3
+; десятичных цифр длиной 4..6 байт. Обе команды обходят nametable shadow и будут
+; исполнены только следующим NMI.
+; Вход: NMI включён; StageNumber=1..ExtendedStageUpperBound;
+; NametablePpuOffset=ShadowToPrimaryNametableOffset. При ненулевом StageNumber
+; SelectVisibleDigits не читает DigitBlankMode.
+; После ожидания буфер пуст, поэтому для максимум 16 байт команд и lookahead,
+; который NMI запишет по итоговому PpuBufferPos, место гарантировано.
+; Выход: A=0, X=PpuBufferPos=14..16, Y=число цифр 1..3;
+; TileTranslationOffset=0. Меняет PpuTileRowBits, ScratchPtr,
+; ByteToDecimalInput, ScoreIncrementDigits/decimal scratch и PpuUpdateBuffer.
+; PPU registers и nametable shadow напрямую не меняет. Обслуживший ожидание NMI
+; также обновляет OAM, input, audio и кадровые счётчики.
 UpdateStageNumberDisplay:
 LCA91:  jsr     WaitForNextFrame
-        ldx     #StageNumberHudColumn
-        ldy     #StageNumberHudRow
+        ldx     #StageSelectionLabelColumn
+        ldy     #StageSelectionLabelRow
         jsr     TileCoordinatesToShadowAddress
         ldx     PpuBufferPos
         clc
@@ -26,39 +39,39 @@ LCA91:  jsr     WaitForNextFrame
         tya
         sta     PpuUpdateBuffer,x
         inx
-        lda     #$23
+        lda     #StageSelectionLabelTile0
         sta     PpuUpdateBuffer,x
         inx
-        lda     #$24
+        lda     #StageSelectionLabelTile1
         sta     PpuUpdateBuffer,x
         inx
-        lda     #$25
+        lda     #StageSelectionLabelTile2
         sta     PpuUpdateBuffer,x
         inx
-        lda     #$26
+        lda     #StageSelectionLabelTile3
         sta     PpuUpdateBuffer,x
         inx
-        lda     #$27
+        lda     #StageSelectionLabelTile4
         sta     PpuUpdateBuffer,x
         inx
-        lda     #$11
+        lda     #StageSelectionLabelPaddingTile
         sta     PpuUpdateBuffer,x
         inx
-        lda     #$11
+        lda     #StageSelectionLabelPaddingTile
         sta     PpuUpdateBuffer,x
         inx
-        lda     #$FF
+        lda     #PpuQueueTerminator
         sta     PpuUpdateBuffer,x
         inx
         stx     PpuBufferPos
-        lda     #StageNumberTileBias
+        lda     #StageSelectionDecimalTileBias
         sta     TileTranslationOffset
         lda     StageNumber
         jsr     ByteToDisplayDigits
         ldy     #(ScoreIncrementDigits+1)
-        ldx     #StageNumberDigitColumn
+        ldx     #StageSelectionDigitFieldColumn
         jsr     SelectVisibleDigits
-        ldy     #StageNumberHudRow
+        ldy     #StageSelectionLabelRow
         jsr     QueueTranslatedTileString
         lda     #$00
         sta     TileTranslationOffset
