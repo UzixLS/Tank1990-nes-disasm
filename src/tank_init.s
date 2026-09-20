@@ -5,15 +5,19 @@ InitialPlayerShieldTimer          = $03
 EnemyAttributeStageThreshold     = 12
 EnemyAttributeWideTableIndexMask = $07
 
-; Заполняет начальное состояние танка. Для противников дополнительные свойства
-; выбираются псевдослучайно из таблиц типа, bonus-флага и младших битов
-; атрибутов; точная игровая трактовка каждого младшего бита не предполагается.
+; Завершает spawn-переход и заполняет активное состояние танка.
 ; Вход: X — слот. Начальное состояние берётся из InitialTankStateBySlot.
-; Для игроков ставит PlayerShieldTimer,X=3, объединяет PlayerUpgradeLevel,X с
-; attributes и обнуляет frame. Для противников RNG выбирает три группы bits.
-; До этапа 12 вторая таблица индексируется 0..7, третья 0..3; затем наоборот.
-; Меняет ObjectState/Attributes/Frame, shield timer игроков и RNG;
-; портит A/Y, X сохраняет.
+; Для игроков ставит shield timer=3, OR-ит PlayerUpgradeLevel,X в уже имеющиеся
+; attributes и обнуляет frame; RNG не вызывается.
+;
+; Для противника три независимых RNG-вызова выбирают type $80/$A0/$C0/$E0,
+; carrier bit2 и hit points bits0..1. До stage 12 carrier имеет вероятность 2/8,
+; HP распределены {0:2/4,1:1/4,2:1/4}; с stage 12 carrier=2/4, HP
+; {0:4/8,1:3/8,2:1/8}. Значения OR-ятся с исходными attributes, а не заменяют их.
+; Выход: X сохранён, ObjectFrame,X=0; A=0. Y — последний случайный индекс у
+; врага, входное Y у игрока сохраняется. Меняет state/attributes выбранного
+; объекта, shield timer игрока либо RandomState/RandomIndex для врага;
+; PPU/OAM/audio и другие объекты не меняет.
 InitializeTankState:
 LE4EC:  lda     InitialTankStateBySlot,x
         sta     ObjectState,x
@@ -37,32 +41,32 @@ LE505:  jsr     NextRandomByte
         sta     ObjectAttributes,x
         lda     StageNumber
         cmp     #EnemyAttributeStageThreshold
-        bcc     SelectEarlyStageBonusAttributeIndex
+        bcc     SelectEarlyStageCarrierAttributeIndex
         jsr     NextRandomByte
         and     #DirectionMask
-        jmp     ApplyEnemyBonusAttributeBits
+        jmp     ApplyEnemyCarrierAttributeBits
 
-SelectEarlyStageBonusAttributeIndex:
+SelectEarlyStageCarrierAttributeIndex:
 LE520:  jsr     NextRandomByte
         and     #EnemyAttributeWideTableIndexMask
-ApplyEnemyBonusAttributeBits:
+ApplyEnemyCarrierAttributeBits:
 LE525:  tay
-        lda     EnemyBonusAttributeBits,y
+        lda     EnemyPowerUpCarrierAttributeBits,y
         ora     ObjectAttributes,x
         sta     ObjectAttributes,x
         lda     StageNumber
         cmp     #EnemyAttributeStageThreshold
-        bcc     SelectEarlyStageLowAttributeIndex
+        bcc     SelectEarlyStageHitPointAttributeIndex
         jsr     NextRandomByte
         and     #EnemyAttributeWideTableIndexMask
-        jmp     ApplyEnemyLowAttributeBits
+        jmp     ApplyEnemyHitPointAttributeBits
 
-SelectEarlyStageLowAttributeIndex:
+SelectEarlyStageHitPointAttributeIndex:
 LE53B:  jsr     NextRandomByte
         and     #DirectionMask
-ApplyEnemyLowAttributeBits:
+ApplyEnemyHitPointAttributeBits:
 LE540:  tay
-        lda     EnemyLowAttributeBits,y
+        lda     EnemyHitPointAttributeBits,y
         ora     ObjectAttributes,x
         sta     ObjectAttributes,x
         lda     #$00
