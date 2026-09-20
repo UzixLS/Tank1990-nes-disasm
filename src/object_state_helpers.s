@@ -4,8 +4,9 @@ TankStateClassCandidate          = $00
 SpecialMergedTankAttributes      = $E7
 NormalizedSpecialTankAttributes  = $E4
 
-; Переводит танк X в TankStateDestroyed и очищает ObjectSpecialState,X.
-; Выход: A=0; X/Y не меняются.
+; Переводит танк X в TankStateDestroyed и очищает его расширенное состояние.
+; Вход: X=0..TankSlotCount-1. Выход: A=0; X/Y сохраняются.
+; Меняет только ObjectState,X и ObjectSpecialState,X; C/V сохраняются.
 DestroyTankAndClearExtension:
 LE3EF:  lda     #TankStateDestroyed
         sta     ObjectState,x
@@ -15,10 +16,11 @@ LE3EF:  lda     #TankStateDestroyed
 ; Сохранённый байт между RTS и следующим entry point; статических ссылок нет.
 UnreferencedE3f9Byte:
 LE3F9:  .byte   $03
-; Объединяет входные биты A с ObjectAttributes,X. Единственная специальная
-; комбинация SpecialMergedTankAttributes нормализуется в
-; NormalizedSpecialTankAttributes.
-; Записывает результат, обнуляет ObjectFrame,X; выход A=0, X/Y сохраняются.
+; Объединяет A с ObjectAttributes,X. Если результат равен
+; SpecialMergedTankAttributes, заменяет его на NormalizedSpecialTankAttributes.
+; Вход: X=0..TankSlotCount-1. Выход: A=0; X/Y сохраняются.
+; Меняет ObjectAttributes,X и обнуляет ObjectFrame,X; C отражает сравнение
+; объединённых атрибутов с SpecialMergedTankAttributes, V сохраняется.
 MergeTankAttributeBits:
 LE3FA:  ora     ObjectAttributes,x
         cmp     #SpecialMergedTankAttributes
@@ -30,7 +32,8 @@ LE402:  sta     ObjectAttributes,x
         sta     ObjectFrame,x
         rts
 ClearProjectileStates:
-; Обнуляет ProjectileState всех 10 слотов. Выход: A=0, X=$FF; Y и остальные поля снарядов не меняются.
+; Обнуляет ProjectileState всех десяти слотов. Выход: A=0, X=$FF; Y и
+; остальные поля снарядов сохраняются. На выходе N=1, Z=0; C/V сохраняются.
 LE409:  ldx     #(ProjectileSlotCount-1)
         lda     #$00
 ClearNextProjectileState:
@@ -41,8 +44,9 @@ LE40D:  sta     ProjectileState,x
 
 ClearTankStates:
 ; Обнуляет ObjectState и восемь байтов от PlayerIceState. Только первые два
-; принадлежат игрокам; следующие шесть перекрывают transition/debug RAM и служат общим сбросом.
-; Выход: A=0, X=$FF; Y и остальные поля не меняются.
+; принадлежат игрокам; следующие шесть перекрывают transition/debug RAM и
+; служат общим сбросом. Выход: A=0, X=$FF; Y и остальные поля сохраняются.
+; На выходе N=1, Z=0; C/V сохраняются.
 LE413:  lda     #$00
         ldx     #(TankSlotCount-1)
 ClearNextTankState:
@@ -52,10 +56,13 @@ LE417:  sta     ObjectState,x
         bpl     ClearNextTankState
         rts
 
-; Заменяет старшую тетраду ObjectState, сохраняя направление в младшей.
+; Формирует ObjectState,X как (старое состояние & StateLowNibbleMask) | A.
+; Обычно A содержит только старшую тетраду нового класса; младшие биты A не
+; маскируются и при наличии также устанавливаются в результате.
 SetTankStateClass:
-; Вход: A — новые биты класса (обычно старшая тетрада), X — слот. Выход: A — новый ObjectState;
-; портит TankStateClassCandidate и флаги, X/Y не меняет. Вход A здесь не маскируется.
+; Вход: A — биты нового класса, X=0..TankSlotCount-1. Выход: A — записанный
+; ObjectState,X; X/Y сохраняются. Меняет ObjectState,X и временный байт
+; TankStateClassCandidate; N/Z соответствуют результату, C/V сохраняются.
 LE420:  sta     TankStateClassCandidate
         lda     ObjectState,x
         and     #StateLowNibbleMask

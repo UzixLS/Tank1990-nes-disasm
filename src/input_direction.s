@@ -1,11 +1,12 @@
 ; Декодирование кнопок направления ($E451-$E46B).
 
-NoDirectionButton = $FF
+NoDirectionSentinel = $FF
 
 ; Преобразует первый установленный бит Right/Left/Down/Up в направление 3/1/2/0.
 DecodeDirectionButtons:
-; Вход: A — байт кнопок. Приоритет Right, Left, Down, Up. Выход: A=direction 3/1/2/0 или $FF, если D-pad не нажат.
-; X/Y/RAM не меняет; флаги соответствуют A.
+; Вход: A — байт кнопок; биты вне D-pad игнорируются. Приоритет: Right, Left,
+; Down, Up. Выход: A=direction 3/1/2/0 и C=1 либо A=NoDirectionSentinel и
+; C=0. N/Z соответствуют A; V, X, Y и RAM сохраняются.
 LE451:  asl     a
         bcc     TestLeftDirectionButton
         lda     #DIRECTION_RIGHT
@@ -24,10 +25,10 @@ LE45D:  asl     a
 
 TestUpDirectionButton:
 LE463:  asl     a
-        bcc     ReturnNoDirectionButton
+        bcc     ReturnNoDirection
         lda     #DIRECTION_UP
         rts
 
-ReturnNoDirectionButton:
-LE469:  lda     #NoDirectionButton
+ReturnNoDirection:
+LE469:  lda     #NoDirectionSentinel
         rts

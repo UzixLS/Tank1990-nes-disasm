@@ -3,26 +3,32 @@
 ExtendedStageVariantIndex = ExtendedStageVariant
 ExtendedStageEndSentinel  = ExtendedStageUpperBound + 1
 
-; Увеличивает StageNumber. Обычно возвращает новое значение в A.
-; Для (GameVariant & $0F)=6 диапазон равен 1..$76: $77 заменяется на 1.
-; В этом варианте процедура всегда снимает адрес возврата и переходит прямо в
-; StageSelectionInputLoop. Меняет A, StageNumber и флаги; X/Y сохраняются.
+; Увеличивает StageNumber; вызывается через JSR из цикла выбора этапа.
+; Вход: StageNumber лежит в допустимом диапазоне выбранного варианта.
+; Для (GameVariant & GameVariantIndexMask) != ExtendedStageVariantIndex
+; возвращает A=новый StageNumber; стандартный sentinel $33 обрабатывает
+; вызывающий код.
+; Для расширенного варианта циклически держит диапазон 1..$76, снимает со
+; стека собственный двухбайтовый адрес возврата и без возврата переходит в
+; StageSelectionInputLoop. На этом пути A перезаписывается вторым PLA.
+; Меняет StageNumber, A, флаги и стек описанным образом; X/Y сохраняются самой
+; процедурой (последующий цикл выбора может их изменить).
 AdvanceStageNumber:
 LE9F2:  inc     StageNumber
         lda     GameVariant
         and     #GameVariantIndexMask
         cmp     #ExtendedStageVariantIndex
-        beq     WrapExtendedStageRange
+        beq     HandleExtendedStageRange
         lda     StageNumber
         rts
 
-WrapExtendedStageRange:
+HandleExtendedStageRange:
 LE9FF:  lda     StageNumber
         cmp     #ExtendedStageEndSentinel
-        bne     ResumeStageSelectionAfterIncrement
+        bne     DiscardAdvanceStageReturnAndResumeSelection
         lda     #FirstStageNumber
         sta     StageNumber
-ResumeStageSelectionAfterIncrement:
+DiscardAdvanceStageReturnAndResumeSelection:
 LEA09:  pla
         pla
         jmp     StageSelectionInputLoop
