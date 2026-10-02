@@ -2,11 +2,16 @@
 
 NoDirectionSentinel = $FF
 
-; Преобразует первый установленный бит Right/Left/Down/Up в направление 3/1/2/0.
+; Преобразует первый установленный D-pad bit в индекс direction table.
 DecodeDirectionButtons:
-; Вход: A — байт кнопок; биты вне D-pad игнорируются. Приоритет: Right, Left,
-; Down, Up. Выход: A=direction 3/1/2/0 и C=1 либо A=NoDirectionSentinel и
-; C=0. N/Z соответствуют A; V, X, Y и RAM сохраняются.
+; Вход: A — байт формата Joy* с Right/Left/Down/Up в bits7/6/5/4; младшие
+; кнопки игнорируются. Четыре ASL задают жёсткий приоритет Right, Left, Down,
+; Up при одновременно нажатых направлениях.
+; Выход при успехе: A=DIRECTION_RIGHT/LEFT/DOWN/UP (3/1/2/0), C=1; при
+; отсутствии D-pad: A=NoDirectionSentinel ($FF), C=0. N/Z соответствуют A
+; (в частности Up даёт Z=1, а sentinel N=1); V, X/Y, RAM, стек и SP сохраняются.
+; Значения 0..3 обязаны оставаться согласованными с direction tables и low bits
+; object state; процедура не проверяет размер таблиц у последующих consumers.
 LE451:  asl     a
         bcc     TestLeftDirectionButton
         lda     #DIRECTION_RIGHT
