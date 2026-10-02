@@ -9,17 +9,20 @@ NametableTileRowByteCount      = $20
 ; bytes. Для каждого байта заново задаёт PPU-адрес
 ; ((shadow_hi+NametablePpuOffset)<<8)|shadow_lo, затем пишет PPU_DATA.
 ; Обычные смещения: ShadowToPrimaryNametableOffset -> $2000-$23FF,
-; $20 -> $2400-$27FF, ShadowToNametable2800Offset -> $2800-$2BFF.
+; $20 -> $2400-$27FF, ShadowToNametable2800Offset -> $2800-$2BFF, $28 ->
+; $2C00-$2FFF. Физическая nametable RAM затем подчиняется mirroring картриджа.
 ; Вход: NametablePpuOffset без переполнения переводит все четыре shadow-page
 ; в нужный 1-KiB PPU-диапазон; rendering и NMI выключены, другой код PPU не
 ; касается, PPU_ADDR latch ожидает high byte. PPU_CTRL должен задавать increment 1
 ; только для указанного ниже финального VRAM address: размещение каждого байта
 ; не зависит от increment, потому что адрес задаётся повторно.
-; Выход: ScratchPtr=$0800, A=$08, X сохранён, Y=0; Z=1/C=1/N=0 после CMP.
+; Выход: ScratchPtr=$0800, A=$08, X сохранён, Y=0;
+; N=0/Z=C=1/V=0 после CMP.
 ; Перезаписывает выбранные 1024 байта VRAM и меняет PPU_ADDR/PPU_DATA, ScratchPtr
 ; и flags. Shadow, NametablePpuOffset, PPU queue и остальная RAM сохранены.
 ; PPU_ADDR latch снова ожидает high byte; при increment 1 внутренний VRAM address
 ; стоит сразу за последним записанным байтом диапазона.
+UploadNametableShadow:
 UploadNametableBuffer:  lda     #$00
         sta     ScratchPtrLo
         tay
@@ -43,11 +46,14 @@ LD7BD:  jsr     UploadShadowByteDirect
 ; Width начинает запись со смещения $FF, а нулевая Height даёт 256 итераций строк.
 ; Выход: A=0, X=input NametableRectX, Y=$FF, NametableRectHeight=0;
 ; ScratchPtr указывает на начало последней очищенной строки, NametableRectX/Y/Width
-; сохранены, PpuTileRowBits содержит результат адресации исходной строки.
+; сохранены, PpuTileRowBits=(input NametableRectY&7)*32, N=0/Z=1; C/V зависят
+; от пути (для Height=1 остаются от адресации, иначе от последнего AddAToPointer).
 ; Перезаписывает весь NametableShadow и меняет A/X/Y, ScratchPtr,
 ; NametableRectHeight, PpuTileRowBits и flags; PPU queue/registers и прочую RAM
 ; не меняет. В tile-части вне прямоугольника остаётся TerrainTileBoundary,
-; вся attribute table остаётся нулевой.
+; вся attribute table остаётся нулевой. Параметры $56/$57/$5A/$5B — volatile
+; aliases других подсистем; вызывающий не должен рассчитывать на их роли вне
+; этого контракта.
 InitializePlayfieldShadow:
 LD7CC:  ldx     #$00
         lda     #TerrainTileBoundary
