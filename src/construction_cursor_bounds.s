@@ -1,35 +1,38 @@
 ; Ограничение координат курсора Construction ($C8D0-$C8F8).
 
-ConstructionCursorMinimum = $18
-ConstructionCursorMaximum = $D8
+ConstructionCursorMinimumCenter = $18
+ConstructionCursorMaximumCenter = $D8
 
-; Ограничивает ObjectX/ObjectY включительным диапазоном
-; ConstructionCursorMinimum..ConstructionCursorMaximum. Выход: A=итоговый
-; ObjectY; меняет координаты только при выходе за границы, портит флаги,
-; X/Y и PPU/OAM сохраняет.
+; Ограничивает центр курсора по обеим осям включительным диапазоном $18..$D8.
+; При дальнейшем 16-пиксельном шаге это 13 позиций; DrawMetatile сопоставляет
+; им пары 8x8-тайлов 2/3..26/27, то есть всё поле, подготовленное как rectangle
+; (2,2), 26x26 tiles. Сначала независимо ограничивает X, затем Y.
+; Вход: ObjectX/ObjectY — беззнаковые экранные координаты после возможного шага.
+; Выход: A=ограниченный ObjectY; X/Y registers и остальная RAM сохраняются.
+; Меняет только вышедшие за диапазон ObjectX/ObjectY и flags; PPU/OAM не трогает.
 ClampConstructionCursor:
 LC8D0:  lda     ObjectX
-        cmp     #ConstructionCursorMaximum
+        cmp     #ConstructionCursorMaximumCenter
         bcc     ClampConstructionCursorLeft
-        lda     #ConstructionCursorMaximum
+        lda     #ConstructionCursorMaximumCenter
         sta     ObjectX
 ClampConstructionCursorLeft:
 LC8DA:  lda     ObjectX
-        cmp     #ConstructionCursorMinimum
+        cmp     #ConstructionCursorMinimumCenter
         bcs     ClampConstructionCursorBottom
-        lda     #ConstructionCursorMinimum
+        lda     #ConstructionCursorMinimumCenter
         sta     ObjectX
 ClampConstructionCursorBottom:
 LC8E4:  lda     ObjectY
-        cmp     #ConstructionCursorMaximum
+        cmp     #ConstructionCursorMaximumCenter
         bcc     ClampConstructionCursorTop
-        lda     #ConstructionCursorMaximum
+        lda     #ConstructionCursorMaximumCenter
         sta     ObjectY
 ClampConstructionCursorTop:
 LC8EE:  lda     ObjectY
-        cmp     #ConstructionCursorMinimum
+        cmp     #ConstructionCursorMinimumCenter
         bcs     FinishConstructionCursorClamp
-        lda     #ConstructionCursorMinimum
+        lda     #ConstructionCursorMinimumCenter
         sta     ObjectY
 FinishConstructionCursorClamp:
 LC8F8:  rts

@@ -3,50 +3,67 @@
 ; Редактор Construction: перемещает курсор, меняет TSA-блок и затем
 ; возвращается в общий игровой цикл.
 ConstructionMetatileIndex    = $5C
-ConstructionMoveRepeatTimer = $7B
-ConstructionEditLatch        = $81
+ConstructionMoveHoldCounter = $7B
+ConstructionMetatileCycleArmed = $81
 ConstructionMetatileCount    = $0E
 ConstructionMetatileBeforeFirst = $FF
 ConstructionMetatileFirst    = $00
 ConstructionCursorStartX     = $10
 ConstructionCursorStartY     = $18
-ConstructionCursorState      = TankStateIdleClass | TankIdlePhaseStep
+ConstructionCursorRenderState = TankStateIdleClass | TankIdlePhaseStep
 ConstructionCursorVisibleFrameBit = $10
 ConstructionPaintButtonMask  = BUTTON_A | BUTTON_B
 ConstructionMode:
-; Вход: ConstructionMapFlag=0 требует первичной очистки/отрисовки поля;
-; ненулевое значение повторно использует уже построенную shadow-карту. Объект 0
-; становится мигающим курсором. D-pad двигает его по сетке 16 px; A/B выбирают
-; TSA $00..$0D. Первый A/B после перемещения только рисует текущий TSA,
-; последующие нажатия циклически меняют его; движение сбрасывает
-; ConstructionEditLatch. START увеличивает ConstructionMapFlag и хвостом
-; переходит в EnterTitleMenu. Процедура сама не возвращается; меняет объект 0,
-; shadow nametable, PPU-очередь и рабочую RAM, портит A/X/Y.
-; Начальный X=$10 намеренно лежит левее допустимой области; первый clamp обычно
-; переводит его в $18, если на этом кадре Right не успел сдвинуть курсор.
-; При одновременном D-pad и A/B направление имеет приоритет для latch, но
-; удерживаемая кнопка всё равно рисует.
+; Вход: NMI включён, NametablePpuOffset=ShadowToPrimaryNametableOffset.
+; ConstructionMapFlag=0 создаёт поле: весь shadow сначала заполняется boundary,
+; прямоугольник tiles (2,2)..(27,27) очищается и напрямую загружается в $2000,
+; после чего кирпичная база добавляется в shadow/PPU-очередь. Ненулевой флаг
+; пропускает эту инициализацию и повторно использует уже отредактированное поле.
+;
+; Объект 0 становится мигающим курсором. D-pad двигает его по сетке 16 px;
+; после clamp центры ячеек лежат в $18..$D8, что покрывает 13x13 метатайлов.
+; A/B выбирают только первые ConstructionMetatileCount записей TSA ($00..$0D;
+; $0E/$0F из общей таблицы недоступны). Первый новый A/B после входа или движения
+; лишь рисует текущий TSA и вооружает циклический выбор; следующие фронты A/B
+; выбирают следующий/предыдущий TSA с кольцевым переходом. Удержание A/B повторно
+; рисует выбранный TSA каждый кадр без смены индекса. При одновременном фронте
+; A+B имеет приоритет A. Любой удерживаемый D-pad сбрасывает вооружение и
+; подавляет обработку фронтов A/B, но удерживаемая A/B всё равно рисует.
+;
+; START проверяется после возможного рисования, восстанавливает terrain-priority,
+; увеличивает ConstructionMapFlag по модулю 256 и хвостом переходит в
+; EnterTitleMenu. Процедура сама не возвращается; меняет object slot 0,
+; PlayerStunTimer обоих игроков, scroll/nametable state, shadow nametable,
+; PPU-очередь, OAM shadow/cursor и рабочую RAM, портит A/X/Y. Каждый проход
+; начинается с WaitForNextFrame, поэтому команда рисования обычно передаётся
+; следующим NMI.
+;
+; Начальный X=$10 находится левее диапазона центров, но DrawMetatile всё ещё
+; сопоставляет его первой ячейке. Без Right первый clamp переводит X в $18;
+; немедленный Right даёт $20 и тем самым выбирает вторую ячейку без пропуска.
 LC0AE:  lda     ConstructionMapFlag
         bne     InitializeConstructionEditor
+        ; Только первый вход создаёт и напрямую загружает чистое поле $2000.
         jsr     DisableRenderingForBulkUpdate
         jsr     InitializePlayfieldRectangle
         jsr     UploadNametableBuffer
         jsr     EnableNmiAfterVblank
 InitializeConstructionEditor:
+        ; Object slot 0 переиспользуется как видимый поверх terrain курсор.
 LC0BE:  jsr     ClearTankStates
         lda     #ConstructionCursorStartX
         sta     ObjectX
         lda     #ConstructionCursorStartY
         sta     ObjectY
-        lda     #ConstructionCursorState
+        lda     #ConstructionCursorRenderState
         sta     ObjectState
         lda     #$00
         sta     ObjectAttributes
         ; Тот же ноль отключает terrain-priority курсора.
         sta     SpriteBehindTerrainMask
         sta     ObjectFrame
-        sta     ConstructionEditLatch
-        sta     ConstructionMoveRepeatTimer
+        sta     ConstructionMetatileCycleArmed
+        sta     ConstructionMoveHoldCounter
         sta     ConstructionMetatileIndex
         sta     VerticalScroll
         sta     NametableBits
@@ -54,6 +71,7 @@ LC0BE:  jsr     ClearTankStates
         sta     PlayerStunTimer+1
         lda     ConstructionMapFlag
         bne     ConstructionEditorFrame
+        ; Tile/attribute-команды базы исполнит NMI первого прохода цикла.
         jsr     DrawBrickBaseEnclosure
 ConstructionEditorFrame:
 LC0EA:  jsr     WaitForNextFrame
@@ -62,6 +80,7 @@ LC0EA:  jsr     WaitForNextFrame
         lda     FrameCounter
         and     #ConstructionCursorVisibleFrameBit
         beq     ProcessConstructionEditorInput
+        ; Bit4 даёт 16 кадров с курсором и 16 без новых cursor OAM entries.
         jsr     DrawTanks
 ProcessConstructionEditorInput:
 LC0FC:  lda     Joy1Held
@@ -70,9 +89,9 @@ LC0FC:  lda     Joy1Held
         lda     Joy1Pressed
         and     #BUTTON_A
         beq     CheckConstructionPreviousTile
-        lda     ConstructionEditLatch
+        lda     ConstructionMetatileCycleArmed
         bne     SelectNextConstructionTile
-        inc     ConstructionEditLatch
+        inc     ConstructionMetatileCycleArmed
         jmp     PaintConstructionTile
 
 SelectNextConstructionTile:
@@ -88,9 +107,9 @@ CheckConstructionPreviousTile:
 LC120:  lda     Joy1Pressed
         and     #BUTTON_B
         beq     CheckConstructionPaintHeld
-        lda     ConstructionEditLatch
+        lda     ConstructionMetatileCycleArmed
         bne     SelectPreviousConstructionTile
-        inc     ConstructionEditLatch
+        inc     ConstructionMetatileCycleArmed
         jmp     PaintConstructionTile
 
 SelectPreviousConstructionTile:
