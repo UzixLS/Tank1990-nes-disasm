@@ -85,28 +85,47 @@ StatisticsPlayer1ScoreRecordIndex = $00
 StatisticsPlayer2ScoreRecordIndex = $01
 StatisticsWinnerBonusPackedAward  = $00 ; особый случай PreparePackedScoreIncrement -> 1000
 StatisticsRowHadKill              = $01
-StatisticsBlankZeroEnabled        = $01
+StatisticsShowSingleZero          = $01
 
-; Показывает и анимирует послеэтапную статистику.
-; Player1KillCounts/Player2KillCounts — четыре счётчика уничтоженных типов;
-; их восьмибитные суммы без насыщения сохраняются в Player1/Player2StageKillTotal.
+; Показывает и анимирует послеэтапную статистику в nametable $2800.
+; Player1KillCounts/Player2KillCounts — по четыре unsigned счётчика
+; типов 0..3. Их суммы сохраняются по модулю 256: carry между
+; ADC намеренно сбрасывается, а старший байт не хранится. Для ромхака с
+; суммой >255 и вывод TOTAL, и unsigned-сравнение победителя будут
+; работать с уже обёрнутыми значениями.
 ; Для каждой категории одна итерация уменьшает не более чем по одному счётчику
 ; каждого игрока, увеличивает экранные StatisticsPlayer1/2Count, накапливает
 ; награду ScoreAwardsByEnemyType во временных StatisticsPlayer1/2AwardDigits и
 ; обновляет UI. После последнего убийства выполняется ещё одна итерация без
 ; списания: она выводит окончательные значения и переводит цикл к следующему типу.
+; Временные award-records — семь отдельных десятичных цифр+терминатор;
+; они сбрасываются для каждого типа и не являются счётом игрока. Этот экран
+; не повторяет gameplay-начисление за убийства: он меняет общий счёт
+; только бонусом победителя. В UI выводятся только младшие шесть цифр
+; каждой семизначной score/award record: million digit не показывается.
 ; После четырёх категорий выводит суммы. При BattleState!=0, двух игроках и
 ; неравном результате живому игроку с большей суммой добавляет специальную
 ; награду PreparePackedScoreIncrement(0), то есть 1000 очков.
-; Входы: таблицы убийств и счёта заполнены завершившимся этапом; MenuSelection
-; задаёт число игроков. Выходов в регистрах нет.
+; Каждая категория занимает 1+9*(max(P1kills,P2kills)+1) NMI: один NMI
+; перед сбросом строки, по одному перед каждой итерацией и по восемь
+; после неё; +1 — пустая завершающая итерация. Без учёта Build весь Show ждёт
+; 295+9*sum(max(kills[type])) NMI; Build добавляет 5 NMI в 1P и 7 NMI в 2P.
+; Входы: таблицы убийств и счёта заполнены завершившимся этапом; MenuSelection=0
+; выбирает 1P, любое ненулевое значение — 2P. Выход: A=X=Y=0, Z=1/N=0;
+; C/V остаются от последней OAM-отрисовки и не заданы контрактом.
 ; Побочно уничтожает Player1/2KillCounts, меняет записи счёта и временных
 ; наград, жизни/флаги награды, PPU/OAM, состояния аудиопотоков и рабочие
 ; StatisticsEnemyType/StatisticsPlayer*Count/StatisticsRowHadKillFlag и
-; итоговые счётчики. Работа занимает много кадров. Выход: A=X=Y=0,
-; NametableBits=0, TileTranslationOffset=0, DigitBlankMode=0 и
-; BackgroundPaletteIndex=0. Последние NametableBits/палитра только планируются:
-; после их записи процедура уже не ждёт NMI, поэтому PPU применит их в кадре caller-а.
+; итоговые счётчики. Входные kill arrays на выходе нулевые; count fields
+; содержат количества лишь последнего, типа 3, а totals — исходные суммы.
+; StatisticsEnemyType=4 и StatisticsRowHadKillFlag=0; temporary records содержат
+; накопления только за тип 3.
+; PpuBufferPos=0 после последнего WaitForNextFrame; hardware OAM содержит
+; значки предыдущей итерации, OAM shadow — свежие восемь для следующего DMA.
+; NametablePpuOffset остаётся $24; TileTranslationOffset/DigitBlankMode сразу
+; сбрасываются в 0. NametableBits=0 и BackgroundPaletteIndex=0 — лишь RAM-запросы:
+; после их записи нет NMI, поэтому аппаратные PPU_CTRL/palette остаются
+; статистическими до NMI caller-а.
 ShowStageStatistics:
 LCCD4:  jsr     BuildStageStatisticsScreen
         ldx     #StatisticsIntroDelayFrames
@@ -147,6 +166,10 @@ LCD10:  jsr     WaitForNextFrame
         jsr     DrawStatisticsEnemyIcons
 ; Одна итерация списывает не более одного убийства каждого игрока. Флаг ставится
 ; только если действительно списано хотя бы одно; ноль после вывода завершает строку.
+; PreparePackedScoreIncrement готовит 100/200/300/400 по ScoreAwardsByEnemyType;
+; AddScoreDigitsToRecord здесь прибавляет их только к temporary record 2/3. При каждом
+; списании оба audio channels получают start request, а threshold-life scan
+; смотрит не этот temporary record, а оба глобальных score records.
         lda     #$00
         sta     StatisticsRowHadKillFlag
         ldx     StatisticsEnemyType
@@ -166,7 +189,9 @@ LCD10:  jsr     WaitForNextFrame
         sta     StatisticsRowHadKillFlag
         jsr     AwardScoreThresholdLives
 ; Симметричная половина P2 использует то же подготовленное приращение текущего
-; enemy type; в one-player runtime её счётчики должны оставаться нулевыми.
+; enemy type. MenuSelection здесь не проверяется: даже в 1P ненулевые P2 counts
+; будут скрыто списаны, попадут в тайминг/временную награду и запустят audio;
+; одноигрочный caller должен держать таблицу P2 нулевой.
 ConsumePlayer2Kill:
 LCD40:  ldx     StatisticsEnemyType
         lda     Player2KillCounts,x
@@ -181,11 +206,17 @@ LCD40:  ldx     StatisticsEnemyType
         lda     #StatisticsRowHadKill
         sta     StatisticsRowHadKillFlag
         jsr     AwardScoreThresholdLives
-; Ставит в PPU-очередь общий счёт, начисление за текущий тип и число уже
-; обработанных убийств. Строка вычисляется как 12+StatisticsEnemyType*3;
-; поля P2 пропускаются в однопользовательском режиме. Вход: индекс типа 0..3,
-; счётчики, award-records и score-records уже актуальны. Меняет A/X/Y,
-; ScratchPtr и ScoreIncrementDigits; исходные счётчики/счёт и OAM не меняет.
+; Ставит в PPU-очередь общий счёт, award за текущий тип и число уже
+; обработанных убийств. Строка = 12+StatisticsEnemyType*3; P2 пропускается при
+; MenuSelection=0. Каждое поле есть отдельная [addr_hi,addr_lo,data,$FF] command:
+; score/award дают 4..9 bytes, byte-count — 4..6; всего 12..24 bytes в 1P
+; и 24..48 в 2P. Это наибольший batch экрана и он с lookahead помещается
+; в 128-byte PpuUpdateBuffer. Первый NMI в последующей 8-frame паузе flush-ит
+; batch. Цифровые commands не копируются в nametable shadow.
+; Вход: StatisticsEnemyType=0..3; счётчики, award/score records актуальны;
+; очередь пуста после WaitForNextFrame выше. Меняет A/X/Y, ScratchPtr,
+; PpuTileRowBits, PpuBufferPos/queue и ScoreIncrementDigits; исходные
+; счётчики/score records, nametable shadow и OAM не меняет.
 QueueStatisticsRowValues:
 LCD5E:  ldy     #(Player1Score+1)
         ldx     #StatisticsPlayer1ScoreFormatColumn
@@ -204,7 +235,8 @@ LCD5E:  ldy     #(Player1Score+1)
         tay
         jsr     QueueTranslatedTileString
 ; Эта исходная загрузка X не влияет на результат: ByteToDisplayDigits сразу
-; заменяет X адресом ScoreIncrementDigits.
+; заменяет X адресом ScoreIncrementDigits. НЕ ДОКАЗАНО, зачем она была нужна;
+; нейтральная инструкция сохранена для byte-exact layout.
         ldx     StatisticsEnemyType
         lda     StatisticsPlayer1Count
         jsr     ByteToDisplayDigits
@@ -237,7 +269,7 @@ LCD5E:  ldy     #(Player1Score+1)
         adc     #StatisticsFirstEnemyRow
         tay
         jsr     QueueTranslatedTileString
-; Аналогичная неиспользуемая загрузка X сохранена для побайтового совпадения.
+; Аналогичная нейтральная загрузка X с тем же недоказанным назначением.
         ldx     StatisticsEnemyType
         lda     StatisticsPlayer2Count
         jsr     ByteToDisplayDigits
@@ -271,6 +303,9 @@ LCDE4:  inc     StatisticsEnemyType
         jmp     BeginEnemyStatisticsRow
 
 QueueStatisticsTotals:
+; После 30 NMI ставит unsigned totals 0..255 в строку 23.
+; Одна command занимает 4..6 bytes; 2P batch — не более 12 bytes.
+; Очередь flush-ится первым NMI 15-frame winner delay; shadow не меняется.
 LCDF4:  ldx     #StatisticsBeforeTotalsDelayFrames
         jsr     DelayWithStatisticsIcons
         lda     Player1StageKillTotal
@@ -296,8 +331,13 @@ LCE1F:  ldx     #StatisticsWinnerDelayFrames
         bne     CheckStatisticsWinnerBonus
         jmp     FinishStageStatistics
 
-; Бонус сравнивается только для двух игроков и только при ненулевом BattleState.
-; Ничья, ноль жизней у кандидата или нулевой BattleState оставляют счёт прежним.
+; Бонус сравнивается только для двух игроков и при любом BattleState!=0,
+; не только при одном конкретном state. Сравнение unsigned и строгое: ничья,
+; ноль жизней у игрока с большим total или BattleState=0 не дают бонус никому.
+; Победитель получает 1000 в score modulo 10^7. Бонусный batch: score
+; 4..9 bytes, число 1000 — 7, BONUS — 9, PTS — 6; всего 26..31 bytes.
+; Первый NMI финальной 120-frame паузы flush-ит его; только BONUS/PTS
+; также попадают в shadow, цифровые поля — нет.
 CheckStatisticsWinnerBonus:
 LCE2B:  lda     BattleState
         bne     TryAwardPlayerOneStatisticsBonus
@@ -339,8 +379,9 @@ LCE32:  lda     Player2StageKillTotal
         jsr     QueueTileAtCoordinates
         lda     #AudioStateStartRequested
         sta     StatisticsWinnerBonusAudioState
-; Одновременно перезаписывает channel/control записи потока паузы значением 1;
-; зачем это требуется экрану статистики, по статическому коду не установлено.
+; НЕ ДОКАЗАНО: затем код пишет 1 в первые два байта записи pause-stream:
+; +0 route и +1 cached APU register 0. Причина именно такого побочного эффекта не выводится
+; из локального потока; для побайтового совпадения запись оставлена.
         sta     AudioStreamRecords
         sta     AudioStreamRecords+1
         jsr     AwardScoreThresholdLives
@@ -382,7 +423,7 @@ LCE8D:  lda     Player1StageKillTotal
         jsr     QueueTileAtCoordinates
         lda     #AudioStateStartRequested
         sta     StatisticsWinnerBonusAudioState
-; Та же недокументированная запись в первые два байта записи потока паузы.
+; Та же недоказанная pause-stream запись, что и в ветви P1.
         sta     AudioStreamRecords
         sta     AudioStreamRecords+1
         jsr     AwardScoreThresholdLives
@@ -403,16 +444,36 @@ LCEE5:  ldx     #StatisticsFinalDelayFrames
 ; целиком передаёт nametable и снова включает NMI. Затем за несколько кадров
 ; ставит заголовки, текущие суммарные очки, номер этапа, четыре строки типов
 ; противников и поля счётчиков для одного или двух игроков.
+; Статические QueueTileAtCoordinates calls обновляют и shadow, и PPU queue;
+; цифровые QueueTranslatedTileString calls меняют только очередь. DigitBlankMode=1
+; оставляет один ноль в целиком нулевом поле; bias $30 превращает digits
+; 0..9 в tiles $30..$39. Общий score/high score берётся с record+1, поэтому поле
+; не шире шести цифр; StageNumber конвертируется как unsigned byte 0..255.
+;
+; NMI/batch layout (числа включают address, terminator, но не lookahead):
+;   initial Wait + DisableRenderingForBulkUpdate = 2 NMI;
+;   high-score/stage batch = 27..34 bytes, затем Wait;
+;   player header/score/four markers = 31..36 bytes на игрока;
+;   four PTS strings = 24 bytes на игрока;
+;   footer divider+TOTAL = 19 bytes и остаётся pending на возврате.
+; Итог: 5 NMI в 1P, 7 NMI в 2P, плюс один опрошенный vblank в
+; EnableNmiAfterVblank; максимальный batch 36 bytes безопасен для 128-byte queue.
+; Первый intro NMI в caller-е передаёт footer в PPU.
 ; Вход: MenuSelection определяет наличие второго столбца; StageNumber и записи
 ; Player1Score/Player2Score/HighScore используются для UI. Побочно меняет
-; A/X/Y, ScratchPtr, RenderAttributes/NametablePpuOffset,
+; A/X/Y, ScratchPtr/AuxPtr/PpuTileRowBits, NametablePpuOffset,
 ; TileTranslationOffset/DigitBlankMode, BackgroundPaletteIndex,
 ; VerticalScroll/NametableBits, shadow/attributes и PPU-очередь. Возвращается
-; после постановки footer в очередь; прямые записи PPU выполняются при отключённом
-; рендеринге, а NMI снова разрешён до построения текстовых полей.
+; с A=$FF, X=PpuBufferPos=19, Y=5, Z=1/N=0/C=1/V=0. ScratchPtr
+; указывает на StatisticsTotalText, AuxPtr — на shadow row 23,column 6;
+; BackgroundPaletteIndex=$FF после palette upload в NMI, PpuBufferPos=19.
+; NametablePpuOffset=$24, VerticalScroll=0, NametableBits=2,
+; TileTranslationOffset=$30 и DigitBlankMode=1 остаются для анимации.
+; Прямые PPU-записи идут при выключённом rendering; после EnableNmiAfterVblank
+; нельзя увеличивать batch так, чтобы его построение пересеклось с NMI flush.
 BuildStageStatisticsScreen:
 LCEF7:  jsr     WaitForNextFrame
-        lda     #StatisticsBlankZeroEnabled
+        lda     #StatisticsShowSingleZero
         sta     DigitBlankMode
         lda     #ShadowToNametable2800Offset
         sta     NametablePpuOffset
@@ -543,6 +604,8 @@ QueueStatisticsCountFields:
 ; Размещает четыре строки PTS в колонке P1; при двух игроках повторяет их в
 ; колонке P2. Числовые поля здесь не ставятся: их впервые выводит анимация
 ; QueueStatisticsRowValues, в том числе на завершающей пустой итерации строки.
+; Каждый 4*"PTS" batch занимает точно 24 queue bytes и при построении
+; также копирует 12 tiles в nametable shadow.
 LD014:  jsr     WaitForNextFrame
         lda     #>PointsText
         sta     ScratchPtrHi
@@ -604,7 +667,9 @@ LD014:  jsr     WaitForNextFrame
         ldy     #StatisticsFourthEnemyRow
         jsr     QueueTileAtCoordinates
 QueueStatisticsFooter:
-; Завершает разметку горизонтальным разделителем и подписью TOTAL.
+; Завершает разметку 8-tile разделителем и 5-tile подписью TOTAL.
+; После Wait queue пуста; обе commands дают точно 19 bytes, обновляют
+; shadow и остаются pending до первого intro NMI в ShowStageStatistics.
 LD096:  jsr     WaitForNextFrame
         lda     #>StatisticsDivider
         sta     ScratchPtrHi
@@ -622,9 +687,19 @@ LD096:  jsr     WaitForNextFrame
         jsr     QueueTileAtCoordinates
         rts
 ; Выводит четыре двухтайловых изображения типов противников на экране
-; статистики. Фиксированный X=$81; Y=$64,$7C,$94,$AC; базовые тайлы
-; $80,$A0,$C0,$E0; атрибуты $02. Добавляет восемь спрайтов в OAM shadow.
-; Меняет A/X/Y, RenderAttributes/OamTile/OamPairX/OamPairY и OamBufferPos.
+; статистики. Опорный screen X=$81; Y=$64,$7C,$94,$AC; tile pairs
+; $80/$82,$A0/$A2,$C0/$C2,$E0/$E2. Всего добавляет 8 hardware entries = 32 bytes
+; OAM shadow по текущему OamBufferStep; hardware OAM изменится лишь на
+; следующем NMI DMA. Caller должен дать восемь свободных entries и cursor/step,
+; выровненные по 4; штатный WaitForNextFrame это обеспечивает.
+; Начальные attributes=$02, но EmitOamSprite может sticky-OR-нуть
+; SpriteBehindTerrainMask, если terrain probe найдёт shadow tile $22; для изменённой
+; разметки этот эффект тоже должен учитываться.
+; Выход: A=OamBufferPos после 8 entries, X=offset последней entry,
+; Y=0, OamTile=$E2, N/Z/C/V от последнего cursor+step. Меняет RenderAttributes,
+; OamTile/OamPairX/OamPairY, OamSavedX/Y, ScratchPtr/PpuTileRowBits и OamBufferPos.
+; После четвёртой пары OamPairX/Y=$81/$AC, OamSavedX/Y=$81/$A4,
+; ScratchPtr=$06B0 и PpuTileRowBits=$A0; PPU queue/registers не меняются.
 DrawStatisticsEnemyIcons:
 LD0B8:  lda     #StatisticsEnemyIconAttributes
         sta     RenderAttributes
@@ -642,10 +717,18 @@ LD0B8:  lda     #StatisticsEnemyIconAttributes
         jsr     DrawStatisticsEnemyIcon
         rts
 
-; Заполняет выбранные байты shadow attribute table для двух колонок экрана
-; статистики. Остальные байты должны быть заранее обнулены.
-; Вход: NametableAttributes уже очищена. Выход A=$05; X/Y не меняются.
-; Побочный эффект ограничен перечисленными байтами shadow attribute table.
+; Заполняет 26 выбранных байтов 8x8 shadow attribute table. Каждый
+; byte задаёт четыре 2-bit background palette indices для 4x4-tile области:
+;   $50 -> offsets 00..03,08..0A,0D..0F (10 bytes);
+;   $A0 -> offsets 04..07 (4 bytes);
+;   $0A -> offsets 10..12,15..17 (6 bytes);
+;   $05 -> offsets 30..32,35..37 (6 bytes).
+; Все остальные 38 bytes должны быть заранее обнулены; штатно это делает
+; ClearNametableBuffer. Для ромхака, меняющего layout/палитры, таблицу нужно
+; пересогласовать с 4x4-tile boundaries. НЕ ДОКАЗАНО только художественное
+; назначение каждого цветового участка; точная byte map выше доказывается кодом.
+; Вход: NametableAttributes очищена. Выход: A=$05, N=0/Z=0;
+; X/Y и C/V сохранены. PPU queue/registers и tile area shadow не меняются.
 InitializeStatisticsAttributes:
 LD0D9:  lda     #$50
         sta     NametableAttributes+$00
@@ -680,9 +763,12 @@ LD0D9:  lda     #$50
         rts
 
 ; Адаптер вывода одного двухтайлового значка статистики.
-; Вход: A — базовый tile, Y — экранная координата; X принудительно $81,
-; RenderAttributes уже содержит атрибуты. Добавляет два горизонтально соседних
-; спрайта в OAM shadow; меняет A/X/Y, OamTile/OamPairX/OamPairY и OamBufferPos.
+; Вход: A=base tile, Y=screen Y; screen X принудительно $81;
+; RenderAttributes, SpriteBehindTerrainMask и OAM cursor/step подготовлены.
+; Пишет entries в X=$79/$81 с tiles base/base+2. Выход: A=новый cursor,
+; X=offset второй entry, Y=0, OamTile=base+2; flags от второго cursor+step.
+; Меняет OAM shadow/cursor, RenderAttributes условно, OAM/coordinate scratch
+; и shadow-pointer scratch; hardware OAM/PPU queue/registers не меняет.
 DrawStatisticsEnemyIcon:
 LD130:  sta     OamTile
         ldx     #StatisticsEnemyIconX
