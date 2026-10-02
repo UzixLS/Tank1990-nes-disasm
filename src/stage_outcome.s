@@ -1,10 +1,12 @@
 ; Рабочие счётчики и условие завершения этапа ($C71E-$C754).
 
-StageEndObjectStartX     = $70
-StageEndObjectStartTimer = $11
+GameOverObjectStartX       = $70
+GameOverObjectInitialTimer = $11
+GameOverObjectDirection    = DIRECTION_UP
 
-; Обнуляет восемь байт Player1KillCounts..Player2KillCounts+3.
-; Выход: A=0, X=$FF; Y, PPU/OAM/APU и остальная RAM не меняются.
+; Обнуляет ровно восемь счётчиков убийств: четыре типа P1 и следующие четыре
+; типа P2 ($73..$7A). Payload статистики/score/lives не затрагивает.
+; Выход: A=0, X=$FF, N=1/Z=0; Y и C/V сохраняются. PPU/OAM/APU не меняет.
 ClearStageWorkBytes:
 LC71E:  ldx     #$07
         lda     #$00
@@ -14,29 +16,41 @@ LC722:  sta     Player1KillCounts,x
         bpl     ClearNextStageWorkByte
         rts
 
-; Проверяет условие завершения текущего кадрового цикла.
-; Возвращает A=0/Z=1, пока BattleState!=0, остались враги и есть хотя бы одна
-; жизнь; иначе A=1/Z=0. При BattleState=0 или отсутствии жизней задаёт
-; TransitionObjectX/Y/Direction/Timer и сбрасывает FrameCounter. Победа по
-; EnemiesRemaining=0 завершает loop без инициализации объекта. X/Y сохраняются;
-; PPU/OAM/APU напрямую не меняет, портит флаги.
+; Проверяет исход после отрисовки текущего gameplay frame. Приоритет условий:
+;   1. BattleState=0 -- поражение после завершившегося countdown базы;
+;   2. EnemiesRemaining=0 -- немедленное завершение без GAME OVER объекта;
+;   3. (Player1Lives+Player2Lives)&$FF=0 -- поражение игроков;
+;   4. иначе бой продолжается.
+; Поэтому положительный destruction countdown считается временно активным, но
+; последний уничтоженный враг может закончить loop до его нуля; поздний
+; ResolveStageOutcome всё равно отличит такое состояние от точного $80.
+;
+; Поражение создаёт GAME OVER: X=$70, скрытый Y=$F0, direction=UP, timer=$11,
+; FrameCounter=0. При штатном длинном TransitionObjectFrameLoop объект движется
+; вверх первые 127 logic ticks до Y=$71, затем стоит; цикл заканчивается через
+; 256 NMI с timer=1, не дожидаясь его естественного нуля. Победа не меняет ни
+; TransitionObject*, ни FrameCounter.
+;
+; Выход: A=0/Z=1 для продолжения, A=1/Z=0 при завершении; X/Y сохраняются.
+; Сумма жизней восьмибитная, поэтому ромхак должен исключить ненулевую сумму,
+; кратную 256. PPU/OAM/audio напрямую не меняются.
 CheckStageLoopFinished:
 LC728:  lda     BattleState
-        beq     StartStageEndTransition
+        beq     StartGameOverTransition
         lda     EnemiesRemaining
         beq     ReportStageLoopFinished
         lda     Player1Lives
         clc
         adc     Player2Lives
         bne     ReportStageLoopActive
-StartStageEndTransition:
-LC737:  lda     #StageEndObjectStartX
+StartGameOverTransition:
+LC737:  lda     #GameOverObjectStartX
         sta     TransitionObjectX
         lda     #OamHiddenY
         sta     TransitionObjectY
-        lda     #$00
+        lda     #GameOverObjectDirection
         sta     TransitionObjectDirection
-        lda     #StageEndObjectStartTimer
+        lda     #GameOverObjectInitialTimer
         sta     TransitionObjectTimer
         lda     #$00
         sta     FrameCounter
