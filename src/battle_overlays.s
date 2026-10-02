@@ -1,89 +1,131 @@
 ; PAUSE, переходный объект и прямоугольник поля ($C8F9-$C9BF).
 
-PauseVisibleFrameBit          = $10
-TransitionMoveTimerThreshold = $0A
-TransitionUpdateFrameMask    = $0F
-PlayfieldRectangleOrigin     = $02
-PlayfieldRectangleSize       = $1A
+OverlaySpriteAttributes          = $03
+PauseBlinkVisiblePhaseBit        = $10
+PauseOverlayFirstX               = $64
+PauseOverlayY                    = $80
+PauseOverlayGlyphSpacing         = $08
+PauseOverlayTileP                = $17
+PauseOverlayTileA                = $19
+PauseOverlayTileU                = $1B
+PauseOverlayTileS                = $1D
+PauseOverlayTileE                = $1F
+TransitionMovingTimerMinimum     = $0A
+TransitionTimerTickFrameMask     = $0F
+GameOverLeftPairFirstTile        = $79
+GameOverRightPairFirstTile       = $7D
+GameOverRightPairAnchorOffset    = $10
+PlayfieldRectangleOriginTile     = $02
+PlayfieldRectangleExtentTiles    = $1A
 
-; При PauseState!=0 рисует пять однотайловых OAM-знаков в центре экрана на
-; фазе FrameCounter&PauseVisibleFrameBit.
-; На время отрисовки сбрасывает SpriteBehindTerrainMask и затем восстанавливает
-; его в $20 (не прежнее значение). На невидимой фазе ничего не меняет кроме
-; A/флагов; при отрисовке портит A/X/Y, ScratchPtr, render/OAM scratch и OAM shadow.
+; Если PauseState!=0, в видимую половину 32-кадрового периода выводит слово
+; PAUSE пятью 8x16-спрайтами. Записи имеют Y=$78, X=$64,$6C,$74,$7C,$84,
+; tiles $17,$19,$1B,$1D,$1F и attributes=$03. Требуется OamBufferStep=+4/-4
+; и место для пяти записей: проверки переполнения OAM shadow нет.
+;
+; В невидимой половине (FrameCounter bit4=0) и при PauseState=0 сохраняет
+; X/Y и всю RAM; возвращает A=0, Z=1. На видимом пути временно задаёт
+; TerrainPriorityDisabled, поэтому слово остаётся перед специальным terrain
+; tile $22, а после пяти записей безусловно оставляет
+; SpriteBehindTerrainMask=TerrainPriorityEnabled (входное значение не
+; восстанавливается). Выход видимого пути: A=$20, X=индекс пятой OAM-записи,
+; Y=0, OamTile=$1F, RenderAttributes=$03; OamBufferPos продвинут на пять
+; записей. Меняет ScratchPtr/PpuTileRowBits, terrain/render/OAM scratch и
+; соответствующие байты OamShadow; PPU queue/registers не трогает.
 DrawPauseOverlay:
 LC8F9:  lda     PauseState
         beq     FinishPauseOverlay
         lda     FrameCounter
-        and     #PauseVisibleFrameBit
+        and     #PauseBlinkVisiblePhaseBit
         beq     FinishPauseOverlay
-        lda     #$03
+        lda     #OverlaySpriteAttributes
         sta     RenderAttributes
-        lda     #$00
+        lda     #TerrainPriorityDisabled
         sta     SpriteBehindTerrainMask
-        ldx     #$64
-        ldy     #$80
-        lda     #$17
+        ldx     #PauseOverlayFirstX
+        ldy     #PauseOverlayY
+        lda     #PauseOverlayTileP
         sta     OamTile
         jsr     EmitOamSprite
-        ldx     #$6C
-        ldy     #$80
-        lda     #$19
+        ldx     #(PauseOverlayFirstX+PauseOverlayGlyphSpacing)
+        ldy     #PauseOverlayY
+        lda     #PauseOverlayTileA
         sta     OamTile
         jsr     EmitOamSprite
-        ldx     #$74
-        ldy     #$80
-        lda     #$1B
+        ldx     #(PauseOverlayFirstX+2*PauseOverlayGlyphSpacing)
+        ldy     #PauseOverlayY
+        lda     #PauseOverlayTileU
         sta     OamTile
         jsr     EmitOamSprite
-        ldx     #$7C
-        ldy     #$80
-        lda     #$1D
+        ldx     #(PauseOverlayFirstX+3*PauseOverlayGlyphSpacing)
+        ldy     #PauseOverlayY
+        lda     #PauseOverlayTileS
         sta     OamTile
         jsr     EmitOamSprite
-        ldx     #$84
-        ldy     #$80
-        lda     #$1F
+        ldx     #(PauseOverlayFirstX+4*PauseOverlayGlyphSpacing)
+        ldy     #PauseOverlayY
+        lda     #PauseOverlayTileE
         sta     OamTile
         jsr     EmitOamSprite
-        lda     #$20
+        lda     #TerrainPriorityEnabled
         sta     SpriteBehindTerrainMask
 FinishPauseOverlay:
 LC946:  rts
 
-; Рисует переходный объект из двух двухспрайтовых пар по TransitionObjectX/Y
-; с базовыми тайлами $79/$7D. Координаты и timer не меняет. Портит A/X/Y,
-; ScratchPtr, render/OAM scratch, SpriteBehindTerrainMask и OAM shadow;
-; в конце устанавливает SpriteBehindTerrainMask=$20 независимо от входа.
+; Рисует переходную надпись GAME/OVER четырьмя соседними 8x16-спрайтами:
+; верхние половины образуют GAME, нижние — OVER. Логическая точка
+; TransitionObjectX/Y даёт OAM-координаты X-8,X,X+8,X+16 и Y-8; tile bytes
+; идут как $79,$7B,$7D,$7F, attributes=$03. Сложение X выполняется по модулю
+; 256. Требуются OamBufferStep=+4/-4 и место для четырёх OAM-записей.
+;
+; На время всех terrain probes задаёт TerrainPriorityDisabled, поэтому объект
+; остаётся перед tile $22. По выходу безусловно оставляет
+; SpriteBehindTerrainMask=TerrainPriorityEnabled (не восстанавливает вход),
+; A=$20, X=индекс четвёртой записи, Y=0, OamTile=$7F,
+; RenderAttributes=$03, OamPairX=TransitionObjectX+$10 и
+; OamPairY=TransitionObjectY. TransitionObjectX/Y/Direction/Timer сохраняет,
+; OamBufferPos продвигает на четыре записи. Меняет ScratchPtr/PpuTileRowBits,
+; terrain/render/OAM scratch и OamShadow; PPU queue/registers не трогает.
 DrawTransitionObject:
-LC947:  lda     #$03
+LC947:  lda     #OverlaySpriteAttributes
         sta     RenderAttributes
-        lda     #$00
+        lda     #TerrainPriorityDisabled
         sta     SpriteBehindTerrainMask
         ldx     TransitionObjectX
         ldy     TransitionObjectY
-        lda     #$79
+        lda     #GameOverLeftPairFirstTile
         sta     OamTile
         jsr     EmitTwoTileOamPair
         lda     TransitionObjectX
         clc
-        adc     #$10
+        adc     #GameOverRightPairAnchorOffset
         tax
         ldy     TransitionObjectY
-        lda     #$7D
+        lda     #GameOverRightPairFirstTile
         sta     OamTile
         jsr     EmitTwoTileOamPair
-        lda     #$20
+        lda     #TerrainPriorityEnabled
         sta     SpriteBehindTerrainMask
         rts
 
-; Обновляет переходную анимацию TransitionObjectX..TransitionObjectTimer,
-; кроме attract mode (StageSetLength=AttractStageSetMarker).
-; Каждые 16 кадров уменьшает TransitionObjectTimer; пока он >=$0A, двигает
-; объект на один пиксель по TransitionObjectDirection, затем рисует.
-; При обнулении ставит Y=OamHiddenY и последний раз рисует за экраном. При timer=0
-; либо attract-маркере возвращается без отрисовки. Портит A/X/Y, ScratchPtr,
-; transition/render scratch и OAM shadow при активной анимации; PPU не меняет.
+; Обновляет таймер, положение и четыре OAM-записи переходного объекта.
+; Вход: TransitionObjectDirection=0..3, когда timer>=$0A; OamBufferStep=+4/-4
+; и в shadow свободны четыре записи. Attract-маркер StageSetLength=2 полностью
+; запрещает обновление, даже если timer ненулевой.
+;
+; На фазе FrameCounter&$0F=0 сначала уменьшает ненулевой timer. Пока полученное
+; (или ещё не уменьшенное на прочих кадрах) значение >=$0A, прибавляет к X/Y
+; один знаковый пиксельный шаг DirectionStepX/Y; координаты оборачиваются по
+; модулю 256. При timer 1..9 объект остаётся неподвижным, но рисуется каждый
+; кадр. При переходе 1->0 записывает TransitionObjectY=$F0 и выполняет последнюю
+; отрисовку: EmitOamSprite поместит в записи OAM Y=$E8. Следующий вызов с нулём
+; уже ничего не рисует.
+;
+; Нулевой timer возвращает A=0/Z=1, X/Y и RAM сохранены. Attract-путь
+; возвращает A=AttractStageSetMarker/Z=1 и также сохраняет RAM. Активный путь
+; имеет выход и побочные эффекты DrawTransitionObject; дополнительно может
+; менять TransitionObjectTimer и X/Y. Direction, FrameCounter и StageSetLength
+; сохраняет; PPU queue/registers не трогает.
 UpdateTransitionObject:
 LC972:  lda     TransitionObjectTimer
         beq     FinishTransitionObjectUpdate
@@ -91,15 +133,15 @@ LC972:  lda     TransitionObjectTimer
         cmp     #AttractStageSetMarker
         beq     FinishTransitionObjectUpdate
         lda     FrameCounter
-        and     #TransitionUpdateFrameMask
-        bne     UpdateTransitionObjectPosition
+        and     #TransitionTimerTickFrameMask
+        bne     CheckTransitionObjectMovement
         dec     TransitionObjectTimer
-        bne     UpdateTransitionObjectPosition
+        bne     CheckTransitionObjectMovement
         lda     #OamHiddenY
         sta     TransitionObjectY
-UpdateTransitionObjectPosition:
+CheckTransitionObjectMovement:
 LC98D:  lda     TransitionObjectTimer
-        cmp     #TransitionMoveTimerThreshold
+        cmp     #TransitionMovingTimerMinimum
         bcc     DrawCurrentTransitionObject
         lda     TransitionObjectDirection
         tay
@@ -116,14 +158,20 @@ LC9AC:  jsr     DrawTransitionObject
 FinishTransitionObjectUpdate:
 LC9AF:  rts
 
-; Готовит параметры прямоугольника (2,2), 26x26 тайлов и вызывает
-; InitializePlayfieldShadow. Портит A/X/Y, NametableRect*,
-; ScratchPtr и shadow/PPU work state по контракту вызываемой процедуры.
+; Заполняет весь 32x32 shadow граничным tile $11, обнуляет 64 attribute bytes
+; и очищает игровое поле 26x26 tiles: X=2..27, Y=2..27. В пределах видимых
+; 32x30 tiles остаются две граничные строки сверху/снизу, два столбца слева и
+; четыре столбца справа (область HUD). PPU и очередь не затрагивает.
+;
+; Выход: A=0, X=$02, Y=$FF, NametableRectX/Y=$02,
+; NametableRectWidth=$1A, NametableRectHeight=0, ScratchPtr=$0762,
+; PpuTileRowBits=$40, Z=1. Перезаписывает NametableShadow $0400-$07FF и
+; rectangle/address scratch; остальную RAM сохраняет.
 InitializePlayfieldRectangle:
-LC9B0:  lda     #PlayfieldRectangleOrigin
+LC9B0:  lda     #PlayfieldRectangleOriginTile
         sta     NametableRectX
         sta     NametableRectY
-        lda     #PlayfieldRectangleSize
+        lda     #PlayfieldRectangleExtentTiles
         sta     NametableRectHeight
         sta     NametableRectWidth
         jsr     InitializePlayfieldShadow
