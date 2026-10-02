@@ -13,7 +13,11 @@ LargeDestructionHalfSize       = $08
 LargeDestructionFirstTile      = $D1
 LargeDestructionFirstClass     = $30
 LargeDestructionClass3TileOffset = $10
-LargeDestructionLastQuadrant   = $03
+; Нулевой индекс первого квадранта тем же A отключает terrain priority.
+LargeDestructionUpperLeftQuadrant  = TerrainPriorityDisabled
+LargeDestructionUpperRightQuadrant = $01
+LargeDestructionLowerLeftQuadrant  = $02
+LargeDestructionLastQuadrant       = $03
 EnemyCarrierPaletteBase        = $02
 EnemyCarrierPaletteIndexMask   = $01
 EnemyPaletteCycleIndexMask     = $07
@@ -206,7 +210,7 @@ DrawTankDestructionState2:
 DrawLargeTankDestructionStates3To4:
         lda     #TankEffectPalette
         sta     RenderAttributes
-        lda     #TerrainPriorityDisabled
+        lda     #LargeDestructionUpperLeftQuadrant
         sta     SpriteBehindTerrainMask
         jsr     PrepareLargeDestructionQuadrant
         txa
@@ -218,7 +222,7 @@ DrawLargeTankDestructionStates3To4:
         sbc     #LargeDestructionHalfSize
         tay
         jsr     EmitTwoTileOamPair
-        lda     #$01
+        lda     #LargeDestructionUpperRightQuadrant
         jsr     PrepareLargeDestructionQuadrant
         txa
         clc
@@ -229,7 +233,7 @@ DrawLargeTankDestructionStates3To4:
         sbc     #LargeDestructionHalfSize
         tay
         jsr     EmitTwoTileOamPair
-        lda     #$02
+        lda     #LargeDestructionLowerLeftQuadrant
         jsr     PrepareLargeDestructionQuadrant
         txa
         sec

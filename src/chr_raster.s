@@ -12,6 +12,7 @@ ChrPatternTableBaseHi = $10
 ChrPlaneRowCount  = $08
 RasterPixelStep   = $04
 RasterTileSpan    = $20
+RasterFirstBitMask = $80
 RasterStringTerminator = $FF
 
 ; Растрирует первую bitplane одного 8x8 CHR-тайла из pattern table $1000 в
@@ -75,7 +76,7 @@ LD88B:  lda     PPU_DATA
 RasterizeNextChrRow:
 LD897:  pla
         sta     RasterPlaneByte
-        lda     #$80
+        lda     #RasterFirstBitMask
         sta     RasterBitMask
 RasterizeNextChrPixel:
 LD89E:  ldx     RasterPixelX

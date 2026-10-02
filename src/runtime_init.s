@@ -4,6 +4,7 @@
 RestartSignatureByteCount = $10
 InitialOamBufferStep       = $04
 InitialSpritePriorityMask  = $20
+InitialHighScoreTenThousandsDigit = $02
 
 ; Общая reset-инициализация отображения, записей счёта и звука. Это не полная
 ; очистка RAM: явно сбрасываются перечисленные поля, NametableShadow и P1/P2
@@ -49,7 +50,7 @@ LD491:
         bne     UploadInitialNametables
         ldx     #HighScore
         jsr     BootHook
-        lda     #$02
+        lda     #InitialHighScoreTenThousandsDigit
         sta     HighScore+2
         lda     #$00
         sta     MenuSelection

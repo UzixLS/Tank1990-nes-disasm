@@ -3,12 +3,13 @@
 GameOverObjectStartX       = $70
 GameOverObjectInitialTimer = $11
 GameOverObjectDirection    = DIRECTION_UP
+StageKillCounterByteCount  = $08
 
 ; Обнуляет ровно восемь счётчиков убийств: четыре типа P1 и следующие четыре
 ; типа P2 ($73..$7A). Payload статистики/score/lives не затрагивает.
 ; Выход: A=0, X=$FF, N=1/Z=0; Y и C/V сохраняются. PPU/OAM/APU не меняет.
 ClearStageWorkBytes:
-LC71E:  ldx     #$07
+LC71E:  ldx     #(StageKillCounterByteCount-1)
         lda     #$00
 ClearNextStageWorkByte:
 LC722:  sta     Player1KillCounts,x

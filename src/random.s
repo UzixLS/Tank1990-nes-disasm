@@ -1,5 +1,7 @@
 ; Генератор псевдослучайных байтов ($D44D-$D466).
 
+RandomEntropyZeroPageBase = $00
+
 ; Продвигает восьмибитный state и индекс выборки zero page. Точная арифметика:
 ;   product = (7*old RandomState) & $FF;
 ;   partial = product + SlowFrameCounter;
@@ -25,7 +27,7 @@ NextRandomByte:  txa
         adc     SlowFrameCounter
         inc     RandomIndex
         ldx     RandomIndex
-        adc     $00,x
+        adc     RandomEntropyZeroPageBase,x
         sta     RandomState
         pla
         tax

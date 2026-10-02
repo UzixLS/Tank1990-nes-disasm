@@ -4,7 +4,10 @@
 Prg1CopyrightPrefix:
         .byte   $43,$4F,$50,$59,$52,$49,$47,$48
 
-ResetStackTop        = $6F
+ResetStackTop          = $6F
+ResetPpuCtrlValue      = $10
+ResetPpuMaskValue      = $06
+ResetVblankWaitCount   = $02
 
 BootHook:
 ; Вход: X — начало восьмибайтной записи. Очищает её и записывает
@@ -75,14 +78,14 @@ ResetHandler:
 ; и nametable bits, затем запускает frontend loop. Не возвращается; D=0, I=1,
 ; SP начинается с $6F, все регистры и рабочая RAM считаются изменёнными.
         sei
-        lda     #$10
+        lda     #ResetPpuCtrlValue
         sta     PPU_CTRL
         cld
-        ldx     #$02
+        ldx     #ResetVblankWaitCount
 WaitResetVblank:
 LC079:  lda     PPU_STATUS
         bpl     WaitResetVblank
-        lda     #$06
+        lda     #ResetPpuMaskValue
         sta     PPU_MASK
         dex
         bne     WaitResetVblank

@@ -3,6 +3,7 @@
 CurtainRowIndex      = $57
 NametableRowFillTile = $63
 
+PrimaryNametableAttributePpuAddress = $23C0
 NametableAttributeByteCount    = $40
 NametableRowTileCount          = $20
 NametableLastVisibleRow        = $1D
@@ -25,9 +26,9 @@ NametableCurtainQueueByteCount = $46
 ; OAM/input/audio/palette/frame state; tile shadow и OAM напрямую не меняет.
 UploadAttributesGradually:
 LCC27:  ldy     #$00
-        lda     #$23
+        lda     #>PrimaryNametableAttributePpuAddress
         sta     ScratchPtrHi
-        lda     #$C0
+        lda     #<PrimaryNametableAttributePpuAddress
         sta     ScratchPtrLo
 UploadNextAttributeByte:
 LCC31:  jsr     WaitForNextFrame

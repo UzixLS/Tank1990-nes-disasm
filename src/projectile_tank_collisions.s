@@ -5,6 +5,7 @@ ProjectileCollisionSlot = $5B
 ScoringPlayerIndex      = $47
 TankProjectileHitRadius = $0A
 EnemyTypeAttributeBias  = $04
+EnemyCarrierAttributeSpecialCase = $E4
 
 ; Общий проход снарядов по танкам.
 ; Фаза 1 проверяет игроков Object 1..0 против активных снарядов строго 7..2;
@@ -183,7 +184,7 @@ LE7C8:  cmp     #TankProjectileHitRadius
         beq     DamageOrDestroyEnemyTank
         jsr     SpawnPowerUp
         lda     ObjectAttributes,x
-        cmp     #$E4
+        cmp     #EnemyCarrierAttributeSpecialCase
         bne     DamageOrDestroyEnemyTank
         ; Особый carrier $E4 после spawn становится $E3, а общий damage ниже
         ; сразу уменьшает его до $E2: первый hit не убивает его, снимает carrier
