@@ -6,26 +6,33 @@ NewHighScorePaletteFrameMask = $03
 NewHighScoreFirstPalette     = $05
 NewHighScoreExitPalette      = $00
 
-; Показывает экран после успешного UpdateHighScoreRecord. Предусловия:
-; HighScore уже содержит валидную 7-digit/$FF запись, NMI включён,
-; PauseState=0 и TileTranslationOffset=0. Иначе ожидание audio может зависнуть
-; либо заголовок растрируется с чужим CHR bias. На время bulk update
-; отключает rendering/NMI, очищает shadow, растеризует заголовок в ($10,$32),
-; а RenderLargeScoreRecord — сам рекорд в своей фиксированной позиции ($10,$64).
-; Затем загружает nametable $2000, включает NMI и запускает три музыкальных
-; потока, но control flow ждёт завершения только pulse 1. В исходных audio data
-; pulse 2 заканчивается в тот же NMI, triangle раньше; производная работа при
-; изменении длительностей должна сохранить это либо явно остановить потоки.
-; FrameCounter не сбрасывается, поэтому начальная фаза
-; палитры зависит от кадра; каждый цикл планирует палитру 5..8 через NMI.
-; Финальный BackgroundPaletteIndex=0 тоже только планируется: после записи
-; процедура кадра уже не ждёт, а в PPU остаётся последняя палитра 5..8 до NMI
-; caller-а. Долгое ожидание через NMI обновляет input/OAM/audio/frame counters.
-; Выход: A=0, Y=0, X не определён, NMI включён, VerticalScroll=0,
-; NametableBits=0, NametablePpuOffset=ShadowToPrimaryNametableOffset,
-; BackgroundPaletteIndex=NewHighScoreExitPalette. Меняет
-; shadow/PPU, SlowFrameCounter, AuxPtr, ScratchPtr=$0800, raster scratch,
-; audio state и рабочую RAM.
+; Показывает не пропускаемый input-ом экран после успешного
+; UpdateHighScoreRecord. Предусловия: HighScore — семь digits 0..9 и $FF;
+; NMI включён, PauseState=0, TileTranslationOffset=0. При pause audio engine
+; замораживает нужные streams и цикл ожидания pulse1 не завершится; чужой tile
+; bias исказит header до того, как RenderLargeScoreRecord установит свой.
+;
+; DisableRenderingForBulkUpdate сначала ждёт NMI и flush-ит старую PPU queue.
+; Затем процедура очищает shadow, растрирует header в ($10,$32) и score в
+; ($10,$64), напрямую загружает всю nametable $2000 и снова включает NMI.
+; Новых PPU-команд не создаёт, PpuBufferPos остаётся 0.
+;
+; Три music streams получают start request, но termination gate следит только
+; за pulse1. В исходных данных pulse2 заканчивается в тот же NMI, triangle —
+; раньше; производная работа при изменении длительности должна сохранить это
+; либо явно остановить оставшиеся streams. Input не проверяется.
+; FrameCounter не сбрасывается. После каждого NMI код планирует palette
+; 5+(FrameCounter&3), то есть 5..8, которая применяется лишь следующим NMI.
+; В NMI завершения pulse1 очередная palette 5..8 ещё вычисляется, затем RAM-
+; request заменяется на 0 без ожидания: PPU сохраняет предыдущую 5..8 до NMI
+; caller-а, который уже применит palette 0. SlowFrameCounter сбрасывается, но
+; затем снова увеличивается обслуживающими ожидание NMI.
+;
+; Выход: A=0, Y=0, X не определён, N=0/Z=1/C=0/V=0; NMI включён,
+; VerticalScroll=NametableBits=0, NametablePpuOffset=$1C,
+; BackgroundPaletteIndex=0, PpuBufferPos=0, ScratchPtr=$0800. AuxPtr указывает
+; на первую значащую digit HighScore либо его terminator. Меняет shadow/PPU,
+; frame/input/OAM/audio state и raster scratch; HighScore и RNG сохраняются.
 ShowNewHighScoreScreen:
 LC44B:  jsr     DisableRenderingForBulkUpdate
         lda     #ShadowToPrimaryNametableOffset

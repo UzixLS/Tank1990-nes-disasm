@@ -1,23 +1,34 @@
 ; Форматирование, сравнение и начисление счёта ($D934-$DA2A).
 ; Файл включается из ppu.s в исходной позиции, чтобы сохранять адреса ROM.
+; Score record состоит из семи отдельных digits 0..9 от миллионов к единицам
+; и $FF; представимый диапазон 0000000..9999999.
 
 ScoreDigitCount = $07
 ScoreRecordSize = $08
 ScoreTerminator = $FF
+ScoreDecimalBase        = 10
 ZeroPageRecordBase     = $00
-ScoreDigit6Offset      = $06
+ScoreLastDigitOffset   = $06
 ScoreTerminatorOffset  = $07
+PackedScoreDigitMask   = $0F
+OneThousandScoreDigit  = $01
 LargeScoreRasterX      = $10
 LargeScoreRasterY      = $64
 LargeScoreTileBias     = $30
 LargeScoreGlyphAdvance = $20
 
-; Подавляет ведущие нули в нулевой странице и готовит указатель на печатаемую
-; часть цифровой $FF-терминированной записи. Вход: Y -- адрес первой цифры,
-; X -- начальная колонка, DigitBlankMode -- режим сдвига пустого числа.
-; Выход: ScratchPtr=$00:Y, X сдвинут на число пропущенных знаков, A=0.
-; Y указывает первую ненулевую цифру либо выбранную позицию пустой записи.
-; Саму запись и PPU/OAM не меняет; требует достижимый ScoreTerminator.
+; Выбирает видимый suffix цифровой записи в zero page.
+; Вход: Y=адрес первой рассматриваемой цифры, X=начальная tile-column; далее
+; должна находиться последовательность цифр и достижимый $FF. Ведущие нули
+; увеличивают X/Y. При первой цифре 1..9 она становится началом suffix. Если
+; все цифры до терминатора нулевые, DigitBlankMode=0 отступает на две позиции
+; и выводит "00", а любое ненулевое значение — на одну и выводит "0".
+; Вызывающий обязан предоставить перед $FF достаточно цифр для этого отступа;
+; bounds check нет, zero-page Y при ошибке циклически переполняется.
+;
+; Выход: ScratchPtr=$00:Y, Y=первая видимая цифра, X сдвинут так же, A=0,
+; N=0/Z=1. C=0 для найденной ненулевой цифры и C=1 для all-zero/terminator
+; пути; V сохраняется. Запись, DigitBlankMode, PPU/OAM/audio/RNG не меняются.
 SelectVisibleDigits:
 SkipNextLeadingZero:
 LD934:  lda     ZeroPageRecordBase,y
@@ -42,12 +53,21 @@ LD94A:  lda     #$00
         sty     ScratchPtrLo
         rts
 
-; Рисует текущую семизначную запись HighScore крупными CHR-знаками.
-; Ведущие нули смещают начало на LargeScoreGlyphAdvance пикселей. Использует
-; LargeScoreTileBias и позицию (LargeScoreRasterX,LargeScoreRasterY).
-; Меняет A/X/Y, AuxPtr, RasterStringX/Y,
-; TileTranslationOffset и области RasterizeTileStringToShadow. По выходу
-; TileTranslationOffset=0; HighScore не меняет, PPU queue/OAM не трогает.
+; Рисует семизначный HighScore крупными CHR-знаками в nametable shadow.
+; Формат record: digits миллионов..единиц в $3D..$43, затем $FF. Ведущие нули
+; не рисуются, но сдвигают RasterStringX на $20 каждый; последующие нули после
+; первой значащей цифры рисуются. Полностью нулевая запись доходит указателем до
+; терминатора и не рисует даже один ноль. Старые glyphs в пропущенной области
+; не очищаются, поэтому штатный caller предварительно очищает shadow.
+;
+; Выход для валидной 7-digit/$FF записи: RasterStringX=$F0,
+; RasterStringY=$64, TileTranslationOffset=0, AuxPtr указывает на первую
+; значащую цифру либо терминатор, A=0, N=0/Z=1/C=1; Y — offset терминатора
+; относительно AuxPtr, X не определён, V зависит от raster helper. Меняет
+; raster scratch, shadow, PPU_ADDR и внутренний PPU read buffer/address;
+; HighScore, PPU queue, OAM/audio/RNG не трогает. Rendering/NMI должны быть
+; выключены по контракту CHR rasterizer. Все digits должны быть 0..9, иначе
+; выбираются посторонние CHR tiles.
 RenderLargeScoreRecord:
 LD951:  lda     #LargeScoreRasterX
         sta     RasterStringX
@@ -75,12 +95,18 @@ LD96F:  lda     #$00
         sta     TileTranslationOffset
         rts
 
-; Сравнивает две семизначные записи Player1Score/Player2Score с HighScore.
-; Сравнение лексикографическое от старшей цифры; большая запись копируется в
-; HighScore. Возвращает Y=1, если рекорд обновил P1; Y=$FF -- P2; Y=0 -- никто.
-; Если оба превосходят старый рекорд, остаётся P2 только когда он больше уже
-; скопированного P1. Меняет лишь HighScore; A/X/flags зависят от последнего
-; сравнения/копирования, PPU/OAM/audio не трогает.
+; Сравнивает fixed-length семь digits Player1Score, Player2Score и HighScore
+; лексикографически от миллионов к единицам. Используется N результата CMP
+; (BMI), а не carry, поэтому корректность требует каждую цифру 0..9: тогда
+; разность лежит в -9..9. Терминаторы не читаются и не копируются; HighScore+7
+; должен уже содержать $FF.
+;
+; Только строго большая запись копируется. Сначала проверяется P1, затем P2 уже
+; против возможного результата P1: при равенстве игроков побеждает P1.
+; Выход: Y=1 для P1, $FF для P2, 0 если обновления не было. X=7 после полного
+; равенства/копирования P2 либо индекс первой меньшей цифры P2; A и flags
+; зависят от пути. Меняет только семь цифр HighScore; player records,
+; terminator, PPU/OAM/audio/RNG не трогает.
 UpdateHighScoreRecord:
 LD97D:  ldx     #$00
         ldy     #$00
@@ -127,12 +153,18 @@ LD9B2:  lda     Player2Score,x
 FinishHighScoreUpdate:
 LD9BD:  rts
 
-; Прибавляет семизначное десятичное ScoreIncrementDigits к записи игрока.
-; Вход: X -- индекс записи (0 -> Player1Score, 1 -> Player2Score).
-; Сложение идёт от младшей цифры с переносом по основанию 10; переполнение за
-; семь цифр теряется. Выход: X указывает байт перед записью, Y=$FF, A — новая
-; старшая цифра, C — потерянный перенос за пределами записи. Меняет только
-; выбранный score record; ScoreIncrementDigits сохраняет.
+; Прибавляет семизначный ScoreIncrementDigits к score record игрока.
+; Вход: X=record index 0/1. Три ASL зашивают stride 8 и выбирают соответственно
+; Player1Score либо Player2Score; другое значение индексирует соседнюю zero-page
+; RAM без bounds check. Обе записи должны содержать digits 0..9: код вычитает
+; 10 не более одного раза и использует N результата CMP, что корректно только
+; для суммы digit+digit+carry в диапазоне 0..19.
+;
+; Сложение идёт от единиц к миллионам; overflow теряется, поэтому счёт хранится
+; по модулю 10^7. Терминатор записи и ScoreIncrementDigits не меняются.
+; Выход: A=новая цифра миллионов, Y=$FF, X=$FF для P1 либо $07 для P2,
+; C=потерянный carry за миллионами, N=1/Z=0; V зависит от арифметики старшей
+; цифры. PPU/OAM/audio/RNG и HighScore не затрагиваются.
 AddScoreDigitsToRecord:
 LD9BE:  txa
         asl     a
@@ -146,10 +178,10 @@ LD9BE:  txa
 AddNextScoreDigit:
 LD9C9:  lda     ScoreIncrementDigits,y
         adc     Player1Score,x
-        cmp     #$0A
+        cmp     #ScoreDecimalBase
         bmi     ClearScoreDigitCarry
         sec
-        sbc     #$0A
+        sbc     #ScoreDecimalBase
         sec
         jmp     StoreScoreDigit
 
@@ -162,17 +194,25 @@ LD9DA:  sta     Player1Score,x
         bpl     AddNextScoreDigit
         rts
 
-; Готовит в ScoreIncrementDigits приращение счёта из упакованного десятичного A:
-; старший ниббл -> DecimalHundreds, младший -> DecimalTens. Для A=0 специально
-; записывает 1 в ScoreIncrementThousands. Меняет A/X, ByteToDecimalInput и
-; ScoreIncrementDigits; Y не меняет.
+; Готовит восьмибайтный ScoreIncrementDigits из packed-decimal A=$HT.
+; Для A!=0 high nibble H становится цифрой сотен, low nibble T — десятков,
+; единицы остаются 0: численное приращение равно 100*H+10*T. Оба nibble должны
+; быть 0..9; проверки нет, а AddScoreDigitsToRecord не нормализует произвольные
+; hex digits. A=$00 — зарезервированный special case 1000, а не нулевая награда.
+;
+; Всегда сначала записывает семь нулей и $FF, сохраняет исходный A в
+; ByteToDecimalInput. Выход: X=ScoreIncrementDigits, Y сохранён. Для nonzero
+; A=H, N=0, Z по H, C=исходный bit3; для special case A=1, N=0/Z=0 и C
+; сохраняется от входа. V сохраняется на обоих путях. Меняет только
+; ByteToDecimalInput и increment record;
+; score records, PPU/OAM/audio/RNG не трогает.
 PreparePackedScoreIncrement:
 LD9E1:  sta     ByteToDecimalInput
         ldx     #ScoreIncrementDigits
         jsr     ResetEightByteRecord
         lda     ByteToDecimalInput
         beq     PrepareOneThousandPointIncrement
-        and     #$0F
+        and     #PackedScoreDigitMask
         sta     DecimalTens
         lda     ByteToDecimalInput
         lsr     a
@@ -183,13 +223,15 @@ LD9E1:  sta     ByteToDecimalInput
         rts
 
 PrepareOneThousandPointIncrement:
-LD9F9:  lda     #$01
+LD9F9:  lda     #OneThousandScoreDigit
         sta     ScoreIncrementThousands
         rts
 
-; Инициализирует восьмибайтовую запись: семь нулей и завершающий $FF.
-; Вход: X -- базовый адрес в нулевой странице. Выход A=ScoreTerminator;
-; X/Y сохраняются. Пишет ровно ScoreRecordSize байтов начиная с X.
+; Инициализирует zero-page record: семь нулей и завершающий $FF.
+; Вход: X=base. Пишет ровно восемь байтов через zero-page indexed addressing;
+; при X>$F8 адреса циклически переходят через $FF->$00, bounds check нет.
+; Выход: A=$FF, N=1/Z=0; C/V и X/Y сохраняются. Другую RAM и
+; PPU/OAM/audio/RNG не меняет.
 ResetEightByteRecord:  lda     #$00
         sta     ZeroPageRecordBase,x
         sta     $01,x
@@ -197,28 +239,37 @@ ResetEightByteRecord:  lda     #$00
         sta     $03,x
         sta     $04,x
         sta     $05,x
-        sta     ScoreDigit6Offset,x
+        sta     ScoreLastDigitOffset,x
         lda     #ScoreTerminator
         sta     ScoreTerminatorOffset,x
         rts
 
-; Преобразует беззнаковый байт A в DecimalHundreds/Tens/Ones,
-; предварительно обнуляя ScoreIncrementDigits. Выход A=единицы,
-; X=ScoreIncrementDigits; Y не меняется.
+; Преобразует unsigned A=0..255 в display record ScoreIncrementDigits.
+; Сначала создаёт [0,0,0,0,0,0,0,$FF], затем ByteToDecimalDigits записывает
+; сотни/десятки/единицы в offsets 4..6; числовой диапазон результата 000..255.
+; Выход: A=ones, X=ScoreIncrementDigits, Y сохранён, ByteToDecimalInput=input;
+; C=0/N=1/Z=0 от финального CMP #10, V по контракту converter-а.
+; PPU/OAM/audio/RNG не затрагиваются.
 ByteToDisplayDigits:
 LDA13:  sta     ByteToDecimalInput
         ldx     #ScoreIncrementDigits
         jsr     ResetEightByteRecord
         jmp     ByteToDecimalDigits
 
-; Отдельных ссылок на этот вход не найдено. Он удваивает A и пытается вычесть 10
-; с накоплением DecimalTens. JMP $DA1C попадает на последний байт предыдущей
-; JMP-инструкции; смысл намеренного входа в середину инструкции не подтверждён.
+; Статически неиспользуемый вход с намеренным overlap инструкций; назначение не
+; доказано. Сначала удваивает A. Если ASL не дал carry, сразу пишет doubled byte
+; в DecimalOnes без decimal normalization. При carry вычитает 10, один раз
+; увеличивает DecimalTens и прыгает на $DA1C — high operand byte $C0 предыдущего
+; JMP, который вместе с байтом $0A по адресу $DA1D декодируется как CPY #$0A.
+; При Y<10 этот скрытый CPY направляет BCC к StoreDecimalOnes. При Y>=10 BCC не
+; выполняется, а неизменяемый Y заставляет бесконечно повторять SBC #10/INC.
+; Безопасного общего decimal API этот entry не образует; производной работе не
+; следует вызывать его без воспроизведения точного overlapped layout.
 UnreferencedDoubleDecimalDigit:
 LDA1D:  asl     a
         bcc     StoreDecimalOnes
         sec
-        sbc     #$0A
+        sbc     #ScoreDecimalBase
         inc     DecimalTens
         jmp     $DA1C                 ; Хаковый вход внутрь предыдущего JMP.
 StoreDecimalOnes:
