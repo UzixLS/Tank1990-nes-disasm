@@ -27,17 +27,39 @@ LastEnemyMarkerPairStartIndex = EnemyCountPerStage - 2
 LastPlayerHudIndex         = PlayerTankCount - 1
 DisplayedLivesReserve     = $01
 EnemyMarkerGridColumnMask = $01
+HudOneTileQueueByteCount  = 4
+HudTwoTileQueueByteCount  = 5
+HudDecimalQueueMinBytes   = 4
+HudDecimalQueueMaxBytes   = 6
+LivesHudOnePlayerMaxQueueBytes = (HudOneTileQueueByteCount + HudDecimalQueueMaxBytes)
+LivesHudTwoPlayerMaxQueueBytes = 2 * (HudOneTileQueueByteCount + HudDecimalQueueMaxBytes)
+LivesHudOnePlayerMaxStartPos = $7F - LivesHudOnePlayerMaxQueueBytes
+LivesHudTwoPlayerMaxStartPos = $7F - LivesHudTwoPlayerMaxQueueBytes
+PlayerLabelsOnePlayerMaxStartPos = $7F - HudTwoTileQueueByteCount
+PlayerLabelsTwoPlayerMaxStartPos = $7F - (2 * HudTwoTileQueueByteCount)
+EnemyMarkerPairMaxStartPos = $7F - HudTwoTileQueueByteCount
+EnemyMarkerClearMaxStartPos = $7F - HudOneTileQueueByteCount
+AllEnemyMarkersQueueBytes = (EnemyCountPerStage / 2) * HudTwoTileQueueByteCount
+AllEnemyMarkersMaxStartPos = $7F - AllEnemyMarkersQueueBytes
+
 ; Перерисовывает значки и число запасных жизней. P1 выводится всегда; P2 — при
 ; StageSetLength=AttractStageSetMarker или MenuSelection!=0. Для штатных lives
 ; 0..$80 число равно max(lives-1,0); $81..$FF также дают 0 из-за знакового BPL.
 ; В single-player добавляет 8..10 байт команд, с P2 — 16..20; вызывающий
-; обеспечивает этот свободный объём и ещё один байт lookahead по конечному
-; PpuBufferPos. Однотайловые значки меняют shadow, строки цифр — нет.
+; обеспечивает PpuBufferPos<=LivesHudOnePlayerMaxStartPos ($75) либо
+; LivesHudTwoPlayerMaxStartPos ($6B), включая lookahead по конечному cursor.
+; Однотайловые значки меняют shadow, строки цифр — нет. Между первым и последним
+; формированием команды NMI не должен успеть flush-ить очередь.
 ; Вход: NametablePpuOffset=ShadowToPrimaryNametableOffset. Выход: A=0,
-; X=PpuBufferPos, Y=число цифр P1 (1..3), PlayerHudIndex=$FF,
-; TileTranslationOffset=DigitBlankMode=0. Меняет PpuBufferPos/PpuUpdateBuffer,
-; ScratchPtr, PlayerHudRowIndexScratch/PpuTileRowBits, ScoreIncrementDigits и
-; decimal scratch; PPU registers, lives и прочее игровое состояние сохраняет.
+; X=PpuBufferPos=old+8..10 (1P) либо old+16..20 (2P), Y=число цифр P1
+; (1..3), PlayerHudIndex=$FF,
+; PlayerHudRowIndexScratch=0, TileTranslationOffset=DigitBlankMode=0,
+; N=0/Z=1/C=1/V=0. ScratchPtr указывает на видимый suffix последнего (P1)
+; числа, ScoreIncrementDigits и ByteToDecimalInput содержат его display-value,
+; AuxPtr — на P1 icon в 1P либо P2 icon в 2P. Меняет
+; PpuBufferPos/PpuUpdateBuffer, обе pointer pairs,
+; PlayerHudRowIndexScratch/PpuTileRowBits, ScoreIncrementDigits и decimal
+; scratch; PPU registers, lives и прочее игровое состояние сохраняет.
 UpdateLivesHud:
 LC7C8:  lda     #LastPlayerHudIndex
         sta     PlayerHudIndex
@@ -100,11 +122,16 @@ LC80C:  jsr     ByteToDisplayDigits
 
 ; Ставит двухтайловую метку P1 и, при том же условии, что UpdateLivesHud, метку
 ; P2. Добавляет соответственно 5 или 10 байт команд; вызывающий обеспечивает
-; этот объём и один байт lookahead. Обе метки копируются также в shadow.
+; PpuBufferPos<=PlayerLabelsOnePlayerMaxStartPos ($7A) либо
+; PlayerLabelsTwoPlayerMaxStartPos ($75), включая lookahead. Обе метки копируются
+; также в shadow; NMI не должен flush-ить очередь между ними.
 ; Вход: NametablePpuOffset=ShadowToPrimaryNametableOffset. Выход:
-; X=PpuBufferPos, Y=2; A=0 на пути только P1, A=$FF на пути с P2.
-; Меняет ScratchPtr, PpuTileRowBits, PpuBufferPos/PpuUpdateBuffer и два либо
-; четыре shadow-тайла; player state и PPU registers сохраняет.
+; X=PpuBufferPos=old+5 (1P) либо old+10 (2P), Y=2; A=0 на пути только P1,
+; A=$FF на пути с P2.
+; ScratchPtr и AuxPtr указывают соответственно на строку и shadow-адрес последней
+; поставленной метки. Меняет обе pointer pairs, PpuTileRowBits,
+; PpuBufferPos/PpuUpdateBuffer и два либо четыре shadow-тайла; player state и
+; PPU registers сохраняет.
 DrawPlayerHudLabels:
 LC830:  lda     #>PlayerOneCompactMarker
         sta     ScratchPtrHi
@@ -138,8 +165,10 @@ LC858:  rts
 ; NametablePpuOffset=ShadowToPrimaryNametableOffset. При ненулевом StageNumber
 ; SelectVisibleDigits не читает DigitBlankMode.
 ; Выход: A=0, X=PpuBufferPos=14..16, Y=число цифр 1..3,
-; TileTranslationOffset=0. Меняет ScratchPtr, PpuTileRowBits,
-; ScoreIncrementDigits/decimal scratch, PpuUpdateBuffer и четыре shadow-тайла.
+; TileTranslationOffset=0, N=0/Z=1/C=1/V=0. ScratchPtr указывает на видимый
+; suffix цифр, ByteToDecimalInput=StageNumber, AuxPtr — на нижнюю строку значка
+; Stage. Меняет обе pointer pairs, PpuTileRowBits, ScoreIncrementDigits/decimal
+; scratch, PpuUpdateBuffer и четыре shadow-тайла.
 ; Обслуживший ожидание NMI также обновляет PPU/OAM, input, audio и счётчики.
 DrawStageNumberHud:
 LC859:  jsr     WaitForNextFrame
@@ -172,8 +201,9 @@ LC859:  jsr     WaitForNextFrame
 
 ; Преобразует линейный индекс ячейки сетки врагов A=0..19 в HUD-координаты:
 ; X=EnemyMarkerGridLeftColumn+(A&1), Y=EnemyMarkerGridTopRow+(A>>1).
-; Выход: A=Y=(вход>>1)+3, X — столбец, C=0; RAM сохраняет, SP после временного
-; PHA восстанавливает.
+; Проверки диапазона нет: больший индекс уводит запись ниже штатной сетки и может
+; дойти до attribute-области shadow. Выход: A=Y=(вход>>1)+3, X — столбец,
+; N=Z=C=V=0; RAM сохраняет, SP после временного PHA восстанавливает.
 EnemyMarkerIndexToHudCoordinates:
 LC894:  pha
         and     #EnemyMarkerGridColumnMask
@@ -187,11 +217,13 @@ LC894:  pha
         tay
         rts
 
-; Ставит двухтайловую пару RemainingEnemyMarkerTiles с чётного индекса A=0..18.
-; Требует пять свободных байтов команды и один байт lookahead; меняет два тайла
-; shadow. Вход: NametablePpuOffset=ShadowToPrimaryNametableOffset. Выход:
-; A=$FF, X=PpuBufferPos, Y=2. Меняет ScratchPtr, PpuTileRowBits и PPU-очередь;
-; PPU registers напрямую не трогает.
+; Ставит двухтайловую пару RemainingEnemyMarkerTiles; штатный вход — чётный
+; индекс A=0..18. Требует PpuBufferPos<=EnemyMarkerPairMaxStartPos ($7A), чтобы
+; поместились пять байтов команды и lookahead; меняет два тайла shadow.
+; Вход: NametablePpuOffset=ShadowToPrimaryNametableOffset. Выход: A=$FF,
+; X=PpuBufferPos=old+5, Y=2, N=0/Z=1/C=1/V=0; ScratchPtr указывает на строку,
+; AuxPtr — на первый shadow-тайл пары. Меняет обе pointer pairs,
+; PpuTileRowBits и PPU-очередь; PPU registers напрямую не трогает.
 DrawRemainingEnemyMarker:
 LC8A2:  jsr     EnemyMarkerIndexToHudCoordinates
         lda     #>RemainingEnemyMarkerTiles
@@ -202,10 +234,12 @@ LC8A2:  jsr     EnemyMarkerIndexToHudCoordinates
         rts
 
 ; Заменяет одну ячейку маркера с индексом A=0..19 тайлом BlankTileText.
-; Требует четыре свободных байта команды и один байт lookahead; меняет один
-; shadow-тайл. Вход: NametablePpuOffset=ShadowToPrimaryNametableOffset. Выход:
-; A=$FF, X=PpuBufferPos, Y=1. Меняет ScratchPtr, PpuTileRowBits и PPU-очередь;
-; PPU registers напрямую не трогает.
+; Требует PpuBufferPos<=EnemyMarkerClearMaxStartPos ($7B), чтобы поместились
+; четыре байта команды и lookahead; меняет один shadow-тайл. Вход:
+; NametablePpuOffset=ShadowToPrimaryNametableOffset. Выход: A=$FF,
+; X=PpuBufferPos=old+4, Y=1, N=0/Z=1/C=1/V=0; ScratchPtr указывает на строку,
+; AuxPtr — на очищенный shadow-тайл. Меняет обе pointer pairs,
+; PpuTileRowBits и PPU-очередь; PPU registers напрямую не трогает.
 ClearRemainingEnemyMarker:
 LC8B1:  jsr     EnemyMarkerIndexToHudCoordinates
         lda     #>BlankTileText
@@ -216,11 +250,15 @@ LC8B1:  jsr     EnemyMarkerIndexToHudCoordinates
         rts
 
 ; Ставит десять двухтайловых строк с чётными индексами $12..0, заполняя все
-; EnemyCountPerStage=20 ячеек. Требует 50 свободных байтов PPU-очереди и ещё
-; один байт lookahead по конечной позиции; меняет все 20 shadow-тайлов.
+; EnemyCountPerStage=20 ячеек. Требует PpuBufferPos<=AllEnemyMarkersMaxStartPos
+; ($4D): AllEnemyMarkersQueueBytes (50) байт очереди и lookahead; меняет все 20
+; shadow-тайлов. Алгоритм требует положительного чётного EnemyCountPerStage;
+; изменение числа врагов также требует менять геометрию 2x10 и queue budget.
 ; Вход: NametablePpuOffset=ShadowToPrimaryNametableOffset. Выход: A=$FF,
 ; X=PpuBufferPos=old PpuBufferPos+50, Y=2, RemainingEnemyMarkerIndex=$FE.
-; Меняет ScratchPtr/PpuTileRowBits и PPU-очередь; PPU registers не трогает.
+; N=1/Z=0/C=1/V=0; ScratchPtr указывает на строку маркера, AuxPtr — на левую
+; ячейку верхней пары. Меняет обе pointer pairs, PpuTileRowBits и PPU-очередь;
+; PPU registers не трогает.
 InitializeRemainingEnemyMarkers:
 LC8C0:  lda     #LastEnemyMarkerPairStartIndex
         sta     RemainingEnemyMarkerIndex

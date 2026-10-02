@@ -7,7 +7,8 @@ UnreferencedScreenTextFragment1:
 LD334:  .byte   $4F,$50,$45,$4E,$6B,$52,$45,$41,$43,$48,$FF
 UnreferencedScreenTextFragment2:
 LD33F:  .byte   $69,$FF
-; Двухбайтная строка значка жизней используется UpdateLivesHud в двух позициях.
+; Однотайловая $FF-терминированная строка значка жизней; каждая постановка
+; UpdateLivesHud занимает четыре байта PPU-очереди и один shadow-тайл.
 LivesHudIconText:
 LD341:  .byte   $14,$FF
 ; Литеральные строки GAME/OVER не имеют подтверждённого экранного consumer.

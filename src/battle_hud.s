@@ -10,22 +10,34 @@ StageSelectionLabelTile2        = $25
 StageSelectionLabelTile3        = $26
 StageSelectionLabelTile4        = $27
 StageSelectionLabelPaddingTile  = $11
+StageSelectionLabelQueueByteCount = 10
+StageSelectionNumberQueueMinBytes = 4
+StageSelectionNumberQueueMaxBytes = 6
+StageSelectionTotalQueueMinBytes  = StageSelectionLabelQueueByteCount + StageSelectionNumberQueueMinBytes
+StageSelectionTotalQueueMaxBytes  = StageSelectionLabelQueueByteCount + StageSelectionNumberQueueMaxBytes
 
 ; Обновляет номер на экране выбора этапа. WaitForNextFrame сначала даёт NMI
 ; исполнить прежнюю PPU-очередь и обнулить PpuBufferPos. Затем процедура ставит
-; новую десятибайтовую команду из семи фиксированных тайлов и команду из 1..3
-; десятичных цифр длиной 4..6 байт. Обе команды обходят nametable shadow и будут
-; исполнены только следующим NMI.
+; новую StageSelectionLabelQueueByteCount-байтовую команду из семи фиксированных
+; тайлов и команду из 1..3 десятичных цифр длиной 4..6 байт. Обе команды обходят
+; nametable shadow и будут исполнены только следующим NMI. Адрес подписи всегда
+; жёстко переведён в primary nametable через ShadowToPrimaryNametableOffset;
+; адрес цифр QueueTranslatedTileString берёт из NametablePpuOffset.
 ; Вход: NMI включён; StageNumber=1..ExtendedStageUpperBound;
 ; NametablePpuOffset=ShadowToPrimaryNametableOffset. При ненулевом StageNumber
 ; SelectVisibleDigits не читает DigitBlankMode.
-; После ожидания буфер пуст, поэтому для максимум 16 байт команд и lookahead,
-; который NMI запишет по итоговому PpuBufferPos, место гарантировано.
-; Выход: A=0, X=PpuBufferPos=14..16, Y=число цифр 1..3;
-; TileTranslationOffset=0. Меняет PpuTileRowBits, ScratchPtr,
-; ByteToDecimalInput, ScoreIncrementDigits/decimal scratch и PpuUpdateBuffer.
-; PPU registers и nametable shadow напрямую не меняет. Обслуживший ожидание NMI
-; также обновляет OAM, input, audio и кадровые счётчики.
+; После ожидания буфер пуст, поэтому для StageSelectionTotalQueueMaxBytes (16)
+; байт команд и lookahead, который NMI запишет по итоговому PpuBufferPos, место
+; гарантировано. Изменение длины подписи требует синхронно менять развёрнутую
+; последовательность STA ниже и пересчитывать этот budget.
+; Выход: A=0, X=PpuBufferPos=StageSelectionTotalQueueMinBytes..
+; StageSelectionTotalQueueMaxBytes (14..16), Y=число цифр 1..3;
+; TileTranslationOffset=0, N=0/Z=1/C=1/V=0; ScratchPtr указывает на первую
+; видимую цифру в ScoreIncrementDigits, ByteToDecimalInput=StageNumber, AuxPtr
+; сохранён. Меняет PpuTileRowBits, ScratchPtr, ByteToDecimalInput,
+; ScoreIncrementDigits/decimal scratch и PpuUpdateBuffer. PPU registers и
+; nametable shadow напрямую не меняет. Обслуживший ожидание NMI также обновляет
+; OAM, input, audio и кадровые счётчики.
 UpdateStageNumberDisplay:
 LCA91:  jsr     WaitForNextFrame
         ldx     #StageSelectionLabelColumn
