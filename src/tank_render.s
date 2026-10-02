@@ -31,7 +31,9 @@ TankSpawnTileBase              = $A1
 ; классов $3/$4 и 2 entries для остальных классов. Максимум прохода — все 64
 ; аппаратных OAM entries. Проверки оставшейся ёмкости нет: OamBufferPos —
 ; 8-битный cursor, поэтому суммарный render-pass свыше 64 entries оборачивается
-; внутри OamShadow и перезаписывает ранее выданные спрайты.
+; внутри OamShadow и перезаписывает ранее выданные спрайты. Проход начинается
+; с текущего cursor и не знает границу записей предыдущих producers; даже ровно
+; 64 tank entries затрут весь shadow, включая их.
 ;
 ; Вход: ObjectState/X/Y/Attributes/Frame для восьми slots, PlayerStunTimer,
 ; FrameCounter и terrain shadow; OamBufferPos выровнен на 4, OamBufferStep
@@ -289,6 +291,8 @@ LDF99:  ldx     CurrentTankSlot
 ; Классы $8-$D: обычный танк. Палитра игрока равна номеру слота. Носитель
 ; усиления мигает палитрами 2/3 каждые восемь кадров; остальные противники
 ; выбирают палитру из EnemyTankPaletteCycle по (FrameCounter*4+attributes)&7.
+; После маски это attributes bits0..2 + 4*(FrameCounter&1): для обычного
+; не-carrier врага палитра зависит от HP bits и чётности кадра.
 ; Оглушённый игрок восемь кадров виден и восемь скрыт по FrameCounter bit3.
 ; Видимый путь добавляет два OAM entries. Его tile-base перед выбором
 ; направления равен (ObjectAttributes&$F0)+ObjectFrame; direction из младших
@@ -298,7 +302,7 @@ LDF99:  ldx     CurrentTankSlot
 ; TerrainSubcellMask, OAM cursor/scratch/shadow и flags, не меняя Object/terrain
 ; RAM; свободную OAM capacity не проверяет. Скрытый player-путь ничего не
 ; добавляет и сохраняет X/Y, render/OAM scratch и RAM; возвращает A=$08,
-; N=Z=C=0, V без изменения.
+; N=Z=C=0, V без изменения; C=0 задаёт проверка player slot через CPX #2.
 DrawTankStates8ToD:
         cpx     #FirstEnemyTankSlot
         bcc     DrawPlayerTank

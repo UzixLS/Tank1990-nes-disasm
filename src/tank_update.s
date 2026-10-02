@@ -6,8 +6,10 @@ TankUpdateParityMask          = $01
 
 ; Обходит slots 7..0 и диспетчеризует логику их state-классов. Игроки 0/1
 ; обновляются при FrameCounter mod4 = 0,1,3 и пропускаются только в фазе 2.
-; Для разрешённых врагов attribute-class $A0 снимает parity throttling;
-; остальные обновляются, когда младшие биты slot и FrameCounter различаются.
+; Для разрешённых врагов точный (ObjectAttributes&$F0)=$A0 снимает
+; parity throttling; остальные обновляются через кадр, когда parity
+; slot и FrameCounter различаются. Это значение — sprite/type class врага,
+; а не state $A0; младшие attribute bits на расписание не влияют.
 ;
 ; Ненулевой EnemyFreezeTimer раз в 64 кадра уменьшается до начала прохода.
 ; Если он стал нулём, враги размораживаются уже в этом проходе. Пока timer
@@ -68,7 +70,8 @@ LDC38:  dec     CurrentTankSlot
 ; Старшая тетрада ObjectState,X выбирает обработчик: $0 no-op, $1..$7
 ; destruction, $8 idle, $9 turn, $A active movement, $B target base,
 ; $C target player 2, $D target player 1, $E/$F spawn phases. Индекс таблицы
-; равен 2*(state>>4).
+; равен 2*(state>>4) и всегда лежит в 0..30. Таблица обязана сохранять
+; ровно 16 word entries в порядке классов $0..$F.
 ; Вход: X=slot 0..7. До tail-JMP портит A/Y, ScratchPtrLo/Hi и flags, сохраняя
 ; X и Object RAM; итоговые outputs и все дальнейшие side effects задаёт handler.
 DispatchTankLogic:
