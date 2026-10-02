@@ -9,7 +9,10 @@ ConstructionCursorMaximumCenter = $D8
 ; (2,2), 26x26 tiles. Сначала независимо ограничивает X, затем Y.
 ; Вход: ObjectX/ObjectY — беззнаковые экранные координаты после возможного шага.
 ; Выход: A=ограниченный ObjectY; X/Y registers и остальная RAM сохраняются.
-; Меняет только вышедшие за диапазон ObjectX/ObjectY и flags; PPU/OAM не трогает.
+; N/Z относятся к последней LDA/CMP ветке, C=0 только если входной ObjectY был
+; ниже minimum, иначе C=1; V сохраняется. Меняет только вышедшие за диапазон
+; ObjectX/ObjectY; PPU queue/registers, OAM, audio и стек не трогает. Оба
+; предела и 16-pixel cursor step должны изменяться согласованно с 13x13 layout.
 ClampConstructionCursor:
 LC8D0:  lda     ObjectX
         cmp     #ConstructionCursorMaximumCenter

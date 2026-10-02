@@ -9,8 +9,9 @@ ResetStackTop        = $6F
 BootHook:
 ; Вход: X — начало восьмибайтной записи. Очищает её и записывает
 ; BootVariantMarker в GameVariant. Вызывается InitializeCoreRuntime при
-; несовпадении RAM-маркера. Выход: A=BootVariantMarker, X сохраняется;
-; обнуляет семь байтов с X по X+6 и записывает $FF в X+7, портит флаги.
+; несовпадении RAM-маркера. Выход: A=BootVariantMarker, X/Y сохранены,
+; N=1/Z=0, C/V сохраняются; обнуляет семь bytes с X по X+6 и записывает $FF
+; в X+7. В штатном вызове X=HighScore; начальные 20000 выставляются caller-ом.
         jsr     ResetEightByteRecord
         lda     #BootVariantMarker
         sta     GameVariant
@@ -18,7 +19,9 @@ BootHook:
 
 ; Включает NMI и передаёт GameVariant обработчику загрузочного маркера. При
 ; BootVariantMarker синхронно открывает меню вариантов и возвращается после START.
-; Портит A и флаги, меняет PPU_CTRL; меню может изменить UI/PPU state и X/Y.
+; Без маркера X/Y и RAM сохраняются, A=GameVariant, flags от CMP; всегда меняет
+; PPU_CTRL и ждёт vblank. Меню может изменить UI/PPU state и X/Y. Штатный вход
+; приходит с выключенным NMI; EnableNmiAfterVblank включает его на vblank.
 EnableNmiAndHandleBootMarker:
 LC010:  jsr     EnableNmiAfterVblank
         lda     GameVariant
@@ -67,8 +70,10 @@ ResetHandler:
 ; RESET/IRQ entry: запрещает IRQ, отключает NMI/рендеринг, ждёт два vblank,
 ; ставит SP=ResetStackTop и полностью инициализирует рабочее состояние, PPU,
 ; OAM и звук. IRQ/BRK также используют этот вектор, поэтому прежний стек
-; намеренно отбрасывается. Затем запускает frontend loop. Не возвращается;
-; все регистры и рабочая RAM считаются изменёнными.
+; намеренно отбрасывается. PPU_MASK=$06 оставляет rendering выключенным;
+; PPU_CTRL=$10 отключает NMI. После ResetExtensionState отдельно обнуляет scroll
+; и nametable bits, затем запускает frontend loop. Не возвращается; D=0, I=1,
+; SP начинается с $6F, все регистры и рабочая RAM считаются изменёнными.
         sei
         lda     #$10
         sta     PPU_CTRL
@@ -91,7 +96,10 @@ MainFrontendLoop:
 ; Верхнеуровневый UI-цикл: строит title nametable, прокручивает заставку,
 ; обслуживает меню и attract mode. Не возвращается; каждый полный перезапуск
 ; очищает ConstructionMapFlag. EnterTitleMenu — общий continuation для
-; досрочного выхода из intro/attract и тоже не является отдельной процедурой.
+; досрочного выхода из intro/attract/Construction и тоже не является отдельной
+; процедурой: эти пути обязаны заранее привести стек к ожидаемой глубине.
+; Обычный timeout TitleScreen возвращает сюда и запускает attract; START-ветки
+; TitleScreen снимают собственный return address и уходят в выбранный режим.
 ; Меняет всё состояние UI/PPU и A/X/Y.
 LC092:  jsr     EnableNmiAndHandleBootMarker
 RebuildTitleNametable:

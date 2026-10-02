@@ -5,14 +5,25 @@ RestartSignatureByteCount = $10
 InitialOamBufferStep       = $04
 InitialSpritePriorityMask  = $20
 
-; Общая инициализация PPU/OAM-очереди, счётчиков, записей счёта и звука.
-; Очищает NametableShadow, загружает палитры и nametable $2000/$2800.
-; 16 байт кода от LC040 служат RAM-маркером: при несовпадении однократно
-; вызывает BootHook, после чего обновляет маркер. Почти вся рабочая RAM и A/X/Y
-; могут измениться; вызывать только из кода сброса/полного перезапуска состояния.
-; Прямые uploads требуют уже отключённого rendering. По выходу PpuBufferPos=0,
-; обе score-записи сброшены, restart signature обновлена, audio engine reset;
-; ScratchPtr=$0800 после второй nametable, A/X/Y не определены.
+; Общая reset-инициализация отображения, записей счёта и звука. Это не полная
+; очистка RAM: явно сбрасываются перечисленные поля, NametableShadow и P1/P2
+; score; HighScore, MenuSelection и GameVariant сохраняются при совпавшем
+; restart signature. При несовпадении 16 bytes с ROM-маркером BootHook создаёт
+; HighScore=0020000, GameVariant=BootVariantMarker и MenuSelection=0.
+;
+; Вход: rendering/NMI выключены, PPU доступен для прямых операций. Процедура
+; ждёт vblank для palette upload, очищает весь shadow, загружает его в
+; $2000-$23FF и $2800-$2BFF, но не в две остальные nametable. OAM setup меняет
+; направление заполнения на -4, скрывает entries offsets $FC..$04 и оставляет
+; offset $00 нетронутым до первого построения кадра.
+;
+; Выход: A=$FC, X=$1C, Y=0, N=0/Z=1/C=1/V=0; PpuBufferPos=0,
+; OamBufferPos=4, OamBufferStep=$FC, SpriteBehindTerrainMask=$20,
+; BackgroundPaletteIndex=$FF, TileTranslationOffset=DigitBlankMode=PauseState=0,
+; NametablePpuOffset=ShadowToNametable2800Offset, ScratchPtr=$0800. P1/P2 score
+; равны семи нулям+$FF, restart signature обновлена, audio engine reset.
+; PPU queue/OAM/nametable shadow, PPU/APU registers и названная RAM меняются;
+; прямые uploads оставляют PPU address latch готовым к high-byte write.
 InitializeCoreRuntime:
 LD491:
         lda     #$00
@@ -53,9 +64,10 @@ LD4CE:  lda     #ShadowToPrimaryNametableOffset
         jsr     ResetAudioEngine
         rts
 
-; Копирует 16-байтный ROM-маркер LC040 в RestartSignature.
-; Выход: X=$FF; A=первый байт маркера, Y сохранён. Меняет только
-; RestartSignature и flags.
+; Копирует 16-байтный ROM-маркер LC040 в RestartSignature обратным обходом.
+; Выход: X=$FF, A=LC040[0], N=1/Z=0; Y и C/V сохранены. Меняет только
+; RestartSignature; bounds определяются RestartSignatureByteCount и должны
+; оставаться согласованными с обоими 16-байтными диапазонами.
 StoreRestartSignature:
 LD4E3:  ldx     #(RestartSignatureByteCount-1)
 StoreNextRestartSignatureByte:
@@ -65,9 +77,10 @@ LD4E5:  lda     LC040,x
         bpl     StoreNextRestartSignatureByte
         rts
 
-; Сравнивает RestartSignature с ROM-маркером LC040.
-; Возвращает A=1 и X=$FF при полном совпадении, иначе A=0 и X указывает на
-; первый найденный при обратном обходе индекс расхождения; Y и RAM сохраняются.
+; Сравнивает RestartSignature с ROM-маркером LC040 обратным обходом 15..0.
+; При полном совпадении: A=1, X=$FF, N=0/Z=0/C=1. При несовпадении: A=0,
+; X=наибольший отличающийся индекс, N=0/Z=1, C остаётся unsigned-результатом
+; CMP различавшихся bytes. V, Y, RAM и стек сохраняются.
 HasRestartSignature:
 LD4EF:  ldx     #(RestartSignatureByteCount-1)
 CompareNextRestartSignatureByte:
