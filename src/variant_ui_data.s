@@ -1,7 +1,12 @@
 ; Тайловые строки заголовка и меню вариантов ($E570-$E603).
 
-; 14 фиксированных 8-байтных тайловых строк "TANK A".."TANK N", каждая с двумя $FF.
-; DrawVariantTitleData выбирает их по двум диапазонам $46; CopyThreeVariantLabelBytes читает три байта из середины.
+; 14 записей fixed stride 8: шесть tile bytes "TANK A".."TANK N" и два $FF.
+; Первый $FF завершает RasterizeTileStringToShadow, второй служит padding.
+; DrawVariantTitleData отображает GameVariant 0..6 в записи 0..6 и $80..$86
+; в 7..13. Он фиксирует high byte и вычисляет только low byte, поэтому вся
+; таблица и терминаторы обязаны оставаться на одной странице; stride 8 зашит
+; в три ASL. CopyThreeVariantLabelBytes читает произвольные три байта начиная
+; с TankVariantLabels+9+Y и не является bounds-checked record accessor.
 TankVariantLabels:
         .byte   $54,$41,$4E,$4B,$20,$41,$FF,$FF
         .byte   $54,$41,$4E,$4B,$20,$42,$FF,$FF
@@ -25,8 +30,10 @@ LE5E5:  .byte   $01,$0F,$02
 ; Верхняя строка голой целой базы, используемая вражеской веткой PowerUpEffect2.
 IntactBaseUpperRow:
 LE5E8:  .byte   $00,$00,BaseTileIntactUpperLeft,BaseTileIntactUpperRight,$00,$00,$FF
-; Горизонтальный разделитель variant-меню: два вызова из RunVariantSelectionMenu
-; выводят эту строку на строках 1 и 4. Формат — 20 тайлов $5C и терминатор $FF.
+; Горизонтальный разделитель variant-меню: два вызова выводят 20 tiles $5C
+; начиная с column 7 в rows 1 и 4, то есть занимают columns 7..26 без wrap.
+; Терминатор $FF обязателен; изменение длины влияет на pre-NMI capacity menu
+; queue (текущий batch header+2*divider+option занимает 69 байтов).
 VariantMenuDividerText:
 LE5EF:  .byte   $5C,$5C,$5C,$5C,$5C,$5C,$5C,$5C
         .byte   $5C,$5C,$5C,$5C,$5C,$5C,$5C,$5C
