@@ -13,13 +13,28 @@ TitleCursorAnimationFrameMask = $03
 ; Активный экран заголовка и главного меню.
 ; Использует слот танка 0 как анимированный курсор; SELECT циклически выбирает
 ; 1 PLAYER / 2 PLAYERS / CONSTRUCTION, START передаёт управление через таблицу.
-; Если ConstructionMapFlag=0, после TitleAttractDelayTicks приращений
-; SlowFrameCounter (одно приращение на 64 кадра) возвращается для запуска демо.
-; Скрытая комбинация меняет TitleSecretInputCode; TitleVariantMenuCode при START
-; открывает variant-меню. Побочно меняет слот Object 0, MenuSelection,
-; SlowFrameCounter/TitleSecretInputCode, scroll/nametable, палитру и OAM.
-; Обычный выход по тайм-ауту портит A/X/Y. Ветви START снимают со стека адрес
-; вызова TitleScreen и передают управление верхнему сценарию без обычного RTS.
+; Каждый цикл ждёт NMI, который передаёт прежний OAM shadow, исполняет PPU queue,
+; читает новый input и обновляет audio/frame counters; после него DrawTanks
+; строит OAM следующего кадра. Cursor frame меняет bit2 раз в четыре значения
+; FrameCounter. Прямых записей PPU и новых PPU-команд здесь нет.
+;
+; Порядок действий в одном input-frame: SELECT; Down-held+A-pressed;
+; Right-held+B-pressed; нормализация MenuSelection; timeout; START. Поэтому
+; SELECT+START запускает уже следующий пункт и сбрасывает timeout, обе secret-
+; пары вместе дают +$10-1=$0F, а START видит обновлённый в этом же кадре код.
+; Secret arithmetic восьмибитная без saturation: +$10 и DEC оборачиваются.
+;
+; При ConstructionMapFlag=0 точное SlowFrameCounter=$0A имеет приоритет над
+; START и возвращает caller-у для attract mode. Счётчик растёт раз в 64 NMI,
+; но фаза FrameCounter не сбрасывается; SELECT начинает интервал заново с нуля.
+; При ненулевом ConstructionMapFlag автоматический выход полностью запрещён.
+;
+; Вход штатно из JSR EnterTitleMenu, MenuSelection=0..2, NMI включён и OAM
+; frame имеет место для cursor tank. START-пути намеренно снимают именно этот
+; двухбайтовый return address и не возвращаются. Обычный timeout-выход:
+; A=0, N=0/Z=1/C=1/V=0; X/Y принадлежат последнему DrawTanks. Побочно очищает
+; tank states и общий диапазон PlayerIceState..$010A, настраивает slot 0,
+; MenuSelection, secret/slow counters, scroll/nametable, palette request и OAM.
 TitleScreen:
 LC9C0:  lda     #TitleBackgroundPalette
         sta     BackgroundPaletteIndex
@@ -62,7 +77,7 @@ LCA04:  lda     Joy1Held
         lda     Joy1Pressed
         and     #BUTTON_A
         beq     CheckTitleSecretRightB
-        ; Down удерживается, A нажата в этом кадре: старший ниббл TitleSecretInputCode растёт.
+        ; Down-held+A-edge: code=(code+$10) mod 256.
         lda     #TitleSecretHighStep
         clc
         adc     TitleSecretInputCode
@@ -74,7 +89,7 @@ LCA17:  lda     Joy1Held
         lda     Joy1Pressed
         and     #BUTTON_B
         beq     NormalizeTitleMenuSelection
-        ; Right удерживается, B нажата в этом кадре: TitleSecretInputCode уменьшается на единицу.
+        ; Right-held+B-edge: code=(code-1) mod 256.
         dec     TitleSecretInputCode
 NormalizeTitleMenuSelection:
 LCA25:  lda     MenuSelection
@@ -89,6 +104,7 @@ LCA2F:  jsr     UpdateTitleCursor
         bne     CheckTitleStartInput
         lda     ConstructionMapFlag
         bne     CheckTitleStartInput
+        ; Exact equality wins over a simultaneous START edge.
         rts
 CheckTitleStartInput:
 LCA3D:  lda     Joy1Pressed
@@ -98,6 +114,9 @@ LCA3D:  lda     Joy1Pressed
         cmp     #TitleVariantMenuCode
         bne     DispatchTitleMenuSelection
         jsr     RunVariantSelectionMenu
+        ; Variant menu вернулось по START. Снять return address TitleScreen и
+        ; полностью перестроить frontend; pending cursor queue исполнит первый
+        ; NMI следующего BuildTitleNametable, после чего экран будет очищен.
         pla
         pla
         jmp     MainFrontendLoop
@@ -108,8 +127,8 @@ LCA51:  .byte   $EA
 DispatchTitleMenuSelection:
 LCA52:  lda     #TitleExitBackgroundPalette
         sta     BackgroundPaletteIndex
-        ; Удалить адрес возврата TitleScreen: выбранный обработчик продолжает
-        ; верхнеуровневый сценарий и не должен вернуться к его вызывающему коду.
+        ; Удалить return address TitleScreen: handler продолжает верхний
+        ; сценарий и не должен попасть в attract continuation после JSR.
         pla
         pla
         lda     MenuSelection
@@ -122,6 +141,8 @@ LCA52:  lda     #TitleExitBackgroundPalette
         jmp     (ScratchPtrLo)
 
 ; Три little-endian адреса безвозвратной диспетчеризации по MenuSelection=0..2.
+; Bounds check здесь уже нет: TitleMenuItemCount, таблица, cursor layout и
+; семантика MenuSelection в InitializeGameSession должны меняться согласованно.
 MenuSelectionHandlers:
 LCA69:  .word   StartOnePlayer, StartTwoPlayers, StartConstruction
 
@@ -147,7 +168,9 @@ StartConstruction:
 ; Преобразует MenuSelection=0..2 в Y курсора:
 ; ObjectY=TitleCursorFirstY+MenuSelection*16. Множитель зашит четырьмя ASL,
 ; поэтому это layout-ограничение, а не настраиваемая константа.
-; Выход: A=ObjectY; X/Y и прочая RAM сохраняются.
+; Выход для валидного input: A=ObjectY=$8B/$9B/$AB, N=1/Z=0/C=0/V=0;
+; X/Y, MenuSelection, стек и прочая RAM сохраняются. Для произвольного byte
+; умножение и сложение выполняются modulo 256, clipping нет.
 UpdateTitleCursor:
 LCA85:  lda     MenuSelection
         asl     a

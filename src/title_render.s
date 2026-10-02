@@ -20,12 +20,16 @@ TitleCopyrightRow      = $18
 
 ; Очищает основную nametable $2000: отключает рендеринг/NMI, обнуляет shadow,
 ; напрямую загружает 1 KiB и снова включает NMI. Выбирает фоновую палитру 3.
-; Вход: NMI включён, иначе DisableRenderingForBulkUpdate не завершится.
+; Вход: NMI включён, иначе DisableRenderingForBulkUpdate не завершится; текущая
+; PPU queue корректна. Начальный Wait исполняет ровно один обычный NMI: flush
+; очереди, OAM/input/audio/palette и frame counters обновляются до очистки.
 ; Выход: A=EnabledNmiPpuCtrlValue, X=Y=0, ScratchPtr=$0800,
-; NametablePpuOffset=ShadowToPrimaryNametableOffset, BackgroundPaletteIndex=3.
+; NametablePpuOffset=ShadowToPrimaryNametableOffset, BackgroundPaletteIndex=3,
+; PpuBufferPos=0, N=1/Z=0/C=1/V=0. VerticalScroll/NametableBits сохраняются.
 ; Полностью очищает shadow и VRAM $2000..$23FF, меняет PPU address/control/mask.
 ; NMI включён, но palette 3 и обычный PPU_MASK будут применены только следующим
-; NMI; до него mask остаётся BulkUpdatePpuMaskValue.
+; NMI; до него mask остаётся BulkUpdatePpuMaskValue=$06 и rendering выключен.
+; PPU address latch после polling PPU_STATUS ожидает high write.
 ClearPrimaryNametableScreen:
 LD16A:  jsr     DisableRenderingForBulkUpdate
         lda     #TitleBackgroundPalette
@@ -42,14 +46,29 @@ LD16A:  jsr     DisableRenderingForBulkUpdate
 ; затем напрямую загружает весь 1 KiB.
 ; После включения NMI ставит в очередь подписи рекорда, игроков и трёх пунктов
 ; меню; MenuSelection определяет наличие строки второго игрока.
-; Вход: NMI включён, DigitBlankMode=0, записи score корректно терминированы.
+; Вход: NMI включён, GameVariant допустим для DrawVariantTitleData,
+; DigitBlankMode=0, score records содержат семь digits0..9 и $FF. Любое
+; MenuSelection!=0 включает P2. Первый NMI внутри Disable очищает старую queue;
+; далее каждый batch начинается при PpuBufferPos=0, и NMI не должен прерывать
+; его построение.
+;
+; Размеры batch с учётом addr/terminator, но без следующего lookahead:
+;   score без P2: 21..29 bytes; с P2: 31..43 bytes;
+;   три menu lines: 11+12+15=38 bytes; copyright: 9+3=12 bytes.
+; Все максимумы оставляют lookahead в 128-byte PpuUpdateBuffer. Два явных
+; WaitForNextFrame исполняют score и menu batch; вместе с Disable процедура
+; обслуживает ровно три NMI и трижды обновляет OAM/input/audio/frame counters.
 ; Побочно меняет A/X/Y, ScratchPtr/AuxPtr,
 ; NametablePpuOffset=ShadowToNametable2800Offset,
 ; RasterStringX/Y, TileTranslationOffset=0, score-format scratch, shadow, PPU и
-; update buffer. Два внутренних ожидания последовательно передают score/header
-; и три menu lines. Выход: A=$FF, X=PpuBufferPos=12, Y=9, NMI/rendering включены;
-; ScratchPtr=CreditsCopyrightText. Последняя строка copyright уже отражена в
-; shadow, но её 12-байтная команда остаётся в очереди до следующего NMI.
+; update buffer. QueueTileAtCoordinates отражает labels/menu/copyright в shadow,
+; но QueueTranslatedTileString не отражает score digits.
+;
+; Выход: A=$FF, X=PpuBufferPos=12, Y=9, N=0/Z=1/C=1/V=0;
+; ScratchPtr=CreditsCopyrightText, AuxPtr=$070B, PpuTileRowBits=0,
+; RasterStringX=$BC, RasterStringY=$56, TileTranslationOffset=0;
+; NametablePpuOffset=$24. NMI/rendering включены последним NMI. Pending queue
+; равна [$2B,$0B, девять copyright tiles, $FF] и исполнится следующим NMI.
 BuildTitleNametable:
 LD17F:  jsr     DisableRenderingForBulkUpdate
         lda     #ShadowToNametable2800Offset
@@ -83,8 +102,9 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         jsr     EnableNmiAfterVblank
         lda     #TitleScoreTileBias
         sta     TileTranslationOffset
-; Первая кадровая порция: подписи и числа P1/high score, а при MenuSelection!=0
-; также P2. SelectVisibleDigits возвращает ScratchPtr на видимую часть record.
+; Первая кадровая порция: подписи и шесть младших цифр P1/high score, а при
+; MenuSelection!=0 также P2. Первая из семи цифр каждой record намеренно
+; пропущена. SelectVisibleDigits возвращает ScratchPtr на видимую часть suffix.
         lda     #>PlayerOneScorePrefix
         sta     ScratchPtrHi
         lda     #<PlayerOneScorePrefix

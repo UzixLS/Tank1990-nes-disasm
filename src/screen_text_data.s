@@ -7,6 +7,8 @@
 ; терминатор служит только потоку и в shadow не записывается.
 CreditsWrittenByText:
 LD284:  .byte   $57,$52,$49,$54,$54,$45,$4E,$20,$42,$59,$FF
+; Девять tiles; BuildTitleNametable ставит 12-byte pending command в (11,24).
+; Эта фиксированная длина определяет его документированный итоговый cursor=12.
 CreditsCopyrightText:
 LD28F:  .byte   $40,$20,$59,$53,$20,$31,$39,$39,$30,$FF
 ; Шеститайловая нижняя строка голой базы для специальной ветви PowerUpEffect2.
@@ -14,6 +16,8 @@ IntactBaseLowerRow:
 LD299:  .byte   $00,$00,BaseTileIntactLowerLeft,BaseTileIntactLowerRight,$00,$00,$FF
 TitleCityText:
 LD2A0:  .byte   $43,$49,$54,$59,$FF
+; Title score-row prefixes: два tiles P1/P2 (по 5 bytes queue command) и три
+; tiles high score (6 bytes). Их длины входят в 21..29/31..43-byte score batch.
 PlayerOneScorePrefix:
 LD2A5:  .byte   $5E,$6B,$FF
 PlayerTwoScorePrefix:
@@ -30,6 +34,9 @@ HighScoreText:
 LD2B5:  .byte   $48,$49,$53,$43,$4F,$52,$45,$FF
 HighScoreStatisticsPrefix:
 LD2BD:  .byte   $48,$49,$6B,$53,$43,$4F,$52,$45,$FF
+; Title menu lines содержат 8/9/12 tiles и дают команды 11/12/15 bytes,
+; суммарно 38. Terminator не рисуется; изменение длин требует пересчитать
+; capacity BuildTitleNametable и проверить горизонтальный layout от column 11.
 OnePlayerMenuText:
 LD2C6:  .byte   $31,$20,$50,$4C,$41,$59,$45,$52,$FF
 TwoPlayersMenuText:
