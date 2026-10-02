@@ -30,11 +30,17 @@ TitleCursorAnimationFrameMask = $03
 ; При ненулевом ConstructionMapFlag автоматический выход полностью запрещён.
 ;
 ; Вход штатно из JSR EnterTitleMenu, MenuSelection=0..2, NMI включён и OAM
-; frame имеет место для cursor tank. START-пути намеренно снимают именно этот
-; двухбайтовый return address и не возвращаются. Обычный timeout-выход:
+; frame имеет место для двух entries cursor tank. Фактически WaitForNextFrame
+; перед каждой отрисовкой сам завершает предыдущий OAM frame, ставит cursor в
+; OamBufferPos=4 и меняет направление выдачи entries; DrawTanks затем добавляет
+; ровно две entries, поскольку stun timers курсора очищены. START-пути намеренно
+; снимают именно двухбайтовый return address этого JSR и не возвращаются; прямой
+; JMP-вход нарушит стек. Обычный timeout-выход:
 ; A=0, N=0/Z=1/C=1/V=0; X/Y принадлежат последнему DrawTanks. Побочно очищает
 ; tank states и общий диапазон PlayerIceState..$010A, настраивает slot 0,
-; MenuSelection, secret/slow counters, scroll/nametable, palette request и OAM.
+; MenuSelection, secret/slow counters, scroll/nametable, palette request и OAM;
+; CurrentTankSlot после каждого DrawTanks равен TankSlotCount, ScratchPtr и
+; render/OAM scratch volatile.
 TitleScreen:
 LC9C0:  lda     #TitleBackgroundPalette
         sta     BackgroundPaletteIndex

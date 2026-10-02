@@ -17,6 +17,9 @@ VariantMenuUpperDividerRow = $01
 VariantMenuLowerDividerRow = $04
 VariantMenuPowerUpsEnabled = $01
 VariantMenuPowerUpToggleMask = $01
+VariantMenuInitialQueueByteCount = $45
+VariantMenuNameQueueByteCount    = $0A
+VariantMenuCursorQueueByteCount  = $04
 
 ; Обрабатывает маркер первого запуска без дополнительного stack frame: ветка
 ; маркера проваливается в RunVariantSelectionMenu, и его RTS возвращает caller-у.
@@ -48,7 +51,8 @@ VariantMenuTextPtrLo = ConstructionMapFlag
 ; Выход по START: A=BUTTON_START, N=0/Z=0; X/Y, C/V и ScratchPtr зависят от
 ; предшествующего пути. Cursor ставится в очередь до проверки ввода, но после
 ; него ожидания нет: PpuBufferPos может содержать ещё не исполненную cursor-
-; команду. После шага это могут быть blank старой позиции и cursor новой.
+; команду (VariantMenuCursorQueueByteCount=4 байта). После шага это могут быть
+; blank старой позиции и cursor новой (всего 8 байт).
 ; Caller должен дать NMI исполнить остаток либо намеренно отбросить его перед
 ; заменой экрана.
 ;
@@ -61,10 +65,14 @@ VariantMenuTextPtrLo = ConstructionMapFlag
 ;
 ; Экран строится в nametable $2000: ShadowToPrimaryNametableOffset прибавляется
 ; к high byte $04 shadow-буфера, а NametableBits=0 выбирает ту же nametable.
-; До первого ожидания очередь получает 69 байтов: header, два divider и power-up
+; DisableRenderingForBulkUpdate сначала исполняет прежнюю очередь, поэтому batch
+; начинается с PpuBufferPos=0. До первого ожидания очередь получает
+; VariantMenuInitialQueueByteCount (69) байтов: header, два divider и power-up
 ; option; расширение строк не должно превысить 127-байтный buffer с lookahead.
-; Затем каждая 10-байтная name-команда передаётся отдельным NMI. NMI не должен
-; прервать построение отдельной команды. Все 14 восьмибайтных записей имён
+; Затем каждая VariantMenuNameQueueByteCount-байтная (10) name-команда передаётся
+; отдельным NMI. NMI не должен прервать построение отдельной команды. Меню само
+; не выбирает background palette: первый NMI использует уже загруженную palette
+; либо внешний pending BackgroundPaletteIndex. Все 14 восьмибайтных записей имён
 ; обязаны оставаться на странице VariantMenuTankNames: цикл увеличивает только
 ; low byte. Координаты layout: имена columns 13..19/rows 9..22, cursor column 11;
 ; производная разметка должна оставаться в пределах строк nametable.
@@ -202,7 +210,9 @@ LC572:  lda     Joy1Pressed
 ; для команды и lookahead. Выход: FrameCounter=$10, A=$FF, X=PpuBufferPos=4,
 ; Y=1, N=0/Z=1/C=1; ScratchPtr=VariantMenuBlankCursorText. Меняет input/OAM/
 ; audio через NMI, RicochetOrMenuStepAudioState, AuxPtr/PpuTileRowBits, shadow и
-; PPU queue; V не определён контрактом.
+; PPU queue; V не определён контрактом. Проверяется масочная фаза
+; FrameCounter&$0F=0; сделанный здесь reset гарантирует первый match на $10,
+; а внешний writer FrameCounter может сократить или удлинить задержку.
 WaitVariantMenuRepeatAndEraseCursor:
 LC579:  lda     #$00
         sta     FrameCounter

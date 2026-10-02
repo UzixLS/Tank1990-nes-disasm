@@ -8,15 +8,19 @@ ConstructionMetatileIndexMask = $0F
 ; ObjectX/ObjectY. При штатных центрах $18+$10*n это одна из 13 ячеек поля:
 ; tile pairs 2/3, 4/5, ... 26/27 по каждой оси.
 ; Вход: ConstructionMetatileIndex штатно $00..$0D; ObjectX/Y уже ограничены;
-; в PPU update buffer свободны 20 байт команды и следующий lookahead, NMI не
-; прерывает построение очереди. Добавляет одну четырёхбайтную attribute-команду
+; PpuBufferPos<=MetatileQueueMaxStartPos ($6B), чтобы в update buffer поместились
+; 20 байт команд и следующий lookahead; NMI не прерывает построение очереди.
+; Добавляет одну четырёхбайтную attribute-команду
 ; и четыре четырёхбайтные tile-команды; соответствующие четыре tile bytes и
-; один palette quadrant shadow меняются немедленно. PPU registers не трогает.
+; один palette quadrant shadow меняются немедленно. Все PPU-адреса жёстко
+; относятся к primary nametable и игнорируют NametablePpuOffset; PPU registers
+; не трогает.
 ; Выход: A=$FF, X=4*(ConstructionMetatileIndex&$0F)+4, Y=0,
 ; PpuBufferPos=old PpuBufferPos+20; ScratchPtr указывает на нижний правый tile
-; ячейки. ConstructionMetatileIndex и ObjectX/Y сохранены.
-; Портит flags, MetatileIndex/MetatileTileX/MetatileTileY, RenderAttributes,
-; PpuBufferPos/PpuUpdateBuffer, ScratchPtr и временные $01..$03.
+; ячейки, N=Z=C=V=0. ConstructionMetatileIndex и ObjectX/Y сохранены.
+; Портит MetatileIndex, MetatileTileX/ShadowQueueSavedX=$47,
+; MetatileTileY=$48, RenderAttributes, PpuBufferPos/PpuUpdateBuffer, ScratchPtr
+; и временные $01..$03.
 DrawConstructionMetatile:
 LC6C6:  lda     ConstructionMetatileIndex
         and     #ConstructionMetatileIndexMask
@@ -35,7 +39,9 @@ LC6C6:  lda     ConstructionMetatileIndex
 ; Любой удерживаемый D-pad каждый кадр сбрасывает ConstructionMetatileCycleArmed,
 ; даже если шага в этом кадре нет. Четыре ASL масштабируют табличное смещение
 ; -1/0/+1 до жёсткого шага сетки 16 px; clipping выполняет отдельный следующий
-; вызов ClampConstructionCursor. Меняет ConstructionMoveHoldCounter/
+; вызов ClampConstructionCursor. Repeat использует точное равенство counter=$14:
+; штатный reset=0 обязателен; произвольное начальное значение выше порога ждёт
+; восьмибитного wrap, а не срабатывает немедленно. Меняет ConstructionMoveHoldCounter/
 ; ConstructionMetatileCycleArmed и, при шаге, ObjectX/ObjectY. На пути шага
 ; выход: A=новый ObjectY, Y=выбранное direction; без шага A=0, Y сохраняется.
 ; X всегда сохраняется. Портит flags; PPU/OAM не меняет.
