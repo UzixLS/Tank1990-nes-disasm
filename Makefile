@@ -9,7 +9,7 @@ BUILD := build
 TARGET := $(BUILD)/tank1990-ch.nes
 ORIGINAL := Tank 1990 (Ch).nes
 
-.PHONY: all verify audit test clean
+.PHONY: all verify audit test test-tools test-assets clean
 
 all: $(TARGET)
 
@@ -91,8 +91,16 @@ verify: $(TARGET)
 audit: verify
 	$(PYTHON) tools/rom.py extract "$(ORIGINAL)" $(BUILD)/original
 
-test: verify
-	$(PYTHON) -m unittest discover -s tests -v
+test-tools:
+	$(PYTHON) -m unittest discover -s tests -p "test_chr.py" -v
+	$(PYTHON) -m unittest discover -s tests -p "test_levels.py" -v
+	$(PYTHON) -m unittest discover -s tests -p "test_metatiles.py" -v
+	$(PYTHON) -m unittest discover -s tests -p "test_palettes.py" -v
+
+test-assets: verify
+	$(PYTHON) -m unittest discover -s tests -p "test_assets.py" -v
+
+test: test-assets test-tools
 
 clean:
 	$(RM_RF) $(BUILD)

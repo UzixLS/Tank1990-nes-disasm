@@ -13,6 +13,11 @@
 | `$8010` | PPU `$0000` | `$1000` | sprite pattern table |
 | `$9010` | PPU `$1000` | `$1000` | background pattern table |
 
+Фазовый сдвиг загрузчика 0/2/4 байта означает, что крайнее 91-byte окно
+`ClassicLevels` может читать `$FCFC-$FCFF` из следующей области
+`src/frontend_extensions.s`. Граница `$FCFC` поэтому важна не только для линкера,
+но и для вида поздних вариантов карт.
+
 ## Модули исполняемого банка
 
 | CPU-адреса | Исходник | Назначение |
@@ -39,7 +44,7 @@
 | CPU-адреса | Исходник | Назначение |
 |---:|---|---|
 | `$A38C-$A552` | `src/extra_levels.s` | пять дополнительных карт |
-| `$A553-$A73C` | `src/prg0_extensions.s` | активные расширения Tank 1990 |
+| `$A553-$A73C` | `src/prg0_extensions.s` | сохранённые обработчики расширений без внешних статических ссылок |
 | `$A73D-$BF7F` | `src/prg0_unreferenced_data.s` | неподтверждённые таблицы и заполнение |
 | `$BF80-$BF83` | `src/deferred_integrity_bridge.s` | мост к отложенной проверке checksum |
 | `$BF84-$BFFF` | `src/prg0_extension_prototypes.s` | неиспользуемые прототипы расширений |
@@ -105,6 +110,7 @@
 | `$DDEA-$DE71` | `src/tank_lifecycle.s` | уничтожение и состояния танков |
 | `$DE72-$DEA5` | `src/enemy_tank_ai.s` | выбор действий противника |
 | `$DEA6-$E02D` | `src/tank_render.s` | кадры и построение спрайтов танков |
+| `$E02E-$E180` | `src/projectiles.s` | обновление, отрисовка и создание снарядов |
 | `$E181-$E23A` | `src/tank_occupancy.s` | занятость клеток танками и обнаружение льда |
 | `$E23B-$E362` | `src/battle_effects.s` | усиление на поле, щит игроков и эффекты базы |
 | `$E363-$E3B7` | `src/tank_spawn.s` | создание танка в слоте |
@@ -115,6 +121,7 @@
 | `$E441-$E450` | `src/variant_metadata_helpers.s` | сохранённый helper variant-метаданных |
 | `$E451-$E46B` | `src/input_direction.s` | преобразование D-pad в направление |
 | `$E46C-$E4D7` | `src/tank_tables.s` | векторы, spawn-данные и dispatch танков |
+| `$E4D8-$E4EB` | `src/projectiles.s` | logic/draw dispatch-таблицы снарядов |
 | `$E4EC-$E55A` | `src/tank_init.s` | начальные поля и атрибуты танка |
 | `$E55B-$E567` | `src/powerup_pickup_entry.s` | выбор диапазона сборщиков усиления |
 | `$E568-$E56F` | `src/score_awards.s` | начисление подготовленного счёта игроку |
