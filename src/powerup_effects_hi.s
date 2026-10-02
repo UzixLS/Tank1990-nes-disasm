@@ -3,11 +3,15 @@
 PowerUpTargetSlot = $5A
 EnemyUpgradeAttributeBit = $08
 ObjectSpecialStateEnabled= $FF
+EnemyBaseDamageQueueBytes = $20
+EnemyBaseDamageQueueMaxStartPos = $5F
 
 ; Статически неиспользуемый адаптер: при X<2 замораживает врагов через
 ; EnemyFreezeTimer=EnemyFreezePowerUpDuration; при X>=2 проваливается в
 ; PowerUpEffect2 без дополнительного stack frame.
-; Портит A и флаги.
+; Ветка X<2: A=$0A, N=0/Z=0/C=0, V и X/Y сохраняются; меняет только timer.
+; Ветка X>=2 наследует все предусловия/эффекты PowerUpEffect2. Bounds check
+; верхней границы X нет; статических callers у entry не найдено.
 UnreferencedFreezeEnemiesOrApplyPowerUpEffect2:
 LFDB1:  cpx     #FirstEnemyTankSlot
         bcs     PowerUpEffect2
@@ -15,16 +19,22 @@ LFDB1:  cpx     #FirstEnemyTankSlot
         sta     EnemyFreezeTimer
         rts
 
-; Вход: X — слот подобравшего усиление. Для X>=2 рисует голую целую базу без
+; Вход: X — слот подобравшего усиление. Для любого X>=2 рисует голую целую базу без
 ; ограждения только в rows25..27 (row24 не трогает) и через
 ; QueueBrickBaseAttributes обнуляет левый attribute byte, сохраняя внешние
 ; quadrants правого. Эта ветка не сбрасывает BaseFortificationTimer, поэтому
 ; активный warning/blink позднее может снова нарисовать enclosure. Добавляет
-; 32 bytes в PPU queue. Для X<2 при активном BattleState обновляет стальное
-; ограждение и перезагружает BaseFortificationTimer.
-; Портит ScratchPtr, A, X, Y; меняет nametable shadow и PPU-очередь через
-; вызываемые процедуры. Ветка противника не возвращается самостоятельно, а
-; хвостовым переходом возвращается из QueueBrickBaseAttributes.
+; EnemyBaseDamageQueueBytes=32 bytes; нужны primary NametablePpuOffset,
+; PpuBufferPos<=$5F и отсутствие NMI во время построения. Выход enemy-ветки:
+; A=$FF, X=PpuBufferPos=old+32, Y=6, ScratchPtr=IntactBaseLowerRow,
+; AuxPtr=$076C; PPU registers/OAM/audio напрямую не меняются.
+;
+; Для X<2 только отрицательный BattleState (штатно $80=active) обновляет
+; стальное ограждение и перезагружает BaseFortificationTimer=$14; любой
+; неотрицательный state возвращается без изменения. Player-ветка сохраняет X,
+; но active path портит Y/ScratchPtr/AuxPtr и добавляет 41 byte в PPU queue.
+; Обе ветки меняют shadow/attributes через helpers; enemy path хвостом возвращается
+; из QueueBrickBaseAttributes. X вне 0..7 отдельно не отвергается.
 PowerUpEffect2:
 LFDBB:  cpx     #FirstEnemyTankSlot
         bcc     ApplyPlayerBaseFortification
@@ -60,10 +70,15 @@ LFDEF:  lda     BattleState
 FinishPowerUpEffect2:
 LFDFA:  rts
 
-; Обработчик эффекта 3. Для X>=2 ставит bit3 в ObjectAttributes слотов 2..7.
+; Обработчик эффекта 3. Для X>=2 ставит bit3 в ObjectAttributes всех слотов 2..7,
+; включая неактивные, независимо от конкретного collector slot.
 ; Для X<2 увеличивает PlayerUpgradeLevel,X на один уровень до
 ; PlayerUpgradeLevel3 и зеркалит его в ObjectAttributes,X. Сохраняет исходный
-; X и Y; портит A и флаги, PPU/OAM/audio напрямую не меняет.
+; X и Y; PlayerExtendedUpgrade не меняется. На уже достигнутом/нестандартном
+; уровне >=$60 значение не нормализуется. Enemy-ветка возвращает A=X=входной
+; slot, C=1, N/Z по X; player-ветка возвращает A=старый либо новый level,
+; C=1 при исходном level >=$60, иначе C=0. V сохраняется; PPU/OAM/audio/RNG
+; напрямую не меняются. Bounds check X нет.
 ApplyPowerUpEffect3:
 LFDFB:  cpx     #FirstEnemyTankSlot
         bcc     UpgradeCollectingPlayer
@@ -93,12 +108,16 @@ LFE12:  lda     PlayerUpgradeLevel,x
 FinishPowerUpEffect3:
 LFE21:  rts
 
-; Поражает танки противоположной стороны: для X<2 — активные слоты 2..7;
-; для X>=2 — активных игроков 0..1 только при PlayerStunTimer,Y=0.
+; Поражает танки противоположной стороны: для X<2 — targetable state $80..$DF
+; слотов 7..2; для X>=2 — targetable игроков 1..0 только при
+; PlayerStunTimer,Y=0. Верхняя граница collector X не проверяется.
 ; Записывает TankStateDestroyed, attributes=0; для игроков также
-; PlayerUpgradeLevel=PlayerUpgradeLevel1.
-; Запрашивает аудиопоток уничтожения танка. X сохраняет; портит A/Y,
-; PowerUpTargetSlot и флаги.
+; PlayerUpgradeLevel=PlayerUpgradeLevel1, но PlayerExtendedUpgrade и
+; ObjectSpecialState не очищает. Kill counters/score/bonus carrier logic не
+; вызываются. TankDestructionAudioState=1 запрашивается безусловно, даже если
+; подходящих целей нет. X сохраняется, Y заканчивает на player0 либо enemy2;
+; PowerUpTargetSlot=$FF для enemy collector и 1 для player collector.
+; PPU/OAM/RNG не меняются.
 PowerUpEffect4:
 LFE22:  cpx     #FirstEnemyTankSlot
         bcc     DestroyOpposingEnemies
@@ -148,11 +167,13 @@ LFE6F:  dec     PowerUpTargetSlot
         bne     CheckNextOpposingEnemy
         rts
 
-; Для игрока X<2 добавляет жизнь и запрашивает два аудиопотока звука
+; Для игрока X<2 добавляет жизнь modulo 256 и запрашивает два аудиопотока звука
 ; дополнительной жизни. Для X>=2 преобразует
 ; младшие биты ObjectAttributes всех слотов 2..7: устанавливает bits0..1 и
-; инвертирует bit2. Слоты обрабатываются независимо от активности.
-; Сохраняет исходный X/Y; портит A и флаги, PPU/OAM не меняет.
+; инвертирует carrier bit2; остальные bits сохраняет. Слоты обрабатываются
+; независимо от активности, исходный collector X восстанавливается.
+; Player path: A=1, C=0, N=0/Z=0. Enemy path: A=X=input collector, C=1,
+; N/Z по X. V и Y сохраняются; PPU/OAM/RNG не меняются.
 PowerUpEffect5:
 LFE78:  cpx     #FirstEnemyTankSlot
         bcs     TransformEnemyUpgradeBits
@@ -180,7 +201,9 @@ LFE8B:  lda     ObjectAttributes,x
 
 ; Устанавливает ObjectAttributes,X=PlayerUpgradeMaximum; для игроков X<2 также
 ; зеркалит значение в PlayerUpgradeLevel,X. Выход: A=PlayerUpgradeMaximum;
-; X/Y и остальная RAM не меняются.
+; X/Y и остальная RAM не меняются. Flags остаются от CPX #2: player C=0/N=1,
+; slot2 C=1/Z=1, прочие штатные enemy slots C=1/N=Z=0; V сохраняется.
+; PlayerExtendedUpgrade не меняется, bounds check верхней границы X отсутствует.
 SetMaximumObjectUpgrade:
 LFE9B:  lda     #PlayerUpgradeMaximum
         cpx     #FirstEnemyTankSlot
@@ -193,7 +216,8 @@ LFEA4:  sta     ObjectAttributes,x
 ; Активирует дополнительную способность объекта X через ObjectSpecialState,X.
 ; Наблюдаемые эффекты: дополнительная двухспрайтовая метка, проход через TSA $12
 ; и поглощение следующего попадания с очисткой флага. Точное игровое имя не
-; закреплено. Выход: A=ObjectSpecialStateEnabled; X/Y и остальные поля сохраняет.
+; закреплено. Выход: A=$FF, N=1/Z=0; C/V и X/Y сохраняются. Меняет только
+; ObjectSpecialState,X, bounds check нет; PPU/OAM/audio/RNG напрямую не трогает.
 PowerUpEffect7:
 LFEA7:  lda     #ObjectSpecialStateEnabled
         sta     ObjectSpecialState,x

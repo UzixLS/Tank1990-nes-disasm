@@ -6,8 +6,10 @@
 ; enemy slots 7..2: младшие два бита устанавливаются, bit2 инвертируется,
 ; остальные биты сохраняются. Состояние активности слотов не проверяется.
 ; Выход: X восстановлен, Y сохранён; A равно записанному таймеру для игрока
-; либо последним обработанным attributes слота 2 для enemy-пути. Портит флаги;
-; PPU/OAM, score, audio и состояние самого усиления не меняет.
+; либо исходному collector slot для enemy-пути (PLA/TAX). Player path даёт
+; C=0, N=0/Z=0; enemy path C=1 и N/Z по восстановленному X; V сохраняется.
+; Bounds check верхней границы collector X нет. PPU/OAM, score, audio, RNG и
+; состояние самого усиления не меняются.
 PowerUpEffect0:
 LD3E0:  cpx     #FirstEnemyTankSlot
         bcc     ApplyPlayerPowerUpEffect0
