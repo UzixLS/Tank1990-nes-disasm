@@ -1,11 +1,26 @@
 ; Планирование появления противников ($DB48-$DB74).
 
-; Пытается разместить одного из EnemiesToSpawn противников в свободный слот.
-; EnemySpawnTimer — текущая задержка, EnemyActivityInterval — её
-; перезагружаемое значение. GameMode=5/7 задаёт последний
-; доступный слот для игры одного/двух игроков. При успехе вызывает SpawnTank,
-; уменьшает EnemiesToSpawn
-; и обновляет экранный счётчик. Портит A, X, CurrentTankSlot и вызываемые процедуры.
+; Планирует появление одного из EnemiesToSpawn врагов. Ненулевой
+; EnemySpawnTimer только уменьшается; значение 1 становится 0 без попытки spawn,
+; поэтому она произойдёт не раньше следующего logic tick. При нулевом timer
+; сканируются slots GameMode..FirstEnemyTankSlot в обратном порядке: GameMode
+; здесь одновременно является верхним индексом (штатно 5/6/7 даёт 4/5/6
+; enemy slots). Если свободного state=0 нет, timer остаётся нулевым и следующий
+; tick повторяет попытку.
+;
+; При успехе timer перезагружается EnemyActivityInterval, SpawnTank начинает
+; lifecycle $F0 и очищает spawn-cell, затем EnemiesToSpawn уменьшается и HUD-cell
+; с индексом нового значения очищается. Обе операции вместе добавляют 24 байта
+; PPU-команд и меняют пять tile bytes плюс palette quadrant в shadow. Требуется
+; NametablePpuOffset=ShadowToPrimaryNametableOffset, 24 свободных байта и
+; lookahead в PPU buffer; NMI не должен прервать построение команд.
+;
+; Выход при успехе: CurrentTankSlot=выбранный slot, EnemiesToSpawn уменьшен,
+; A=$FF, X=PpuBufferPos, Y=1; меняются поля spawned tank, EnemySpawnColumn,
+; PPU queue/shadow и scratch вызванных helpers. Без свободного slot:
+; CurrentTankSlot=FirstEnemyTankSlot-1, A=то же значение, X=последний проверенный
+; slot, прочее состояние сохраняется. При EnemiesToSpawn=0 возвращает A=0, не
+; меняя CurrentTankSlot; timer-ветвь возвращает A=его старое ненулевое значение.
 SpawnPendingEnemyTank:
 LDB48:  lda     EnemySpawnTimer
         beq     TrySpawnPendingEnemy
@@ -14,7 +29,7 @@ LDB48:  lda     EnemySpawnTimer
 
 TrySpawnPendingEnemy:
 LDB4F:  lda     EnemiesToSpawn
-        beq     ReturnFromEnemySpawn
+        beq     FinishPendingEnemySpawn
         lda     GameMode
         sta     CurrentTankSlot
 CheckEnemySpawnSlot:
@@ -34,5 +49,5 @@ LDB6C:  dec     CurrentTankSlot
         lda     CurrentTankSlot
         cmp     #(FirstEnemyTankSlot-1)
         bne     CheckEnemySpawnSlot
-ReturnFromEnemySpawn:
+FinishPendingEnemySpawn:
 LDB74:  rts
