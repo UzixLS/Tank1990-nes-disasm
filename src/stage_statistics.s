@@ -86,6 +86,10 @@ StatisticsPlayer2ScoreRecordIndex = $01
 StatisticsWinnerBonusPackedAward  = $00 ; особый случай PreparePackedScoreIncrement -> 1000
 StatisticsRowHadKill              = $01
 StatisticsShowSingleZero          = $01
+StatisticsAttributesBottomPalette1 = $50
+StatisticsAttributesBottomPalette2 = $A0
+StatisticsAttributesTopPalette2    = $0A
+StatisticsAttributesTopPalette1    = $05
 
 ; Показывает и анимирует послеэтапную статистику в nametable $2800.
 ; Player1KillCounts/Player2KillCounts — по четыре unsigned счётчика
@@ -719,10 +723,10 @@ LD0B8:  lda     #StatisticsEnemyIconAttributes
 
 ; Заполняет 26 выбранных байтов 8x8 shadow attribute table. Каждый
 ; byte задаёт четыре 2-bit background palette indices для 4x4-tile области:
-;   $50 -> offsets 00..03,08..0A,0D..0F (10 bytes);
-;   $A0 -> offsets 04..07 (4 bytes);
-;   $0A -> offsets 10..12,15..17 (6 bytes);
-;   $05 -> offsets 30..32,35..37 (6 bytes).
+;   bottom palette1 -> offsets 00..03,08..0A,0D..0F (10 bytes);
+;   bottom palette2 -> offsets 04..07 (4 bytes);
+;   top palette2 -> offsets 10..12,15..17 (6 bytes);
+;   top palette1 -> offsets 30..32,35..37 (6 bytes).
 ; Все остальные 38 bytes должны быть заранее обнулены; штатно это делает
 ; ClearNametableBuffer. Для ромхака, меняющего layout/палитры, таблицу нужно
 ; пересогласовать с 4x4-tile boundaries. НЕ ДОКАЗАНО только художественное
@@ -730,7 +734,7 @@ LD0B8:  lda     #StatisticsEnemyIconAttributes
 ; Вход: NametableAttributes очищена. Выход: A=$05, N=0/Z=0;
 ; X/Y и C/V сохранены. PPU queue/registers и tile area shadow не меняются.
 InitializeStatisticsAttributes:
-LD0D9:  lda     #$50
+LD0D9:  lda     #StatisticsAttributesBottomPalette1
         sta     NametableAttributes+$00
         sta     NametableAttributes+$01
         sta     NametableAttributes+$02
@@ -741,19 +745,19 @@ LD0D9:  lda     #$50
         sta     NametableAttributes+$0D
         sta     NametableAttributes+$0E
         sta     NametableAttributes+$0F
-        lda     #$A0
+        lda     #StatisticsAttributesBottomPalette2
         sta     NametableAttributes+$04
         sta     NametableAttributes+$05
         sta     NametableAttributes+$06
         sta     NametableAttributes+$07
-        lda     #$0A
+        lda     #StatisticsAttributesTopPalette2
         sta     NametableAttributes+$10
         sta     NametableAttributes+$11
         sta     NametableAttributes+$12
         sta     NametableAttributes+$15
         sta     NametableAttributes+$16
         sta     NametableAttributes+$17
-        lda     #$05
+        lda     #StatisticsAttributesTopPalette1
         sta     NametableAttributes+$30
         sta     NametableAttributes+$31
         sta     NametableAttributes+$32

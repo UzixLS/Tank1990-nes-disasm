@@ -496,7 +496,7 @@ LEC85:  ldx     #$01
         .byte   $2C                    ; BIT abs поглощает следующий LDX #$02.
 AudioCommandLoop2:
 AudioCommandF2:
-LEC88:  ldx     #$02
+LEC88:  ldx     #AudioLoopCounterLastIndex
 ExecuteAudioLoopCommand:
 LEC8A:  jsr     ReadAudioArgument
         inc     AudioLoopCounters,x

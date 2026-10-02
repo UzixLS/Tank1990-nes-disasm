@@ -26,7 +26,7 @@ EnemyTargetSlotParityMask = $01
 ; координаты цели и направление будут выбраны соответствующим handler позже.
 ; Выход: A=записанный ObjectState,X, X/Y сохранены, N/Z соответствуют state.
 ; Меняет ObjectState,X; random-ветвь также RandomState/RandomIndex, target-ветви
-; также zero-page scratch TankStateClassCandidate. PPU/OAM/audio и прочую
+; также zero-page scratch TankStateBitsToMerge. PPU/OAM/audio и прочую
 ; object RAM не трогает.
 ChooseEnemyTankAiMode:
 LDE72:  lda     EnemyActivityInterval

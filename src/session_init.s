@@ -2,23 +2,31 @@
 
 NoSecondPlayerLives = $00
 
-; Сбрасывает записи двух игроков и общие счётчики новой игровой сессии.
+; Полный вход новой игровой сессии.
 InitializeGameSession:
 ; Очищает две восьмибайтные записи Player1Score/Player2Score вместе с их
 ; завершающими байтами, затем проваливается в общий session initializer.
-; Задаёт обоим игрокам выбранное число жизней, а в single-player обнуляет P2;
-; StageNumber=FirstStageNumber. Выход: A=FirstStageNumber, X=Player2Score,
-; Y=$FF; обе score records содержат семь нулей и $FF. HighScore не меняет.
+; Выход дополняет контракт ниже: X=Player2Score, обе records содержат
+; семь нулей и $FF. HighScore не меняется.
 LC2B3:  ldx     #Player1Score
         jsr     ResetEightByteRecord
         ldx     #Player2Score
         jsr     ResetEightByteRecord
-; Альтернативный вход пропускает очистку двух восьмибайтных записей; используется
-; attract mode. Инициализирует уровни upgrade по variant, checksum guard,
-; флаги награды/выбора и жизни, сохраняя обе score records. Выход:
-; A=FirstStageNumber, X сохраняется, Y=$FF; сразу после этого входа ScratchPtr
-; указывает на RuntimeChecksumInitialJumpTarget. PPU/OAM/APU не меняет.
-; GameVariant/MenuSelection/Joy*/TitleSecretInputCode также сохраняются.
+; Альтернативный вход пропускает очистку score records; его использует attract mode.
+; Базовые PlayerUpgradeLevel[0..1] становятся 0/$20 по sign/bit5 GameVariant;
+; PlayerExtendedUpgrade и ObjectSpecialState не сбрасываются. Runtime checksum fields
+; инициализируются, PlayerExtraLifeAwarded[0..1] и StageSelectionLocked обнуляются.
+;
+; SelectInitialLifeCount выбирает 21/8/11/3 по приоритету secret-code, held DOWN,
+; held UP, default. Результат записывается в Player1Lives, Player2Lives
+; и EnemySpawnColumn; последний байт позже перезапишет stage initializer. Если
+; MenuSelection==0, P2 затем обнуляется; любое ненулевое значение оставляет
+; P2 initial lives независимо от GameMode. StageNumber=FirstStageNumber.
+;
+; Выход: A=FirstStageNumber, N=0/Z=0; X сохранён (на полном входе X=Player2Score),
+; Y=$FF, C=(TitleSecretInputCode>=SecretInitialLivesCode), V сохранён со входа;
+; ScratchPtr=RuntimeChecksumInitialJumpTarget. GameVariant/MenuSelection/Joy*/
+; TitleSecretInputCode/AllPowerUpsEnabled не меняются. PPU/OAM/APU/RNG не трогаются.
 InitializeSessionPreservingScores:
 LC2BD:  jsr     InitializePlayerUpgradeLevelsForVariant
         jsr     InitializeRuntimeChecksumGuard

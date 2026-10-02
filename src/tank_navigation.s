@@ -19,7 +19,7 @@ TankProbeHighEdgeAdjustment = $01
 ; Без активного скольжения low-nibble state уменьшается по $04. Обычное состояние
 ; $88..$8B проходит через $84..$87 и на следующем обслуживании становится
 ; $A0..$A3 с сохранением direction. Финальный переход также пишет scratch
-; TankStateClassCandidate. X/Y сохраняются на idle-пути; ice-путь меняет
+; TankStateBitsToMerge. X/Y сохраняются на idle-пути; ice-путь меняет
 ; PlayerIceState, может изменить ObjectX/Y и портит movement/terrain scratch.
 TankLogicState8:
         cpx     #FirstEnemyTankSlot
@@ -166,7 +166,8 @@ HandleBlockedTankMovement:
 ; вероятностью 1/4 разворачивается через ReverseEnemyTankDirection; в остальных
 ; 3/4 случаев получает state $88..$8B и переключает ObjectFrame.
 ; Выход: X=CurrentTankSlot, Y сохраняется, A зависит от хвоста. Вражеский путь
-; продвигает RNG; idle-ветвь также пишет TankStateClassCandidate.
+; продвигает RNG; idle-ветвь также пишет bits-to-merge scratch
+; TankStateBitsToMerge.
 LDD11:  ldx     CurrentTankSlot
         cpx     #FirstEnemyTankSlot
         bcc     ToggleTankAnimationFrame
@@ -189,7 +190,8 @@ LDD29:  lda     ObjectFrame,x
 ; Разворачивает direction противника на 180 градусов. Если обе координаты лежат
 ; на сетке 8 px, предварительно заменяет класс на $9, сохраняя low nibble; вне
 ; узла класс не меняется. Вход: X=слот противника. Выход: A=новый ObjectState,X;
-; X/Y сохраняются. Выровненная ветвь пишет TankStateClassCandidate, остальные
+; X/Y сохраняются. Выровненная ветвь пишет bits-to-merge scratch
+; TankStateBitsToMerge, остальные
 ; поля объекта и координаты не меняются.
 ReverseEnemyTankDirection:
 LDD30:  lda     ObjectX,x
@@ -212,7 +214,8 @@ LDD41:  lda     ObjectState,x
 ; по либо против часовой стрелки и сразу возвращает класс $A.
 ; Вход: X=слот противника. Выход: ObjectState,X изменён, X/Y сохраняются.
 ; RNG продвигается минимум один раз и дважды на adjacent-turn пути; AI-путь
-; условно пишет TankStateClassCandidate при выборе target-класса.
+; условно пишет bits-to-merge scratch TankStateBitsToMerge при выборе
+; target-класса.
 TankLogicState9:
         jsr     NextRandomByte
         and     #EnemyTurnCoinMask

@@ -1,9 +1,9 @@
 ; Небольшие целочисленные операции ($D34D-$D357).
 
 RemainderDividend = $00
-RemainderDivisor  = $06
+RemainderBySixDivisor = $06
 
-; Возвращает RemainderDividend mod RemainderDivisor повторным вычитанием.
+; Возвращает RemainderDividend mod RemainderBySixDivisor повторным вычитанием.
 ; Вход: RemainderDividend=$00 — unsigned byte 0..255; входные flags не нужны.
 ; Выполняет floor(dividend/6) SBC, максимум 42. Штатный caller использует
 ; гарантированный выходной C=0 непосредственно следующим ADC без CLC.
@@ -15,9 +15,9 @@ RemainderDivisor  = $06
 ; значение и проверить ожидаемые callers-ом диапазон и выходной carry.
 RemainderBySix:  lda     RemainderDividend
 SubtractSixUntilBelowDivisor:
-LD34F:  cmp     #RemainderDivisor
+LD34F:  cmp     #RemainderBySixDivisor
         bcc     ReturnRemainderBySix
-        sbc     #RemainderDivisor
+        sbc     #RemainderBySixDivisor
         bcs     SubtractSixUntilBelowDivisor
 ReturnRemainderBySix:
 LD357:  rts

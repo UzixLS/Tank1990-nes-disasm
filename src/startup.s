@@ -9,12 +9,13 @@ ResetPpuCtrlValue      = $10
 ResetPpuMaskValue      = $06
 ResetVblankWaitCount   = $02
 
-BootHook:
-; Вход: X — начало восьмибайтной записи. Очищает её и записывает
-; BootVariantMarker в GameVariant. Вызывается InitializeCoreRuntime при
-; несовпадении RAM-маркера. Выход: A=BootVariantMarker, X/Y сохранены,
-; N=1/Z=0, C/V сохраняются; обнуляет семь bytes с X по X+6 и записывает $FF
-; в X+7. В штатном вызове X=HighScore; начальные 20000 выставляются caller-ом.
+; Cold-path helper persistent-состояния. Вход: X=начало восьмибайтной
+; record. Записывает [0,0,0,0,0,0,0,$FF] и GameVariant=BootVariantMarker.
+; InitializeCoreRuntime вызывает с X=HighScore, затем сам записывает цифру 2
+; в HighScore+2, получая 0020000. Сам helper MenuSelection и эту цифру
+; не меняет. Выход: A=BootVariantMarker, X/Y сохранены, N=1/Z=0;
+; C/V и прочая RAM сохранены.
+InitializeColdBootPersistentState:
         jsr     ResetEightByteRecord
         lda     #BootVariantMarker
         sta     GameVariant
@@ -22,8 +23,10 @@ BootHook:
 
 ; Включает NMI и передаёт GameVariant обработчику загрузочного маркера. При
 ; BootVariantMarker синхронно открывает меню вариантов и возвращается после START.
-; Без маркера X/Y и RAM сохраняются, A=GameVariant, flags от CMP; всегда меняет
-; PPU_CTRL и ждёт vblank. Меню может изменить UI/PPU state и X/Y. Штатный вход
+; Без маркера X/Y и RAM сохраняются, A=GameVariant, flags от
+; CMP #BootVariantMarker; PPU_CTRL уже изменён на $B0. При marker меню
+; заменяет GameVariant/MenuSelection/AllPowerUpsEnabled и меняет UI/PPU/input/audio
+; state; выходные X/Y/flags зависят от menu path. Штатный вход
 ; приходит с выключенным NMI; EnableNmiAfterVblank включает его на vblank.
 EnableNmiAndHandleBootMarker:
 LC010:  jsr     EnableNmiAfterVblank
@@ -36,8 +39,11 @@ LC010:  jsr     EnableNmiAfterVblank
 ; В обычных режимах A срабатывает по фронту, B — по удержанию; в
 ; CombinedFireGameMode любая из A/B — по фронту. Это continuation
 ; UpdatePlayerFiring: хвостом переходит в FirePlayerProjectile либо
-; AdvancePlayerFiringLoop и самостоятельно не возвращается. Портит A и флаги;
-; X остаётся индексом игрока, Y и RAM до выбранного хвоста не меняются.
+; AdvancePlayerFiringLoop и самостоятельно не возвращается. Вход: X=0/1;
+; иное X читает за двухбайтными Joy arrays. Fire-tail получает A=BUTTON_A
+; в normal A-path, A=BUTTON_B в normal B-path или ненулевую маску A|B в
+; combined mode. Skip-tail получает A=0, N=0/Z=1. X остаётся player slot;
+; Y/RAM и stack depth до хвоста не меняются, C/V остаются от CMP GameMode,#6.
 DispatchPlayerFireInput:
 LC019:  lda     GameMode
         cmp     #CombinedFireGameMode
@@ -70,13 +76,21 @@ UnreferencedAuthorText:
         .byte   $20
 
 ResetHandler:
-; RESET/IRQ entry: запрещает IRQ, отключает NMI/рендеринг, ждёт два vblank,
-; ставит SP=ResetStackTop и полностью инициализирует рабочее состояние, PPU,
-; OAM и звук. IRQ/BRK также используют этот вектор, поэтому прежний стек
-; намеренно отбрасывается. PPU_MASK=$06 оставляет rendering выключенным;
-; PPU_CTRL=$10 отключает NMI. После ResetExtensionState отдельно обнуляет scroll
-; и nametable bits, затем запускает frontend loop. Не возвращается; D=0, I=1,
-; SP начинается с $6F, все регистры и рабочая RAM считаются изменёнными.
+; RESET/IRQ/BRK entry: запрещает IRQ, пишет PPU_CTRL=$10 и
+; PPU_MASK=$06, отключая NMI/rendering, и опрашивает два vblank. IRQ/BRK
+; используют тот же вектор, поэтому их аппаратный frame и прежний стек
+; намеренно отбрасываются после TXS.
+;
+; SP=$6F оставляет $0170.. под extension state/PPU buffer, но даёт только
+; 80 bytes глубины до RestartSignature $0110..$011F. Romhack с более глубокими
+; call chains должен пересмотреть эту карту page $01.
+;
+; ResetExtensionState обнуляет $0170..$017F и вызывает частичный
+; InitializeCoreRuntime. Поэтому reset не гарантирует нули в gameplay/session/
+; object/projectile/input/RNG RAM; warm/cold decision затрагивает лишь
+; persistent HighScore/GameVariant/MenuSelection. После init отдельно пишет
+; VerticalScroll=NametableBits=0 и падает в frontend. Не возвращается; D=0, I=1.
+; Прямо перед MainFrontendLoop: A=0, X=$1C, Y=0, N=0/Z=1/C=1/V=0, SP=$6F.
         sei
         lda     #ResetPpuCtrlValue
         sta     PPU_CTRL
