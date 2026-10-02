@@ -9,14 +9,18 @@ SlowFrameCounterMask = $3F
 ;   1. копирует OAM shadow страницы $02 через DMA;
 ;   2. исполняет накопленную PPU-очередь и, если BackgroundPaletteIndex>=0,
 ;      меняет фоновую палитру;
-;   3. восстанавливает PPU_CTRL/scroll/mask, читает ввод, обновляет OAM и звук;
+;   3. восстанавливает PPU_CTRL/scroll/mask, читает ввод, готовит следующий OAM
+;      shadow и обновляет звук;
 ;   4. увеличивает FrameCounter и медленный счётчик $0A раз в 64 кадра.
 ; Сохраняет A/X/Y; исходные flags/PC восстанавливает финальный RTI из аппаратного
 ; NMI-frame. OAM DMA передаёт текущий OamShadow до построения следующего кадра.
 ; FlushPpuUpdateBuffer обнуляет PpuBufferPos; palette upload может также сбросить
-; BackgroundPaletteIndex в $FF. Восстанавливает PPU_CTRL, обе записи PPU_SCROLL
-; и PPU_MASK, читает controllers, завершает следующий OAM shadow и обновляет APU.
-; FrameCounter растёт каждый NMI, SlowFrameCounter — при его младших 6 битах=0.
+; BackgroundPaletteIndex в $FF. NametableBits должен содержать только bits0..1:
+; он OR-ится с $B0, выбирая nametable при включённых NMI, 8x16 sprites и pattern
+; table background $1000. Горизонтальный scroll всегда 0, VerticalScroll задаёт
+; второй PPU_SCROLL. FrameCounter увеличивается после audio, поэтому input/audio
+; видят старое значение; SlowFrameCounter растёт после новых значений
+; FrameCounter $00/$40/$80/$C0, то есть раз в 64 NMI с восьмибитным wrap.
 NmiHandler:
         pha
         txa

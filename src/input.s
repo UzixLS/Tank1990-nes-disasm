@@ -4,10 +4,17 @@
 ControllerShiftBits = $00
 ControllerBitCount  = $08
 
-; Последовательно читает оба контроллера. Joy1Held/Joy2Held — текущее состояние,
-; Joy1Pressed/Joy2Pressed — фронты вновь нажатых кнопок. Биты собираются в
-; NES-порядке A..Right через ROR. Меняет A/X/Y, ControllerShiftBits и strobe JOY1;
-; по выходу X=$FF, Y=0, A=Joy1Held. Strobe оставляет 0; PPU/APU не меняет.
+; Стробирует оба serial controller-а записью 1->0 в $4016, затем читает P2 и P1
+; по адресам $4017/$4016. В каждом из восьми чтений после AND #3 любое ненулевое
+; значение считается нажатой кнопкой: CMP #1 даёт carry для $01..$03, и этот
+; carry переносится ROR-ом в scratch.
+; Порядок битов результата: A,B,SELECT,START,Up,Down,Left,Right.
+;
+; Joy1Held/Joy2Held получают новый полный снимок, Joy1Pressed/Joy2Pressed —
+; new & ~old, то есть только фронты 0->1. Выход: A=Joy1Held, X=$FF, Y=0,
+; ControllerShiftBits=Joy1Held, N=1/Z=0 от финального DEX; strobe остаётся 0.
+; C=0 после восьмого ROR из изначально нулевого scratch, V сохраняется. Меняет
+; четыре input-байта и scratch; PPU/APU state не затрагивает.
 ReadControllers:  ldx     #$01
         stx     JOY1
         ldy     #$00
