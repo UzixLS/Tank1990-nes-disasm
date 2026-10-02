@@ -2,6 +2,7 @@
 
 BaseAttributePpuAddressHi    = $23
 BaseAttributePpuAddressLo    = $F3
+BrickBaseLeftAttributeValue       = $00
 BaseRightOuterQuadrantsPreserveMask = $CC
 BareBaseLeftAttributePreserveMask = $3F
 SteelBaseLeftAttributeValue       = $3F
@@ -72,6 +73,8 @@ LCAF5:  lda     #>BlankBaseRow
 ; в BaseAttributeRight сохраняются только внешние top-right/bottom-right pairs
 ; маски BaseRightOuterQuadrantsPreserveMask. Очередь получает [$23,$F3,left,
 ; right,$FF]. Это также самостоятельный continuation-вход из PowerUpEffect2.
+; Значение right=$FF допустимо: соседний terminator образует предусмотренную
+; протоколом PPU queue пару $FF,$FF и записывает один литеральный $FF.
 ; Вход: PpuBufferPos<=BaseAttributePairQueueMaxStartPos ($7A), C/V передаются
 ; вызывающим кодом и сохраняются. Выход: A=$FF,
 ; X=PpuBufferPos=old+BaseAttributePairQueueBytes, Y сохранён; N/Z по итоговому X.
@@ -85,7 +88,7 @@ LCB31:
         lda     #BaseAttributePpuAddressLo
         sta     PpuUpdateBuffer,x
         inx
-        lda     #$00
+        lda     #BrickBaseLeftAttributeValue
         sta     BaseAttributeLeft
         sta     PpuUpdateBuffer,x
         inx

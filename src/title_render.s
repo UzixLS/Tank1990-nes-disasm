@@ -1,6 +1,7 @@
 ; Построение nametable заглавного экрана ($D16A-$D254).
 
 TitleScoreTileBias     = $30
+TitleScoreFirstDisplayedDigitOffset = $01
 TitleLogoRasterX       = $1A
 TitleLogoRasterY       = $2E
 TitleYearRasterX       = $3C
@@ -16,6 +17,7 @@ TitleMenuTextColumn    = $0B
 TitleOnePlayerRow      = $11
 TitleTwoPlayerRow      = $13
 TitleConstructionRow   = $15
+TitleCopyrightColumn   = $0B
 TitleCopyrightRow      = $18
 
 ; Очищает основную nametable $2000: отключает рендеринг/NMI, обнуляет shadow,
@@ -58,7 +60,8 @@ LD16A:  jsr     DisableRenderingForBulkUpdate
 ; Все максимумы оставляют lookahead в 128-byte PpuUpdateBuffer. Два явных
 ; WaitForNextFrame исполняют score и menu batch; вместе с Disable процедура
 ; обслуживает ровно три NMI и трижды обновляет OAM/input/audio/frame counters.
-; Побочно меняет A/X/Y, ScratchPtr/AuxPtr,
+; Побочно меняет A/X/Y, ScratchPtr/AuxPtr, collision/raster scratch $00-$03,
+; $47/$48 и $56-$5F, внутренний PPU read buffer/address во время чтения CHR,
 ; NametablePpuOffset=ShadowToNametable2800Offset,
 ; RasterStringX/Y, TileTranslationOffset=0, score-format scratch, shadow, PPU и
 ; update buffer. QueueTileAtCoordinates отражает labels/menu/copyright в shadow,
@@ -104,7 +107,8 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         sta     TileTranslationOffset
 ; Первая кадровая порция: подписи и шесть младших цифр P1/high score, а при
 ; MenuSelection!=0 также P2. Первая из семи цифр каждой record намеренно
-; пропущена. SelectVisibleDigits возвращает ScratchPtr на видимую часть suffix.
+; пропущена: даже ненулевая цифра миллионов на title не отображается.
+; SelectVisibleDigits возвращает ScratchPtr на видимую часть suffix.
         lda     #>PlayerOneScorePrefix
         sta     ScratchPtrHi
         lda     #<PlayerOneScorePrefix
@@ -112,7 +116,7 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         ldx     #TitlePlayer1LabelColumn
         ldy     #TitleScoreRow
         jsr     QueueTileAtCoordinates
-        ldy     #(Player1Score+1)
+        ldy     #(Player1Score+TitleScoreFirstDisplayedDigitOffset)
         ldx     #TitlePlayer1ScoreFormatColumn
         jsr     SelectVisibleDigits
         ldy     #TitleScoreRow
@@ -124,7 +128,7 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         ldx     #TitleHighScoreLabelColumn
         ldy     #TitleScoreRow
         jsr     QueueTileAtCoordinates
-        ldy     #(HighScore+1)
+        ldy     #(HighScore+TitleScoreFirstDisplayedDigitOffset)
         ldx     #TitleHighScoreFormatColumn
         jsr     SelectVisibleDigits
         ldy     #TitleScoreRow
@@ -139,7 +143,7 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         ldx     #TitlePlayer2LabelColumn
         ldy     #TitleScoreRow
         jsr     QueueTileAtCoordinates
-        ldy     #(Player2Score+1)
+        ldy     #(Player2Score+TitleScoreFirstDisplayedDigitOffset)
         ldx     #TitlePlayer2ScoreFormatColumn
         jsr     SelectVisibleDigits
         ldy     #TitleScoreRow
@@ -176,7 +180,7 @@ LD20E:  lda     #$00
         sta     ScratchPtrHi
         lda     #<CreditsCopyrightText
         sta     ScratchPtrLo
-        ldx     #TitleMenuTextColumn
+        ldx     #TitleCopyrightColumn
         ldy     #TitleCopyrightRow
         jsr     QueueTileAtCoordinates
         rts

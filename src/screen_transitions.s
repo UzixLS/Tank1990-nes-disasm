@@ -2,6 +2,7 @@
 
 CurtainRowIndex      = $57
 NametableRowFillTile = $63
+; Оба адреса — volatile aliases общего scratch и живут только внутри curtain API.
 
 PrimaryNametableAttributePpuAddress = $23C0
 NametableAttributeByteCount    = $40
@@ -9,8 +10,10 @@ NametableRowTileCount          = $20
 NametableLastVisibleRow        = $1D
 NametableCurtainPairCount      = $10
 NametableCurtainTile           = $11
+NametableRowFromShadowMode     = $00
 NametableRowQueueByteCount     = $23
 NametableCurtainQueueByteCount = $46
+NametableRowQueueMaxStartPos   = $5C
 
 ; За 64 ожидания формирует команды [$23,$C0+i,attribute_i,$FF] для всего
 ; NametableAttributes=$07C0..$07FF. Первый WaitForNextFrame сначала исполняет
@@ -21,7 +24,9 @@ NametableCurtainQueueByteCount = $46
 ; соседним command terminator.
 ;
 ; Вход: включённый NMI с обычным handler; он должен менять FrameCounter и
-; flush-ить PPU queue. Выход: ScratchPtr=$2400, A=0, X=PpuBufferPos=4, Y=$40,
+; flush-ить PPU queue. Исходный PpuBufferPos задаёт корректный завершённый
+; поток, который исполняется первым ожиданием. Выход: ScratchPtr=$2400,
+; A=0, X=PpuBufferPos=4, Y=$40,
 ; N=0/Z=C=1/V=0. Меняет ScratchPtr, PPU queue и через 64 NMI — VRAM attributes,
 ; OAM/input/audio/palette/frame state; tile shadow и OAM напрямую не меняет.
 UploadAttributesGradually:
@@ -64,10 +69,11 @@ LCC31:  jsr     WaitForNextFrame
 ; строки, после которого идёт не-$FF, нарушит command stream; trailing run
 ; корректен благодаря terminator, как и заполнение всей строки tile $FF.
 ;
-; Требуются PpuBufferPos<=$5C (35 bytes плюс NMI lookahead) и отсутствие NMI
-; во время построения. Выход: A=$FF, Y=$20,
+; Требуются PPU_CTRL increment=1,
+; PpuBufferPos<=NametableRowQueueMaxStartPos ($5C; 35 bytes плюс NMI
+; lookahead) и отсутствие NMI во время построения. Выход: A=$FF, Y=$20,
 ; X=PpuBufferPos=old+NametableRowQueueByteCount, ScratchPtr указывает начало
-; строки, PpuTileRowBits=(input Y&7)*32; flags соответствуют финальному INX.
+; строки, PpuTileRowBits=(input Y&7)*32; N=Z=0/C=1/V=0 при допустимом cursor.
 ; Меняет ScratchPtr, scratch $00 и PPU update buffer; shadow, PPU registers,
 ; OAM и audio не меняет. Bounds/capacity кодом не проверяются.
 QueueNametableRow:
@@ -107,9 +113,10 @@ LCC7E:  sta     PpuUpdateBuffer,x
 ; до следующего NMI. Каждый Wait сначала flush-ит предыдущие 70 bytes, поэтому
 ; после него обе новые команды безопасно строятся с позиции 0. Это временная
 ; VRAM-маска: shadow не меняется и затем служит источником OpenNametableCurtain.
-; Вход: включённый обычный NMI/FrameCounter; PPU_CTRL increment=1.
+; Вход: включённый обычный NMI/FrameCounter; PPU_CTRL increment=1. Перед первым
+; ожиданием PpuBufferPos может содержать только корректный завершённый поток.
 ; Выход: CurtainRowIndex=$10, NametableRowFillTile=$11, A=$10, X=PpuBufferPos=$46,
-; Y=$20, ScratchPtr=$05C0, PpuTileRowBits=$C0, Z=C=1/N=0. Портит A/X/Y,
+; Y=$20, ScratchPtr=$05C0, PpuTileRowBits=$C0, Z=C=1/N=V=0. Портит A/X/Y,
 ; ScratchPtr, aliases $57/$63 и PPU queue; через ожидания меняет PPU/OAM/input/
 ; audio/palette/frame state. Последняя пара VRAM ещё не применена.
 CloseNametableCurtain:
@@ -136,12 +143,12 @@ LCC98:  jsr     WaitForNextFrame
 ; к краям. Центральная пара при первых двух проходах записывается дважды.
 ; Последняя пара остаётся в очереди до следующего NMI. Выход:
 ; CurtainRowIndex=$FF, NametableRowFillTile=0, A=$FF, X=PpuBufferPos=$46,
-; Y=$20, ScratchPtr=$07A0, PpuTileRowBits=$A0, Z=C=1/N=0. Preconditions и
+; Y=$20, ScratchPtr=$07A0, PpuTileRowBits=$A0, Z=C=1/N=V=0. Preconditions и
 ; косвенные NMI-side effects совпадают с CloseNametableCurtain. Shadow не
 ; меняется; его rows должны удовлетворять ограничению QueueNametableRow на
 ; внутренние runs tile $FF. Последняя восстановленная пара ещё не применена.
 OpenNametableCurtain:
-LCCB2:  lda     #$00
+LCCB2:  lda     #NametableRowFromShadowMode
         sta     NametableRowFillTile
         lda     #(NametableCurtainPairCount-1)
         sta     CurtainRowIndex
