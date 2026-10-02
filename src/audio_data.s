@@ -35,14 +35,14 @@ LECFE:  .word   PauseSequence,StageIntroPulse1Sequence
         .word   AudioSequence24,AudioSequence25,AudioSequence26,StatisticsWinnerBonusSequence
 
 ; Потоки байткода музыки и звуковых эффектов. Заголовок состоит из
-; channel (1=pulse1, 2=pulse2, 3=triangle, 4=noise), control, aux и period-high;
-; noise дополнительно содержит начальный period-low. Эти поля образуют кеш
-; четырёх регистров выбранного канала APU; для тональных каналов period-low
-; впервые вычисляется при декодировании нотного токена.
+; channel (1=pulse1, 2=pulse2, 3=triangle, 4=noise), register0, register1 и
+; register3; noise дополнительно содержит начальный register2. Эти поля образуют
+; кеш четырёх последовательных регистров выбранного канала APU; для тональных
+; каналов register2 впервые вычисляется при декодировании нотного токена.
 ;
 ; Токены тела:
 ;   $00-$5F       нота: старшие 5 бит — полутон, младшие 3 — сдвиг октавы;
-;   $60           пауза/удержание периода с ранее выбранной длительностью;
+;   $60           timed hold: только reload countdown, без заглушения/смены кеша;
 ;   $61-$E7       новая длительность token-$60, затем сразу следующий токен;
 ;   $E8           остановка; $E9-$EE operand — изменение регистров записи;
 ;   $EF           сброс трёх глобальных loop counters;
