@@ -56,8 +56,10 @@ LE47E:  .byte   TankStateActiveClass | DIRECTION_UP
 ; Центральный relation same/same в обеих матрицах задаёт Up.
 ; ChooseTankStateTowardTarget напрямую записывает выбранный byte в ObjectState,
 ; поэтому entries должны быть полными states $A0..$A3, не direction 0..3.
-; Размер каждой матрицы жёстко связан с HorizontalPriorityTableOffset=9.
+; Код вычисляет horizontal offset как разность двух labels; обе матрицы должны
+; оставаться смежными, по девять bytes каждая, и в одном порядке relations.
 TankAiDirectionStateTable:
+TankAiVerticalPriorityDirectionStates:
 LE486:  .byte   TankStateActiveClass | DIRECTION_UP
         .byte   TankStateActiveClass | DIRECTION_UP
         .byte   TankStateActiveClass | DIRECTION_UP
@@ -67,6 +69,7 @@ LE486:  .byte   TankStateActiveClass | DIRECTION_UP
         .byte   TankStateActiveClass | DIRECTION_DOWN
         .byte   TankStateActiveClass | DIRECTION_DOWN
         .byte   TankStateActiveClass | DIRECTION_DOWN
+TankAiHorizontalPriorityDirectionStates:
         .byte   TankStateActiveClass | DIRECTION_LEFT
         .byte   TankStateActiveClass | DIRECTION_UP
         .byte   TankStateActiveClass | DIRECTION_RIGHT
@@ -84,7 +87,9 @@ LE486:  .byte   TankStateActiveClass | DIRECTION_UP
 ; намеренны: несколько классов используют общий handler.
 ;
 ; Logic layout: 0 no-op; 1..7 destruction lifecycle; 8 idle/ice; 9 turn;
-; A move; B target base; C target P2; D target P1; E/F spawn halves.
+; A move; B target base; C target P2; D target P1; E/F spawn halves. B..D лишь
+; переводят state в $A0..$A3; movement handler будет вызван на следующем
+; разрешённом для слота logic tick, а не тем же dispatch-вызовом.
 TankLogicHandlers:
 LE498:  .word   TankLogicState0
         .word   TankLogicStates1To7,TankLogicStates1To7,TankLogicStates1To7
