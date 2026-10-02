@@ -20,9 +20,12 @@ TitleCopyrightRow      = $18
 
 ; Очищает основную nametable $2000: отключает рендеринг/NMI, обнуляет shadow,
 ; напрямую загружает 1 KiB и снова включает NMI. Выбирает фоновую палитру 3.
-; Входов/регистровых результатов нет. Меняет A/X/Y, ScratchPtr,
-; NametablePpuOffset=ShadowToPrimaryNametableOffset, BackgroundPaletteIndex,
-; весь nametable shadow и PPU address/data/control state; NMI включён на выходе.
+; Вход: NMI включён, иначе DisableRenderingForBulkUpdate не завершится.
+; Выход: A=EnabledNmiPpuCtrlValue, X=Y=0, ScratchPtr=$0800,
+; NametablePpuOffset=ShadowToPrimaryNametableOffset, BackgroundPaletteIndex=3.
+; Полностью очищает shadow и VRAM $2000..$23FF, меняет PPU address/control/mask.
+; NMI включён, но palette 3 и обычный PPU_MASK будут применены только следующим
+; NMI; до него mask остаётся BulkUpdatePpuMaskValue.
 ClearPrimaryNametableScreen:
 LD16A:  jsr     DisableRenderingForBulkUpdate
         lda     #TitleBackgroundPalette
@@ -39,10 +42,14 @@ LD16A:  jsr     DisableRenderingForBulkUpdate
 ; затем напрямую загружает весь 1 KiB.
 ; После включения NMI ставит в очередь подписи рекорда, игроков и трёх пунктов
 ; меню; MenuSelection определяет наличие строки второго игрока.
+; Вход: NMI включён, DigitBlankMode=0, записи score корректно терминированы.
 ; Побочно меняет A/X/Y, ScratchPtr/AuxPtr,
 ; NametablePpuOffset=ShadowToNametable2800Offset,
 ; RasterStringX/Y, TileTranslationOffset=0, score-format scratch, shadow, PPU и
-; update buffer. Последняя строка copyright остаётся в очереди до следующего NMI.
+; update buffer. Два внутренних ожидания последовательно передают score/header
+; и три menu lines. Выход: A=$FF, X=PpuBufferPos=12, Y=9, NMI/rendering включены;
+; ScratchPtr=CreditsCopyrightText. Последняя строка copyright уже отражена в
+; shadow, но её 12-байтная команда остаётся в очереди до следующего NMI.
 BuildTitleNametable:
 LD17F:  jsr     DisableRenderingForBulkUpdate
         lda     #ShadowToNametable2800Offset
@@ -76,6 +83,8 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         jsr     EnableNmiAfterVblank
         lda     #TitleScoreTileBias
         sta     TileTranslationOffset
+; Первая кадровая порция: подписи и числа P1/high score, а при MenuSelection!=0
+; также P2. SelectVisibleDigits возвращает ScratchPtr на видимую часть record.
         lda     #>PlayerOneScorePrefix
         sta     ScratchPtrHi
         lda     #<PlayerOneScorePrefix
@@ -102,6 +111,7 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
         jsr     QueueTranslatedTileString
         lda     MenuSelection
         beq     QueueTitleMenuText
+; Необязательная правая часть score-row для режима двух игроков.
         lda     #>PlayerTwoScorePrefix
         sta     ScratchPtrHi
         lda     #<PlayerTwoScorePrefix
@@ -117,6 +127,7 @@ LD17F:  jsr     DisableRenderingForBulkUpdate
 QueueTitleMenuText:
 LD20E:  lda     #$00
         sta     TileTranslationOffset
+        ; Перед построением меню передаёт первую score-порцию через NMI.
         jsr     WaitForNextFrame
         lda     #>OnePlayerMenuText
         sta     ScratchPtrHi
@@ -139,6 +150,7 @@ LD20E:  lda     #$00
         ldx     #TitleMenuTextColumn
         ldy     #TitleConstructionRow
         jsr     QueueTileAtCoordinates
+        ; Перед copyright передаёт три menu lines; copyright останется pending.
         jsr     WaitForNextFrame
         lda     #>CreditsCopyrightText
         sta     ScratchPtrHi
