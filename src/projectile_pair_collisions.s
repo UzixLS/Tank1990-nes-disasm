@@ -14,8 +14,10 @@ ProjectileOwnerSlotMask        = $07
 ; Поэтому enemy/enemy пары здесь не рассматриваются, а непересекающиеся
 ; player-1/player-2 пары посещаются в обоих порядках, пока оба state активны.
 ;
-; По каждой оси берётся 8-битный модуль результата вычитания с wraparound.
-; Если обе величины строго меньше 6, оба ProjectileState обнуляются без фазы
+; По каждой оси берётся abs(int8(inner-outer)): это кратчайшая дистанция на
+; кольце координат 0..255 (например, $FF и $00 дают 1; delta=$80 остаётся 128).
+; Romhack, размещающий снаряды по разные стороны края, должен учитывать такое
+; тороидальное сближение. Если обе величины строго меньше 6, оба ProjectileState обнуляются без фазы
 ; попадания $33. Внутренний проход после этого продолжается без перепроверки
 ; внешнего state: один внешний снаряд может очистить несколько перекрывающихся
 ; внутренних, а очищенный player slot позднее не начинает свой внешний проход.
@@ -27,7 +29,12 @@ ProjectileOwnerSlotMask        = $07
 ; сохраняются. Пусть class0=ProjectileState[0]&StateClassMask при финальной
 ; проверке: A=class0 при class0<>$40, иначе A=0; C=(class0 >= $40), а V зависит
 ; от пути. Меняет только три scratch-байта и ProjectileState попавших снарядов;
-; ProjectileX/Y/Flags, PPU/OAM, audio states, танки и счёт не меняет.
+; ComparedProjectileOwnerSlot=$00 является alias TerrainSubcellMask и
+; PowerUpGridIndexScratch, но их времена жизни между gameplay phases не
+; пересекаются. ProjectileX/Y/Flags, PPU queue/registers, OAM, audio states,
+; танки и счёт не меняет. В штатном tick этот проход идёт после terrain и до
+; tank collisions, поэтому обнулённые здесь снаряды уже не могут поразить танк.
+UpdateProjectilePairCollisions:
 UpdateProjectileProjectileCollisions:
 LE910:  lda     #(ProjectileSlotCount-1)
         sta     PlayerProjectileScanSlot

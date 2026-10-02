@@ -24,7 +24,7 @@ LC2E6:  jsr     MarkTankOccupiedTiles
         jsr     UpdateEnemyFiring
         jsr     SpawnPendingEnemyTank
         jsr     UpdateProjectileTerrainCollisions
-        jsr     UpdateProjectileProjectileCollisions
+        jsr     UpdateProjectilePairCollisions
         jsr     UpdateProjectileTankCollisions
         jsr     UpdatePowerUpPickup
         jsr     UpdateTransitionObject

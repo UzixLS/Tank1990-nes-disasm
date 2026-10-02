@@ -7,20 +7,34 @@ TankProjectileHitRadius = $0A
 EnemyTypeAttributeBias  = $04
 
 ; Общий проход снарядов по танкам.
-; Фаза 1 проверяет игроков Object 1..0 против активных снарядов 9..2:
-; сюда входят вражеские слоты 2..7 и дополнительные player-слоты 8/9.
-; Попадание определяется квадратом |dx|<10, |dy|<10. PlayerShieldTimer,X поглощает
-; снаряд без взрыва; иначе управление передаётся HandleProjectileHitOnPlayer.
-; AdvancePlayerTankCollisionPass из collision_extensions.s возвращает сюда
-; для следующего игрока.
+; Фаза 1 проверяет игроков Object 1..0 против активных снарядов строго 7..2;
+; slots 0/1 и дополнительные player slots 8/9 здесь не участвуют. Targetable
+; ObjectState лежит в $80..$DF. Попадание — квадрат с обеими wrapped
+; signed-distance строго <10. Например, координаты $FF и $00 считаются
+; соседними, а разность $80 остаётся 128; romhack с объектами у края должен
+; учитывать эту тороидальную 8-битную метрику.
+;
+; При shield снаряд сначала получает $33, затем сразу state=0 без impact-frame
+; и без audio; скан оставшихся снарядов того же игрока продолжается. Без shield
+; первый hit передаётся HandleProjectileHitOnPlayer и немедленно заканчивает
+; projectile scan этого игрока: ObjectSpecialState поглощается с сохранением
+; impact $33, maximum armor понижается до level 2 с armor sound, иначе игрок
+; переходит в destroyed state и запрашивается destruction noise.
 ; Фаза 2 проверяет врагов Object 7..2 против логических снарядов игроков
-; в слотах 0,1,8,9, начисляет уничтожения и очки.
-; Вход: состояния и координаты танков/снарядов. Выход: A=1,
-; TankCollisionSlot=1; X/Y и ProjectileCollisionSlot не определены.
-; Побочно меняет ScoringPlayerIndex, ProjectileState, состояния/атрибуты
-; танков, Player1KillCounts/Player2KillCounts, записи счёта и audio/bonus-флаги. Условное
-; создание бонуса также меняет RNG, PowerUpSpawnAudioState,
-; PowerUpCollectorSlot и поля бонуса.
+; в порядке slots 9,8,1,0. Владелец и credit определяются только slot&1:
+; 0/8 -> P1, 1/9 -> P2. При нескольких наложенных выстрелах armor может получить
+; несколько hits за проход; после полного уничтожения следующий enemy начинается
+; сразу. Снаряд, попавший в более высокий enemy slot, получает $33 и уже не может
+; попасть в последующие slots.
+;
+; Вход: состояния и координаты танков/снарядов. Выход после фактических двух
+; enemy passes: A=1, TankCollisionSlot=1, Z=1, C=1, N=0; X/Y,
+; ProjectileCollisionSlot и V не определены. Побочно меняет ScoringPlayerIndex
+; ($47, alias CollisionPointX/ShadowQueueSavedX), ProjectileState, состояния и
+; атрибуты танков, kill counts, score records/ScoreIncrementDigits, lives и
+; audio states. SpawnPowerUp дополнительно меняет RNG, $00 scratch,
+; PowerUpCollectorSlot/display timer и поля бонуса. PPU queue/registers, OAM и
+; terrain напрямую не меняются; HUD увидит score/lives в следующих update-фазах.
 UpdateProjectileTankCollisions:
 LE70C:  lda     #$01
         sta     TankCollisionSlot
@@ -35,6 +49,8 @@ SkipInactivePlayerCollisionPass:
 LE71A:  jmp     AdvancePlayerCollisionPassOrBeginEnemyPass
 
 CheckEnemyProjectilesAgainstPlayer:
+        ; TankSlotCount-1=$07 намеренно задаёт только шесть enemy projectiles.
+        ; Цикл заканчивается после slot 2 и никогда не читает 1/0 либо 9/8.
 LE71D:  lda     #(TankSlotCount-1)
         sta     ProjectileCollisionSlot
 CheckNextEnemyProjectile:
@@ -51,6 +67,8 @@ LE721:  ldy     ProjectileCollisionSlot
         clc
         adc     #$01
 PlayerHitXDistanceReady:
+        ; Модуль знакового 8-битного delta совпадает с кратчайшим расстоянием
+        ; на кольце 0..255; случай delta=$80 после отрицания остаётся $80.
 LE739:  cmp     #TankProjectileHitRadius
         bcs     AdvanceEnemyProjectileCollision
         lda     ProjectileY,y
@@ -102,7 +120,8 @@ LE772:  dec     ProjectileCollisionSlot
 ; стеке; вложенный вход при TankCollisionSlot<0 возвращается сюда и запускает
 ; проход врагов. Его RTS разматывает сохранённый адрес и тем же способом запускает
 ; проход врагов второй раз, после чего следующий RTS выходит к вызывающему.
-; Это намеренная стековая схема, а не обычный цикл.
+; Фактический результат — два полных enemy passes 7..2. При рефакторинге нельзя
+; сворачивать их в один без изменения точных side effects/тайминга.
 AdvancePlayerCollisionPassOrBeginEnemyPass:
 LE77A:  jsr     AdvancePlayerTankCollisionPass
         nop
@@ -136,6 +155,7 @@ LE79C:  ldy     ProjectileCollisionSlot
         jmp     AdvancePlayerProjectileCollision
 
 MeasurePlayerProjectileTankDistance:
+        ; Та же wrapped signed-distance, что и в player phase; обе оси <10.
 LE7AA:  lda     ProjectileX,y
         sec
         sbc     ObjectX,x
@@ -165,6 +185,11 @@ LE7C8:  cmp     #TankProjectileHitRadius
         lda     ObjectAttributes,x
         cmp     #$E4
         bne     DamageOrDestroyEnemyTank
+        ; Особый carrier $E4 после spawn становится $E3, а общий damage ниже
+        ; сразу уменьшает его до $E2: первый hit не убивает его, снимает carrier
+        ; flag и оставляет два дополнительных hit points. У остальных carriers
+        ; bit2 здесь не очищается: пока он остаётся установлен, каждый новый hit
+        ; снова вызывает SpawnPowerUp (например, $E5 -> $E4, затем особый путь).
         dec     ObjectAttributes,x
 ; Низкие два бита атрибутов работают как дополнительные hit points.
 DamageOrDestroyEnemyTank:
@@ -179,11 +204,16 @@ LE7E2:  lda     ObjectAttributes,x
         sta     ArmorHitAudioState
         jmp     AdvancePlayerProjectileCollision
 
-; Полное уничтожение: state $73, запрос TankDestructionAudioState,
-; статистика типа/владельца и, кроме StageSetLength=2, награда 100..400 очков.
+; Полное уничтожение: state $73, ObjectSpecialState=0, запрос tank-destruction
+; audio, статистика типа/владельца и, кроме StageSetLength=2, награда 100..400.
 ; Вход: X — enemy slot, ProjectileCollisionSlot — projectile slot. Не возвращается
 ; непосредственно: после обновления статистики/счёта переходит к следующему танку.
-; Портит A/X/Y и ScoreIncrementDigits; уничтожение может выдать extra life/audio.
+; Тип вычисляется как (ObjectAttributes>>5)-4; штатные high classes
+; $80/$A0/$C0/$E0 дают индексы 0..3. Другие значения не проверяются и способны
+; индексировать kill counters/award table за границами — romhack должен сохранить
+; этот формат. DestroyTankAndClearExtension не стирает attributes, поэтому тип
+; читается после него. Портит A/X/Y и ScoreIncrementDigits; уничтожение может
+; выдать extra life/audio.
 DestroyEnemyTankAndAwardScore:
 LE7F2:  jsr     DestroyTankAndClearExtension
         nop
@@ -208,6 +238,8 @@ LE7F2:  jsr     DestroyTankAndClearExtension
 CreditPlayer2Kill:
 LE813:  inc     Player2KillCounts,x
 MaybeAwardEnemyScore:
+        ; Attract marker подавляет только score и extra-life check. Kill count,
+        ; destruction state/audio и возможный power-up spawn уже выполнены.
 LE815:  lda     StageSetLength
         cmp     #AttractStageSetMarker
         beq     AdvanceEnemyTankCollision
