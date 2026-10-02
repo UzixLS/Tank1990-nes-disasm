@@ -5,17 +5,23 @@ RuntimeChecksumExpectedValue = $CD
 RuntimeChecksumClassicBlock1 = ClassicLevels + $0647
 RuntimeChecksumClassicBlock2 = ClassicLevels + $0789
 
-; Инициализирует runtime guard: последовательно XOR-ит два семибайтных окна
-; внутри ClassicLevels ($F677 и $F7B9) и RuntimeChecksumInitialJumpTarget в
-; RuntimeChecksumActual, затем записывает $CD в RuntimeChecksumExpected.
-; Структурное назначение двух окон карт отдельно не установлено.
+; Инициализирует runtime guard: последовательно XOR-ит три семибайтных окна:
+;   $F677..$F67D внутри ClassicLevels  -> $DB;
+;   $F7B9..$F7BF внутри ClassicLevels  -> $04;
+;   $C5C9..$C5CF variant-menu header   -> $12.
+; С накоплением от нуля получается $DB^$04^$12=$CD; это значение остаётся в
+; RuntimeChecksumActual, а literal $CD записывается в RuntimeChecksumExpected.
+; Структурное назначение двух выбранных окон карт отдельно не установлено.
 ; На выходе ScratchPtr равен RuntimeChecksumInitialJumpTarget, но это лишь
 ; начальное значение: gameplay helpers свободно перезаписывают volatile pointer,
 ; а поздний guard его не восстанавливает перед косвенным переходом.
 ; Выход: A=RuntimeChecksumExpectedValue, RuntimeChecksumExpected=A,
 ; RuntimeChecksumActual=совокупный XOR,
 ; ScratchPtr=RuntimeChecksumInitialJumpTarget,
-; Y=$FF. X и проверяемые данные сохраняются.
+; Y=$FF, N=1/Z=0; C/V и X сохраняются. PPU/OAM/audio/RNG и проверяемые данные
+; не меняет. Romhack, меняющий любое окно, должен осознанно синхронизировать
+; expected literal либо удалить/переработать весь guard отдельным изменением;
+; простой перенос окна также требует обновить pointer constants.
 InitializeRuntimeChecksumGuard:
 LD2F8:  lda     #$00
         sta     RuntimeChecksumActual
@@ -36,25 +42,29 @@ LD2F8:  lda     #$00
         jsr     XorSevenByteBlock
         lda     #RuntimeChecksumExpectedValue
 ; Legacy-обработчик экрана начинает строковый поток с operand следующего
-; zero-page STA и трактует машинный код оттуда как $FF-терминированные тайлы.
-; Смещение +1 намеренно: по текущему адресу находится сам opcode STA.
+; zero-page STA ($8C по адресу $D320) и трактует машинный код до $D332 как
+; $FF-терминированные tiles. Смещение +1 намеренно: по текущему адресу $D31F
+; находится opcode STA. Рефакторинг/перемещение этого кода меняет одновременно
+; исполняемую процедуру и legacy screen asset; label должен следовать operand.
 LegacyChecksumCodeStreamStart = * + 1
         sta     RuntimeChecksumExpected
         rts
 
-; Альтернативный вход: принимает seed в A, записывает его в
+; Альтернативный, статически неиспользуемый вход: принимает seed в A, записывает его в
 ; RuntimeChecksumActual и без отдельного JSR проваливается в XorSevenByteBlock.
 ; PHA/PLA сохраняют баланс стека; восстановленный A сразу заменяется первым
 ; байтом блока. ScratchPtr должен быть задан вызывающим; RuntimeChecksumExpected
-; не меняется. Выход и остальные побочные эффекты — как у XorSevenByteBlock.
+; не меняется. Выход и остальные побочные эффекты — как у XorSevenByteBlock;
+; источник может быть любым семибайтным readable window, bounds check нет.
 SeedAndXorSevenByteBlock:
 LD322:  pha
         sta     RuntimeChecksumActual
         pla
 ; XOR-ит RuntimeChecksumBlockSize байтов (ScratchPtr)+6..0 в
 ; RuntimeChecksumActual, начиная с уже находящегося там seed.
-; Выход: A=RuntimeChecksumActual=результат, Y=$FF; ScratchPtr, X, источник
-; и стек сохраняются. Портит флаги.
+; Выход: A=RuntimeChecksumActual=результат, Y=$FF, N=1/Z=0 независимо от A;
+; C/V, ScratchPtr, X, источник и глубина стека сохраняются. PPU/OAM/audio/RNG
+; не затрагивает. Именно DEY 0->$FF задаёт финальные N/Z, не checksum byte.
 XorSevenByteBlock:
 LD326:  ldy     #(RuntimeChecksumBlockSize-1)
 XorNextRuntimeChecksumByte:
@@ -65,6 +75,7 @@ LD328:  lda     (ScratchPtrLo),y
         bpl     XorNextRuntimeChecksumByte
         rts
 
-; $D332 завершает описанный выше поток с $D320; отдельной статической ссылки на него нет.
+; $D332 ($20) — последний tile legacy-потока с $D320; следующий ROM byte $D333
+; равен $FF и служит terminator. Отдельной исполняемой ссылки на эти data bytes нет.
 LegacyChecksumCodeStreamEnd:
 LD332:  .byte   $20,$FF
