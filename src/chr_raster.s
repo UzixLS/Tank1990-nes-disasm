@@ -25,14 +25,22 @@ RasterStringTerminator = $FF
 ; исходные $81..$FF после первого DEX выглядят отрицательными и ошибочно читают
 ; tile 0. Адрес вычисляется за O(A) сложений по 16, без таблицы/умножения.
 ; Rendering и NMI должны быть выключены: процедура напрямую меняет PPU_ADDR и
-; читает PPU_DATA. Dummy read заполняет PPU read buffer; следующие восемь чтений
-; возвращают rows 0..7 первой plane и оставляют внутренний VRAM address=start+9.
+; читает PPU_DATA. PPU_CTRL должен задавать VRAM increment=1, иначе восемь
+; чтений возьмут не последовательные строки bitplane. Dummy read заполняет PPU
+; read buffer; следующие восемь чтений возвращают rows 0..7 первой plane и
+; оставляют внутренний VRAM address=start+9.
 ;
 ; Восемь row bytes кладутся на стек и затем снимаются обратно, поэтому rows
 ; обрабатываются 7..0 в точках Y+32,Y+28,...,Y+4. X-точки идут X..X+28;
-; покрытая область subcells соответствует pixels X..X+31 и Y+4..Y+35. Все
-; координаты восьмибитные и оборачиваются. Shadow-only helpers изменяют лишь
-; bytes с нулевым high nibble; whole-tile terrain/occupancy блокирует пиксель.
+; поскольку младшие два бита координат не участвуют в выборе subcell, реально
+; покрываются pixels (X&$FC)..(X&$FC)+31 и
+; (Y&$FC)+4..(Y&$FC)+35. Все координаты восьмибитные и оборачиваются.
+; Чтобы все выбранные shadow bytes
+; оставались в tile rows 0..29, требуется input Y<=207: максимальная опорная
+; точка Y+32 тогда не попадает в attribute rows 30/31. Для непрерывного
+; горизонтального прямоугольника без wrap требуется input X<=227.
+; Shadow-only helpers изменяют лишь bytes с нулевым high nibble; whole-tile
+; terrain/occupancy блокирует пиксель.
 ;
 ; Выход: RasterPixelX=input X, RasterPixelY=input Y, RasterRowCount=0,
 ; RasterBitMask=0, CollisionPointX=input X+28, CollisionPointY=input Y+4,
@@ -119,6 +127,8 @@ LD8B4:  lda     RasterPixelX
 ; экрана и attribute storage отсутствует. AuxPtr, RasterStringY и translation
 ; сохраняются. Меняет RasterStringX/RasterStringIndex, PPU read address/buffer,
 ; shadow и весь scratch RasterizeChrTileToShadow; PPU queue не трогает.
+; Для каждого знака действуют те же PPU increment и координатные ограничения;
+; caller отвечает за всю длину строки, включая wrap RasterStringX.
 ;
 ; Выход: A=$FF, Y=offset terminator, RasterStringIndex=тот же offset,
 ; RasterStringX=input X+32*length modulo 256, Z=1/C=1/N=0; X принадлежит

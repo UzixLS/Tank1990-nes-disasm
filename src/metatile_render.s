@@ -21,17 +21,25 @@ MetatileQueueMaxStartPos      = $6B
 ; input Y<=239, иначе rows30/31 перезапишут attribute storage shadow;
 ; PpuBufferPos<=MetatileQueueMaxStartPos ($6B), и NMI не должен flush-ить
 ; очередь во время построения. Ограничение X не требуется: весь byte 0..255
-; отображается в допустимые tile columns 0..31.
+; отображается в допустимые tile columns 0..31. Соответствующая запись
+; MetatilePalettes обязана быть 0..3, а MetatileTiles — содержать ровно четыре
+; последовательных tile bytes; bounds/формат таблиц кодом не проверяются.
 ;
 ; Сначала обновляет attribute shadow и ставит 4-byte команду $23C0..$23FF,
 ; затем пишет четыре shadow tiles и ставит четыре однотайловые команды. Все пять
 ; PPU-команд жёстко направлены в primary nametable и игнорируют
 ; NametablePpuOffset. Всего добавляет MetatileQueueByteCount ($14) bytes;
 ; лимит учитывает следующий lookahead, записываемый FlushPpuUpdateBuffer.
+; Tile bytes служат одновременно графическими индексами и collision-shadow:
+; low nibble кодирует разрушаемые subcells, а ненулевой high nibble —
+; whole-tile class. Поэтому произвольная замена графического индекса в TSA
+; способна изменить проходимость и разрушаемость клетки.
 ;
 ; Выход: A=$FF, X=4*input A+MetatileTilesPerDefinition (4..64), Y=0,
 ; PpuBufferPos=old+$14; ScratchPtr указывает на lower-right shadow tile;
-; RenderAttributes=palette index выбранного определения; N=Z=C=V=0.
+; RenderAttributes=palette index выбранного определения;
+; PpuTileRowBits=((floor(input Y/8)&$FE)&7)*32, MetatileTileY=floor(input Y/8),
+; а $47/MetatileTileX уже перезаписан итоговым X. N=Z=C=V=0.
 ; Меняет $00-$02, $47/$48, ScratchPtr, четыре tile bytes и один attribute byte
 ; shadow, PpuBufferPos и 20 bytes PpuUpdateBuffer. MetatileInputIndex в $00
 ; живёт только до чтения palette: затем alias переиспользуется PPU/shadow

@@ -46,8 +46,9 @@ LD7BD:  jsr     UploadShadowByteDirect
 ; Width начинает запись со смещения $FF, а нулевая Height даёт 256 итераций строк.
 ; Выход: A=0, X=input NametableRectX, Y=$FF, NametableRectHeight=0;
 ; ScratchPtr указывает на начало последней очищенной строки, NametableRectX/Y/Width
-; сохранены, PpuTileRowBits=(input NametableRectY&7)*32, N=0/Z=1; C/V зависят
-; от пути (для Height=1 остаются от адресации, иначе от последнего AddAToPointer).
+; сохранены, PpuTileRowBits=(input NametableRectY&7)*32, N=0/Z=1. При Height=1
+; C=input NametableRectY bit2, а V сохраняет вход; при большей высоте C/V
+; остаются от AddAToPointer перед последней строкой.
 ; Перезаписывает весь NametableShadow и меняет A/X/Y, ScratchPtr,
 ; NametableRectHeight, PpuTileRowBits и flags; PPU queue/registers и прочую RAM
 ; не меняет. В tile-части вне прямоугольника остаётся TerrainTileBoundary,

@@ -27,9 +27,10 @@ AttributeQueueMaxStartPos = $7B
 ; а не tile-часть; вызывающий должен отличать эти применения.
 ;
 ; Выходная пара A:Y адресует NametableShadow[input Y*32+input X];
-; PpuTileRowBits=(input Y&7)*32, X сохранён, N=Z=C=0. Меняет A/Y, scratch $00
-; и flags, V сохраняет. Временно использует один байт стека, но восстанавливает
-; SP; shadow и PPU queue/registers не меняет. Формат привязан к базе $0400.
+; PpuTileRowBits=(input Y&7)*32, X сохранён, N=Z=0,
+; C=input Y bit2 (carry последнего LSR). Меняет A/Y, scratch $00 и flags,
+; V сохраняет. Временно использует один байт стека, но восстанавливает SP;
+; shadow и PPU queue/registers не меняет. Формат привязан к базе $0400.
 TileCoordinatesToShadowAddress:
 LD5FB:  lda     #$00
         sta     PpuTileRowBits
