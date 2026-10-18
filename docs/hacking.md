@@ -7,7 +7,9 @@ round-trip и validation contracts конвертеров CHR, карт, TSA и 
 `make verify`, `make test-assets`, полная `make test` и `make audit`
 предназначены только для byte-exact исходного восстановления. Они читают
 `Tank 1990 (Ch).nes`; после намеренного изменения игры их отказ ожидаем и не
-означает ошибку ромхака. `make audit` дополнительно пишет временные
+означает ошибку ромхака. `make audit` проверяет разметку/переходы и каталог карт,
+экспортирует 71 скрытую карту с индексом адресов в `build/hidden-levels/` и пишет
+отчёты `build/disassembly-audit.json`, `build/level-audit.json`, а также временные
 `header.bin`, `prg0.bin`, `prg1.bin`, `chr0.bin` и `chr1.bin` в
 `build/original/`; эти файлы не являются редактируемыми исходниками.
 
@@ -28,6 +30,11 @@ round-trip и validation contracts конвертеров CHR, карт, TSA и 
 - палитры: `assets/palettes/*.pal`;
 - фоновые метатайлы 2×2: `assets/metatiles/background.tsa`;
 - игровой код и таблицы: `src/*.s` и `src/*.inc`.
+
+70 карт PRG0, отличных от runtime-каталога: `tank/002.map`, `tank/037.map`–
+`100.map` и все пять `extra`. Вместе с `$A800` это 71 скрытая карта. Экспорт
+`build/hidden-levels` — копия для анализа: правки в нём не попадут в сборку.
+Соответствие редактируемым источникам указано в `build/hidden-levels/index.csv`.
 
 Штатный Makefile собирает ровно 100/5/36/1 карт из каталогов
 `tank`/`extra`/`classic`/`unused`. Простая замена содержимого `.map` сохраняет

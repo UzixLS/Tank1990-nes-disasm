@@ -8,10 +8,14 @@ RM_RF ?= rm -rf
 BUILD := build
 TARGET := $(BUILD)/tank1990-ch.nes
 ORIGINAL := Tank 1990 (Ch).nes
+LEVEL_SCALE ?= 2
 
-.PHONY: all verify audit test test-tools test-assets clean
+.PHONY: all verify audit audit-levels audit-disassembly level-screenshots test test-tools test-assets clean
 
 all: $(TARGET)
+
+level-screenshots:
+	$(PYTHON) tools/render_levels.py assets $(BUILD)/level-screenshots --scale $(LEVEL_SCALE)
 
 $(BUILD):
 	$(MKDIR_P) $@
@@ -82,14 +86,20 @@ ASM_SOURCES := src/main.s src/hardware.inc src/ram.inc src/game.inc src/header.s
 $(BUILD)/tank1990.o: $(ASM_SOURCES) $(BUILD)/tank-levels.bin $(BUILD)/extra-levels.bin $(BUILD)/classic-levels.bin $(BUILD)/unused-level-a800.bin $(BUILD)/sprites.chr $(BUILD)/background.chr $(BUILD)/sprite-palette.bin $(BUILD)/background-palettes.bin $(BUILD)/background-metatiles.bin | $(BUILD)
 	$(CA65) -g -o $@ $<
 
-$(TARGET): $(BUILD)/tank1990.o cfg/tank1990.cfg
-	$(LD65) -C cfg/tank1990.cfg -m $(BUILD)/tank1990.map -Ln $(BUILD)/tank1990.lbl -o $@ $<
+$(TARGET) $(BUILD)/tank1990.dbg &: $(BUILD)/tank1990.o cfg/tank1990.cfg
+	$(LD65) -C cfg/tank1990.cfg -m $(BUILD)/tank1990.map -Ln $(BUILD)/tank1990.lbl --dbgfile $(BUILD)/tank1990.dbg -o $(TARGET) $<
 
 verify: $(TARGET)
 	$(PYTHON) tools/rom.py verify $(TARGET) "$(ORIGINAL)"
 
-audit: verify
+audit: verify audit-levels audit-disassembly
 	$(PYTHON) tools/rom.py extract "$(ORIGINAL)" $(BUILD)/original
+
+audit-levels: verify
+	$(PYTHON) tools/audit_levels.py "$(ORIGINAL)" $(BUILD)
+
+audit-disassembly: verify $(BUILD)/tank1990.dbg
+	$(PYTHON) tools/audit_disassembly.py "$(ORIGINAL)" $(BUILD)/tank1990.dbg $(BUILD)/disassembly-audit.json
 
 test-tools:
 	$(PYTHON) -m unittest discover -s tests -p "test_chr.py" -v
@@ -97,7 +107,7 @@ test-tools:
 	$(PYTHON) -m unittest discover -s tests -p "test_metatiles.py" -v
 	$(PYTHON) -m unittest discover -s tests -p "test_palettes.py" -v
 
-test-assets: verify
+test-assets: verify audit-disassembly
 	$(PYTHON) -m unittest discover -s tests -p "test_assets.py" -v
 
 test: test-assets test-tools
