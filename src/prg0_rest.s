@@ -1,8 +1,7 @@
-; Данные и расширения кода первого PRG-банка после таблицы 100 уровней.
+; Данные и расширения кода первого PRG-банка после таблицы 105 уровней ($A553).
 
 .segment        "PRG0_REST": absolute
 
-.include "extra_levels.s"
 .include "prg0_extensions.s"
 .include "prg0_unreferenced_data.s"
 .include "deferred_integrity_bridge.s"

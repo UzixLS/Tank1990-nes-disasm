@@ -2,7 +2,7 @@
 ; в каждой 13 TSA indexes high/low по порядку и один low padding nibble.
 
 .segment "TANK_LEVELS"
-; 100 карт Tank 1990 занимают весь $8000-$A38B. В текущем статическом графе ни
+; 105 карт Tank 1990 занимают весь $8000-$A552. В текущем статическом графе ни
 ; один ClassicLevelSetDescriptors не указывает сюда, поэтому LoadAndDrawStage
 ; НЕ использует TankLevels как runtime map catalog. Известные code reads —
 ; семибайтное checksum-окно TankLevels+$0D12 и статически неиспользуемый
@@ -10,7 +10,7 @@
 ; для byte-exact ROM, checksum и возможных производных работ, но не для штатного
 ; выбора карты.
 TankLevels:
-    .incbin "../build/tank-levels.bin"
+    .incbin "../build/extra-levels.bin"
 
 ; Неиспользуемый 14-byte префикс перед первым классическим уровнем. Формально
 ; это две packed rows, но loader/descriptors начинают с ClassicLevels=$F030;

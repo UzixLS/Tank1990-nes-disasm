@@ -10,8 +10,8 @@ ClassicLevelDescriptorCount = 7
 ; без bounds check. Selectors 0/3, 1/4 и 2/5 повторяют три последовательные
 ; группы по 12 карт; selector 6 указывает на начало и length=36.
 ;
-; Все семь bases находятся только внутри ClassicLevels. Ни TankLevels, ни
-; ExtraLevels не являются runtime map catalog для LoadAndDrawStage. Важное
+; Все семь bases находятся только внутри ClassicLevels. TankLevels не
+; является runtime map catalog для LoadAndDrawStage. Важное
 ; layout-ограничение: loader прибавляет к base фазу 0/2/4 до шага по 91 byte,
 ; поэтому окна могут пересекать границы соседних записей/подмножеств, а крайнее
 ; окно третьей группы/полного каталога — читать до четырёх следующих ROM bytes.

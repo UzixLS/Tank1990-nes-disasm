@@ -25,7 +25,7 @@ class AssetRoundTripTest(unittest.TestCase):
             with (output / "index.csv").open(encoding="utf-8", newline="") as stream:
                 index = list(csv.DictReader(stream))
             self.assertEqual(len(index), 71)
-            self.assertEqual(index[0]["asset"], "tank/002.map")
+            self.assertEqual(index[0]["asset"], "extra/002.map")
             self.assertEqual(index[-1]["cpu_address"], "$A800")
             for row in index:
                 offset = int(row["file_offset"], 0)
@@ -45,9 +45,8 @@ class AssetRoundTripTest(unittest.TestCase):
         self.assertEqual(len(records), 142)
         hidden = [row["asset"] for row in records
                   if not row["runtime_record"] and not row["same_geometry_as_classic"]]
-        self.assertEqual(hidden, ["tank/002.map"] +
-                         [f"tank/{i:03}.map" for i in range(37, 101)] +
-                         [f"extra/{i:03}.map" for i in range(1, 6)] + ["unused/001.map"])
+        self.assertEqual(hidden, ["extra/002.map"] +
+                         [f"extra/{i:03}.map" for i in range(37, 106)] + ["unused/001.map"])
         maps = [read_level(ROOT / "assets/levels" / row["asset"]) for row in records]
         self.assertEqual(len(set(map(geometry, maps))), 107)
 
@@ -88,13 +87,9 @@ class AssetRoundTripTest(unittest.TestCase):
         self.assertEqual(sprites, ROM[0x8010:0x9010])
         self.assertEqual(background, ROM[0x9010:0xA010])
 
-    def test_tank_levels_match_rom(self):
-        data = b"".join(read_level(ROOT / f"assets/levels/tank/{index:03}.map") for index in range(1, 101))
-        self.assertEqual(data, ROM[0x10:0x239C])
-
     def test_extra_levels_match_rom(self):
-        data = b"".join(read_level(ROOT / f"assets/levels/extra/{index:03}.map") for index in range(1, 6))
-        self.assertEqual(data, ROM[0x239C:0x2563])
+        data = b"".join(read_level(ROOT / f"assets/levels/extra/{index:03}.map") for index in range(1, 106))
+        self.assertEqual(data, ROM[0x10:0x2563])
 
     def test_unused_level_matches_rom(self):
         data = read_level(ROOT / "assets/levels/unused/001.map")

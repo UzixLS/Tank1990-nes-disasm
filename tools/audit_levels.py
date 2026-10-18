@@ -14,8 +14,8 @@ except ImportError:
     from levels import LEVEL_SIZE, decode_level, read_level, write_level
     from rom import EXPECTED_SHA256
 
-# Физические серии, включая записи вне таблиц указателей. Первые две смежны.
-LEVEL_SETS = (("tank", 0x8000, 100), ("extra", 0xA38C, 5),
+# Физические серии, включая записи вне таблиц указателей.
+LEVEL_SETS = (("extra", 0x8000, 105),
               ("unused", 0xA800, 1), ("classic", 0xF030, 36))
 
 

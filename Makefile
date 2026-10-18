@@ -35,11 +35,8 @@ $(BUILD)/background-palettes.bin: assets/palettes/background.pal tools/palettes.
 $(BUILD)/background-metatiles.bin: assets/metatiles/background.tsa tools/metatiles.py | $(BUILD)
 	$(PYTHON) tools/metatiles.py $< $@
 
-$(BUILD)/tank-levels.bin: $(wildcard assets/levels/tank/*.map) tools/levels.py | $(BUILD)
-	$(PYTHON) tools/levels.py encode assets/levels/tank 100 $@
-
 $(BUILD)/extra-levels.bin: $(wildcard assets/levels/extra/*.map) tools/levels.py | $(BUILD)
-	$(PYTHON) tools/levels.py encode assets/levels/extra 5 $@
+	$(PYTHON) tools/levels.py encode assets/levels/extra 105 $@
 
 $(BUILD)/classic-levels.bin: $(wildcard assets/levels/classic/*.map) tools/levels.py | $(BUILD)
 	$(PYTHON) tools/levels.py encode assets/levels/classic 36 $@
@@ -48,7 +45,7 @@ $(BUILD)/unused-level-a800.bin: assets/levels/unused/001.map tools/levels.py | $
 	$(PYTHON) tools/levels.py encode assets/levels/unused 1 $@
 
 ASM_SOURCES := src/main.s src/hardware.inc src/ram.inc src/game.inc src/header.s src/levels.s src/prg0_rest.s \
-	src/extra_levels.s src/prg0_extensions.s src/prg0_unreferenced_data.s \
+	src/prg0_extensions.s src/prg0_unreferenced_data.s \
 	src/deferred_integrity_bridge.s src/prg0_extension_prototypes.s \
 	src/prg1_lo.s src/game_flow.s src/startup.s src/decimal.s src/construction_editor.s \
 	src/battle_flow.s src/session_init.s src/gameplay_tick.s src/stage_runtime.s \
@@ -83,7 +80,7 @@ ASM_SOURCES := src/main.s src/hardware.inc src/ram.inc src/game.inc src/header.s
 	src/powerup_effects_hi.s src/tank1990_extensions.s src/collision_extensions.s \
 	src/projectile_variant.s src/chr.s
 
-$(BUILD)/tank1990.o: $(ASM_SOURCES) $(BUILD)/tank-levels.bin $(BUILD)/extra-levels.bin $(BUILD)/classic-levels.bin $(BUILD)/unused-level-a800.bin $(BUILD)/sprites.chr $(BUILD)/background.chr $(BUILD)/sprite-palette.bin $(BUILD)/background-palettes.bin $(BUILD)/background-metatiles.bin | $(BUILD)
+$(BUILD)/tank1990.o: $(ASM_SOURCES) $(BUILD)/extra-levels.bin $(BUILD)/classic-levels.bin $(BUILD)/unused-level-a800.bin $(BUILD)/sprites.chr $(BUILD)/background.chr $(BUILD)/sprite-palette.bin $(BUILD)/background-palettes.bin $(BUILD)/background-metatiles.bin | $(BUILD)
 	$(CA65) -g -o $@ $<
 
 $(TARGET) $(BUILD)/tank1990.dbg &: $(BUILD)/tank1990.o cfg/tank1990.cfg
