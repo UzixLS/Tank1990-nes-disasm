@@ -29,8 +29,6 @@ RuntimeIntegrityRandomMask = $0E
 ; вернуться, а начальный RTI примет JSR return bytes за interrupt frame; любая
 ; другая текущая цель исполняет произвольный control flow.
 ;
-; Romhack constraint: изменение checked windows/expected pair без согласования
-; создаёт этот недетерминированный indirect path, а не гарантированный reset.
 ; Процедура сама не читает ROM и не восстанавливает checksum либо ScratchPtr.
 MaybeEnforceRuntimeChecksum:
 LFD94:

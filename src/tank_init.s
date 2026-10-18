@@ -100,8 +100,8 @@ LE54D:  .byte   $E0,$A0
 
 ; Статически неиспользуемый вход: читает байт упакованных level-данных по
 ; TankLevels+$56+Y, объединяет его с ObjectAttributes,X и обнуляет frame.
-; Намеренная связь level-byte с tank attributes не установлена; bounds-check Y
-; отсутствует. Вход: X=slot 0..7, Y=смещение. Выход: A=0, Z=1/N=0, X/Y
+; Назначение неизвестно; Y не проверяется.
+; Вход: X=slot 0..7, Y=смещение. Выход: A=0, Z=1/N=0, X/Y
 ; сохранены. Меняет только ObjectAttributes,X и ObjectFrame,X; PPU/OAM/RNG
 ; не трогает.
 ApplyLevelByteToTankAttributesStub:

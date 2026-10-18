@@ -11,12 +11,10 @@ ClassicLevelDescriptorCount = 7
 ; группы по 12 карт; selector 6 указывает на начало и length=36.
 ;
 ; Все семь bases находятся только внутри ClassicLevels. TankLevels не
-; является runtime map catalog для LoadAndDrawStage. Важное
-; layout-ограничение: loader прибавляет к base фазу 0/2/4 до шага по 91 byte,
+; является каталогом для LoadAndDrawStage. Загрузчик прибавляет к base
+; фазу 0/2/4 до шага по 91 byte,
 ; поэтому окна могут пересекать границы соседних записей/подмножеств, а крайнее
 ; окно третьей группы/полного каталога — читать до четырёх следующих ROM bytes.
-; Перестановка карт, изменение stride/count или bytes после ClassicLevels должны
-; учитывать эту формулу, а не только три word pointers.
 ClassicLevelSetDescriptors:
 LE42B:  .word   ClassicLevels
         .byte   ClassicLevelSubsetCount

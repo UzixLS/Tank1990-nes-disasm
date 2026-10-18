@@ -238,9 +238,8 @@ LCD5E:  ldy     #(Player1Score+1)
         adc     #StatisticsFirstEnemyRow
         tay
         jsr     QueueTranslatedTileString
-; Эта исходная загрузка X не влияет на результат: ByteToDisplayDigits сразу
-; заменяет X адресом ScoreIncrementDigits. НЕ ДОКАЗАНО, зачем она была нужна;
-; нейтральная инструкция сохранена для byte-exact layout.
+; Загрузка X не влияет на результат: ByteToDisplayDigits сразу заменяет его
+; адресом ScoreIncrementDigits.
         ldx     StatisticsEnemyType
         lda     StatisticsPlayer1Count
         jsr     ByteToDisplayDigits
@@ -383,9 +382,7 @@ LCE32:  lda     Player2StageKillTotal
         jsr     QueueTileAtCoordinates
         lda     #AudioStateStartRequested
         sta     StatisticsWinnerBonusAudioState
-; НЕ ДОКАЗАНО: затем код пишет 1 в первые два байта записи pause-stream:
-; +0 route и +1 cached APU register 0. Причина именно такого побочного эффекта не выводится
-; из локального потока; для побайтового совпадения запись оставлена.
+; Побочный эффект: запись 1 в route и кеш регистра APU 0 потока паузы.
         sta     AudioStreamRecords
         sta     AudioStreamRecords+1
         jsr     AwardScoreThresholdLives
@@ -728,9 +725,7 @@ LD0B8:  lda     #StatisticsEnemyIconAttributes
 ;   top palette2 -> offsets 10..12,15..17 (6 bytes);
 ;   top palette1 -> offsets 30..32,35..37 (6 bytes).
 ; Все остальные 38 bytes должны быть заранее обнулены; штатно это делает
-; ClearNametableBuffer. Для ромхака, меняющего layout/палитры, таблицу нужно
-; пересогласовать с 4x4-tile boundaries. НЕ ДОКАЗАНО только художественное
-; назначение каждого цветового участка; точная byte map выше доказывается кодом.
+; ClearNametableBuffer. Границы палитр выровнены по блокам 4x4 тайла.
 ; Вход: NametableAttributes очищена. Выход: A=$05, N=0/Z=0;
 ; X/Y и C/V сохранены. PPU queue/registers и tile area shadow не меняются.
 InitializeStatisticsAttributes:

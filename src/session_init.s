@@ -50,8 +50,7 @@ LC2BD:  jsr     InitializePlayerUpgradeLevelsForVariant
 FinishGameSessionInitialization:
 LC2DD:  lda     #FirstStageNumber
         sta     StageNumber
-        ; Четыре NOP не имеют внутренних entry points/side effects и сохранены
-        ; для byte identity; исходное назначение не установлено.
+        ; Заполнение NOP из исходного ROM.
         nop
         nop
         nop

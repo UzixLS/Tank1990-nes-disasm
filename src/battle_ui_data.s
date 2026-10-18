@@ -50,8 +50,7 @@ LD3AE:  .byte   BaseTileDestroyedLowerLeft,BaseTileDestroyedLowerRight,$FF
 
 ; Строки экрана статистики. Каждый one-tile marker даёт 4-byte queue
 ; command; четыре копии стоят напротив четырёх enemy rows. Тайл $5D
-; намеренно разделяют маркер P2 и курсор variant-меню — это два
-; подтверждённых consumer одного байта.
+; используется маркером P2 и курсором меню вариантов.
 PlayerOneStatisticsMarker:
 LD3B1:  .byte   $5B,$FF
 PlayerTwoStatisticsMarker:
@@ -64,8 +63,7 @@ StatisticsDivider:
 ; 8 tiles, queue command 11 bytes; column 12,row 22.
 LD3BB:  .byte   $5C,$5C,$5C,$5C,$5C,$5C,$5C,$5C,$FF
 StatisticsBonusText:
-; 6 tiles, queue command 9 bytes. Первые пять — BONUS; точная
-; глифическая роль заключительного специального тайла $15 НЕ ДОКАЗАНА.
+; 6 тайлов, команда очереди 9 байт: BONUS и специальный тайл $15.
 LD3C4:  .byte   $42,$4F,$4E,$55,$53,$15,$FF
 StatisticsStageText:
 ; 5 literal tiles, queue command 8 bytes; column 12,row 5.

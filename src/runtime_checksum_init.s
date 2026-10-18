@@ -11,7 +11,6 @@ RuntimeChecksumClassicBlock2 = ClassicLevels + $0789
 ;   $C5C9..$C5CF variant-menu header   -> $12.
 ; С накоплением от нуля получается $DB^$04^$12=$CD; это значение остаётся в
 ; RuntimeChecksumActual, а literal $CD записывается в RuntimeChecksumExpected.
-; Структурное назначение двух выбранных окон карт отдельно не установлено.
 ; На выходе ScratchPtr равен RuntimeChecksumInitialJumpTarget, но это лишь
 ; начальное значение: gameplay helpers свободно перезаписывают volatile pointer,
 ; а поздний guard его не восстанавливает перед косвенным переходом.
@@ -19,9 +18,8 @@ RuntimeChecksumClassicBlock2 = ClassicLevels + $0789
 ; RuntimeChecksumActual=совокупный XOR,
 ; ScratchPtr=RuntimeChecksumInitialJumpTarget,
 ; Y=$FF, N=1/Z=0; C/V и X сохраняются. PPU/OAM/audio/RNG и проверяемые данные
-; не меняет. Romhack, меняющий любое окно, должен осознанно синхронизировать
-; expected literal либо удалить/переработать весь guard отдельным изменением;
-; простой перенос окна также требует обновить pointer constants.
+; не меняет. При изменении окон нужно обновить ожидаемую сумму,
+; при переносе — константы указателей.
 InitializeRuntimeChecksumGuard:
 LD2F8:  lda     #$00
         sta     RuntimeChecksumActual
